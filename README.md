@@ -4,7 +4,7 @@
 > 一套从 GPU 物理到 Token 计费的完整工程方案，写给要自建 Agent 平台的人。
 
 [![CI](https://github.com/nuaahuang/agent-platform-at-scale/actions/workflows/ci.yml/badge.svg)](https://github.com/nuaahuang/agent-platform-at-scale/actions)
-![chapters](https://img.shields.io/badge/chapters-4%2F40-yellow)
+![chapters](https://img.shields.io/badge/chapters-5%2F40-yellow)
 ![license](https://img.shields.io/badge/license-MIT%20%2B%20CC%20BY--SA%204.0-blue)
 
 
@@ -111,7 +111,7 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 |---|---|
 | 目录定稿（40 章） | ✅ |
 | 写作标准 + 自动检查 | ✅ `book/STYLE.md` + `make style` |
-| 正文 | ✅ 4/40（第 8–11 章）+ 附录 A |
+| 正文 | ✅ 5/40（第 1、8–11 章）+ 附录 A |
 | labs | ✅ 6 个可运行 |
 | platform skeleton | ✅ 网关 + mock 引擎 |
 | deploy / benchmarks | ⏳ |
