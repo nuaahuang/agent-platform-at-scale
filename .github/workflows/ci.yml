@@ -16,6 +16,11 @@ jobs:
       - name: 语法检查
         run: python -m compileall -q labs platform
 
+      - name: 站点与 Markdown 同步（docs/ 必须是最新的）
+        run: |
+          python tools/build_site.py
+          git diff --exit-code --stat -- docs
+
       - name: 章节写作标准（STYLE.md）
         run: python tools/check_style.py
 

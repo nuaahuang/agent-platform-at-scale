@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一次请求的完整旅程 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">推理工程 · 第 08 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：为什么先看"一条请求"</a><a href="#s2"><span>02</span>. 机制：12 跳</a><a href="#s3"><span>03</span>. 数量级：并发到底是多少</a><a href="#s4"><span>04</span>. 钱花在哪一跳</a><a href="#s5"><span>05</span>. 设计含义：链路图怎么变成架构决策</a><a href="#s6"><span>06</span>. 验收：五个数字必须能被复算</a><a href="#s7"><span>07</span>. 三个误区</a><a href="#s8"><span>08</span>. 练习（15 分钟）</a><a href="#s9"><span>09</span>. 复盘卡（写完发我）</a><a href="#s10"><span>10</span>. 延伸</a></nav>
+      <div class="rail-foot">推理工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose"><header class="ch-head"><div class="ch-ghost">08</div><div class="ch-kicker">推理工程</div><h1>一次请求的完整旅程</h1><div class="ch-rule"></div></header>
+<blockquote><p>迁移自 v1 <code>ch01-request-journey.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../../MIGRATION.md">../../MIGRATION.md</a>。</p></blockquote>
+<blockquote><p><strong>一句话结论</strong>：架构不是一张框图，是<strong>一条请求的时间线</strong>。</p><p>你能把这条线上一共几跳、每跳多少毫秒、钱花在哪一跳说清楚，架构就入门了。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：为什么先看"一条请求"</h2>
+<p>大多数架构图死在两个地方：</p>
+<ul><li>画了 30 个方框，但<strong>说不清一条请求按什么顺序穿过它们</strong>；</li><li>能说出"用了 K8s、Kafka、Redis"，但<strong>说不出哪一跳最慢、哪一跳最贵</strong>。</li></ul>
+<p>所以第一章不画大图，只跟一条请求走一遍。</p>
+<p><strong>场景</strong>（虚构示例）：用户说"我上周买的耳机想退货，但已经拆封了，能退吗"。这是一次典型的多轮售后咨询。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 机制：12 跳</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>跳</th><th>做什么</th><th>典型耗时</th><th>p95</th></tr></thead><tbody><tr><td>1</td><td>CDN / GSLB</td><td>就近接入、TLS 握手</td><td>10ms</td><td>30ms</td></tr><tr><td>2</td><td>接入网关</td><td>路由、限流、鉴权</td><td>3ms</td><td>10ms</td></tr><tr><td>3</td><td>配额 / 风控</td><td>查额度、黑名单</td><td>2ms</td><td>8ms</td></tr><tr><td>4</td><td>Agent Runtime</td><td>选 Agent、加载会话状态</td><td>15ms</td><td>40ms</td></tr><tr><td>5</td><td>上下文组装</td><td>L0–L7 拼 prompt，查缓存</td><td>20ms</td><td>60ms</td></tr><tr><td>6</td><td>模型网关</td><td>选模型、限流、路由</td><td>2ms</td><td>8ms</td></tr><tr><td>7</td><td><strong>排队</strong></td><td>等 GPU 槽位</td><td>10ms</td><td><strong>300ms</strong></td></tr><tr><td>8</td><td><strong>Prefill</strong></td><td>读 5,000 token 前缀</td><td>300ms</td><td>600ms</td></tr><tr><td>9</td><td><strong>Decode</strong></td><td>生成 350 token × 25ms</td><td><strong>8,750ms</strong></td><td>—</td></tr><tr><td>10</td><td>工具调用（平均 2 次）</td><td>检索 / 计算 / 写库</td><td>300ms</td><td>1,200ms</td></tr><tr><td>11</td><td>输出护栏</td><td>红线、免责声明</td><td>20ms</td><td>50ms</td></tr><tr><td>12</td><td>首包回传</td><td>SSE 推给客户端</td><td>5ms</td><td>20ms</td></tr></tbody></table></div>
+<p><strong>读这张表的三个要点</strong>：</p>
+<ol><li><strong>第 9 跳占了 90% 的时间</strong>。所以"优化端到端"≈"优化 decode"，而 decode 由显存带宽决定（第 02 章）。</li><li><strong>第 7 跳是唯一会"失控"的</strong>：负载一高，它从 10ms 跳到 300ms 甚至 2s，把 p95 拉爆。</li><li><strong>第 10 跳是唯一"不归你管"的</strong>：下游工具的延迟你只能熔断、降级、换供应商。</li></ol>
+<h3>2.1 两个不同的"延迟"</h3>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>全称</th><th>定义</th><th>目标</th><th>用户体验</th></tr></thead><tbody><tr><td><strong>TTFT</strong></td><td>Time To First Token</td><td>请求发出到第 1 个 token（排队+prefill）</td><td>&lt; 800ms</td><td>"它开始回答了"</td></tr><tr><td><strong>TPOT</strong></td><td>Time Per Output Token</td><td>decode 每多生成一个 token 的间隔（一个 step）</td><td>≤ 50ms</td><td>"字在流畅地冒"</td></tr><tr><td><strong>端到端</strong></td><td>—</td><td>TTFT + TPOT×输出长度 + 工具</td><td>3–9s</td><td>"它答完了"</td></tr></tbody></table></div>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>发出请求 ──TTFT──▶ 字₁ ─TPOT─▶ 字₂ ─TPOT─▶ … ─▶ 字₃₅₀
+端到端 = TTFT + 349 × TPOT（+工具时间）</code></pre></figure>
+<p>TPOT = 一个 step 的时长 ≈ (30GB + B×0.96GB) ÷ 3.35TB/s；B 越大它越长。TTFT 归 prefill 池管（看排队数），TPOT 归 decode 池管（看 TPOT p95 与 KV 水位）。</p>
+<p><strong>新手最常犯的错</strong>：把 TTFT 当成总延迟，然后奇怪"为什么用户还是嫌慢"。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 数量级：并发到底是多少</h2>
+<p>这是架构评审最爱问的问题，也是最容易答错的地方。<strong>三个口径，三个数</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>口径</th><th>定义</th><th>高峰</th><th>极端</th></tr></thead><tbody><tr><td><strong>在线会话</strong></td><td>打开着页面的 SSE 连接</td><td><strong>62 万</strong></td><td>94 万</td></tr><tr><td><strong>在飞请求</strong></td><td>正在生成中的请求</td><td>2.5 万 – 6 万</td><td>—</td></tr><tr><td><strong>QPS</strong></td><td>每秒新发起的请求</td><td>7,000</td><td>—</td></tr></tbody></table></div>
+<h3>3.0 先搞清楚量纲：为什么"次数 × 时间 ÷ 时间"得到"个"</h3>
+<p>把单位写出来，一目了然：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>DAU             [人]
+× 人均会话数     [次/人]      →  [次/天]        日会话数
+× 单次时长       [秒/次]      →  [秒/天]        一天总共&quot;占用&quot;了多少会话·秒
+÷ 86400         [秒/天]      →  [个]            平均同时有多少个会话在挂着</code></pre></figure>
+<p>最后一步的量纲是 <strong>秒/天 ÷ 秒/天 = 无量纲</strong>，物理含义就是"<strong>平均占用数量</strong>"。</p>
+<p><strong>直觉一：总占用 ÷ 总时间</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>3000 万次 × 600 秒 = 180 亿&quot;会话·秒&quot;
+180 亿 ÷ 86400 秒 = 20.8 万个会话同时在挂</code></pre></figure>
+<p>就像"10 个人各住 1 小时，酒店一天 24 小时，平均住了几个人？"→ 10 人·小时 ÷ 24 小时 = 0.42 人。<strong>人·小时除以小时，剩下的是"人"。</strong></p>
+<p><strong>直觉二：Little's Law</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>L = λ × W
+λ = 日会话数 / 86400 = 347 次/秒     （到达率）
+W = 600 秒                            （每次停留）
+L = 347 × 600 = 20.8 万               （同时在场数）</code></pre></figure>
+<p>单位：<code>次/秒 × 秒 = 次</code>。这里的"次"不是"第几次"，而是"<strong>此刻正在进行的次数</strong>"。</p>
+<p><strong>为什么是"连接数"而不是"请求数"</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>生命周期</th><th>峰值数量</th></tr></thead><tbody><tr><td>连接</td><td>整个会话（10 分钟）</td><td>62 万</td></tr><tr><td>请求</td><td>一次生成（3.5–9 秒）</td><td>2.5–6 万</td></tr></tbody></table></div>
+<p>差的那 10 倍，就是用户<strong>看结果、思考、打字</strong>的时间——连接挂着，但没在生成。</p>
+<p><strong>三条边界条件</strong>（评审时会问）：</p>
+<ol><li><strong>窗口要一致</strong>：用"日"算出来的是<strong>日均</strong>并发；要峰值，就用峰值那一小时的 λ 重算。</li><li><strong>Little's Law 只管平均</strong>：它不预测峰值。峰值要靠到达分布或线上曲线。</li><li><strong>稳态假设</strong>：忽略跨零点的会话，日初日末的边界效应在千万级下可忽略。</li></ol>
+<p><strong>自己验证</strong>：<code>cd lab &amp;&amp; python3 littles_law.py</code>它会造 100 万个按早晚高峰到达的会话，逐分钟统计并发，你会看到<strong>实测平均 6,933 vs 公式预测 6,944（误差 0.16%）</strong>，而<strong>峰均比 3.18</strong>——平均是算出来的，峰值是估出来的。</p>
+<h3>3.1 62 万是怎么算出来的</h3>
+<p>它不是拍的，是<strong>会话级的 Little's Law</strong>：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>日会话数      = DAU × 人均会话数 = 2000 万 × 1.5 = 3000 万
+会话总时长    = 3000 万 × 10 分钟 = 3 亿分钟 = 180 亿秒
+平均同时在线  = 180 亿秒 / 86400 秒 ≈ 20.8 万
+高峰同时在线  = 20.8 万 × 3（早晚高峰突发）≈ 62 万
+极端峰值      = 62 万 × 1.5 ≈ 94 万</code></pre></figure>
+<p><strong>三个假设，每个都能被质疑</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>假设</th><th>取值</th><th>依据</th><th>怎么校准</th></tr></thead><tbody><tr><td>人均会话数</td><td>1.5 次/天</td><td>客服/助手类产品的常见值</td><td>看埋点：日会话数 / DAU</td></tr><tr><td>单次会话时长</td><td>10 分钟</td><td>多轮沟通 + 看结果</td><td>看会话时长分布的中位数</td></tr><tr><td>突发系数</td><td>3×</td><td>早晚高峰集中</td><td>用线上同时在线曲线的 P95 / 均值</td></tr></tbody></table></div>
+<p><strong>敏感性</strong>（假设变了，数字怎么动）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>变化</th><th>结果</th></tr></thead><tbody><tr><td>会话时长 5 分钟</td><td>31 万</td></tr><tr><td>会话时长 20 分钟</td><td>125 万</td></tr><tr><td>突发系数 2×</td><td>42 万</td></tr><tr><td>突发系数 4×</td><td>83 万</td></tr><tr><td>人均 1.2 次</td><td>50 万</td></tr><tr><td>人均 2.0 次</td><td>83 万</td></tr></tbody></table></div>
+<p><strong>所以正确说法是</strong>："在'人均 1.5 次、每次 10 分钟、峰值 3 倍'的假设下，高峰约 62 万连接。"评审时把假设一起说出来，比只报一个数可信得多。</p>
+<h3>3.2 这个数字决定了什么</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>资源</th><th>推算</th><th>结论</th></tr></thead><tbody><tr><td>网关实例</td><td>62 万 ÷ 单实例 5 万连接</td><td>至少 13 个，按 N+1 与单元化 → 每单元 30 副本</td></tr><tr><td>网关内存</td><td>62 万 × 20KB/连接</td><td>≈ 12 GB（连接缓冲区）</td></tr><tr><td>文件描述符</td><td>每连接 1 个 fd</td><td>必须调 <code>ulimit</code>，否则先于 CPU 崩</td></tr><tr><td>负载均衡</td><td>长连接不能用轮询</td><td>用 least_conn / 一致性哈希</td></tr><tr><td>重连风暴</td><td>网关重启时 62 万同时重连</td><td>必须加退避 + 抖动</td></tr></tbody></table></div>
+<p><strong>交叉验证</strong>：62 万连接里约 10% 正在生成 → 6.2 万在飞请求，与"7,000 QPS × 9 秒长回答 ≈ 6.3 万"吻合。<strong>两条独立路径算出同一个数，这个数才可信。</strong></p>
+<h3>3.3 "2.5 万 – 6 万在飞请求"怎么来的：两级 Little's Law</h3>
+<p><strong>第一级：先从日轮次推出峰值 QPS</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>日轮次 = DAU × 人均会话 × 每会话轮次
+       = 2000 万 × 1.5 × 5 = 1.5 亿
+
+峰值 QPS = 日轮次 × 高峰小时占比 / 3600 × 小时内突发系数
+         = 1.5 亿 × 12% / 3600 × 1.4
+         = 5,000 × 1.4 = 7,000</code></pre></figure>
+<p>两个假设：<strong>高峰 1 小时承载全天 12% 的轮次</strong>（均匀分布应是 1/24≈4.2%，高峰约 2.9 倍）；<strong>高峰小时内瞬时再 ×1.4</strong>。</p>
+<p><strong>第二级：QPS × 单轮生成时长</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>在飞请求 = QPS × W
+  W = 3.5s（短回答 ~100–140 token + TTFT 0.8s）→ 7,000 × 3.5 = 2.45 万
+  W = 9.0s（350 token × 25ms TPOT = 8.75s + TTFT）→ 7,000 × 9 = 6.3 万</code></pre></figure>
+<p><strong>为什么是一个区间而不是一个数</strong>：单轮时长取决于回答长度分布——短卡片回答 3 秒，长流程回答 9 秒。容量按 6 万备，调度按实时 W 看。</p>
+<blockquote><p>注意：这里的"在飞请求"= 正在 prefill 或 decode 的请求（占 GPU 槽位）；</p><p>SSE 连接里那些"等用户打字"的不算——所以它只有连接数的 1/10。</p></blockquote>
+<p><strong>三个口径收口</strong>：</p>
+<ul><li>62 万 SSE 连接 = 会话级 Little's Law（停留 10 分钟）；</li><li>2.5–6 万在飞请求 = 请求级 Little's Law（生成 3.5–9 秒）；</li><li>7,000 QPS = 入口到达率，是后两级的输入。</li></ul>
+<p>所以"2.5 万并发"和"6 万并发"都对——取决于你问的是平均还是长尾。评审时先反问一句"你说的是哪个口径"，立刻显得专业。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 钱花在哪一跳</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>成本项</th><th>占比</th><th>说明</th></tr></thead><tbody><tr><td>GPU</td><td>~70%</td><td>主要由 decode 的 token 数决定</td></tr><tr><td>网络 / 带宽</td><td>~10%</td><td>图片上传、SSE 长连接</td></tr><tr><td>存储</td><td>~8%</td><td>事件、媒体、向量</td></tr><tr><td>中间件</td><td>~7%</td><td>MySQL / Redis / Kafka</td></tr><tr><td>其他</td><td>~5%</td><td>可观测、CDN</td></tr></tbody></table></div>
+<p><strong>推论</strong>：想降本，先动 token（分级路由、缩短输出、提高缓存命中），而不是先动中间件。中间件全砍了也只省 7%。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 设计含义：链路图怎么变成架构决策</h2>
+<p>链路图不是画着好看，它决定了三件事。</p>
+<p><strong>（1）延迟预算怎么切</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>段</th><th>预算</th><th>谁负责</th><th>超了怎么办</th></tr></thead><tbody><tr><td>接入（DNS/TLS/网关）</td><td>50 ms</td><td>网关</td><td>长连接、连接复用</td></tr><tr><td>鉴权 + 配额</td><td>20 ms</td><td>网关</td><td>token 本地缓存</td></tr><tr><td>排队</td><td>≤200 ms</td><td>调度器</td><td>拒绝，或降级到小模型</td></tr><tr><td>Prefill</td><td>≤450 ms</td><td>引擎</td><td>前缀缓存、chunked</td></tr><tr><td>首 token 传输</td><td>≤80 ms</td><td>网络</td><td>就近接入、cell 下沉</td></tr><tr><td><strong>TTFT 合计</strong></td><td><strong>800 ms</strong></td><td>—</td><td>—</td></tr><tr><td>Decode 350 token × 25 ms</td><td>8.75 s</td><td>引擎</td><td>TPOT、投机解码</td></tr></tbody></table></div>
+<p><strong>（2）哪一跳能买，哪一跳只能优化</strong></p>
+<p>第 10 跳（工具）不归你管 → 只能熔断、降级、换供应商；第 5–6 跳（decode）归你管 → 只能靠 TPOT 和 batch。<strong>归你管的做优化，不归你管的做隔离</strong>——把这两类混在一起讨论，永远得不出结论。</p>
+<p><strong>（3）容量按什么定</strong></p>
+<p>按 QPS 定算力（prefill），按在飞请求定显存（KV），按并发定连接数。三个口径对应三种资源，混着算就会像 §3 那样差出 10 倍。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 验收：五个数字必须能被复算</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>数字</th><th>复算方式</th><th>误差容忍</th></tr></thead><tbody><tr><td>峰值 QPS</td><td><code>labs/calc.py</code></td><td>±10%</td></tr><tr><td>在飞请求</td><td><code>labs/littles_law.py</code>：W = L / λ</td><td>±15%</td></tr><tr><td>TTFT p95</td><td>压测</td><td>与各跳之和差 &lt;15%</td></tr><tr><td>TPOT p95</td><td>压测</td><td>±5 ms</td></tr><tr><td>端到端 p50</td><td>TTFT + 349×TPOT + 工具</td><td>±10%</td></tr></tbody></table></div>
+<p><strong>判据</strong>：链路图每一跳耗时加起来，应落在端到端 p50 的 ±15% 内。差得远时，不是图错了，就是有一跳没测到——通常是<strong>排队</strong>。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 三个误区</h2>
+<p><strong>误区 1：TTFT 达标 = 体验达标。</strong>错。TTFT 800ms 但 decode 慢，用户看到字一个个蹦，照样骂。</p>
+<p><strong>误区 2：QPS 就是并发。</strong>错。7,000 QPS 可能对应 2.5 万在飞请求，也可能对应 6 万。<strong>容量按在飞请求算，不按 QPS 算。</strong></p>
+<p><strong>误区 3：SSE 连接数 = 请求数。</strong>错。62 万连接里大部分在"看历史"，不占 GPU。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 练习（15 分钟）</h2>
+<figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code>cd lab
+python3 mock_llm.py --port 8010 --slots 8    # 终端 A
+python3 mini_harness.py &quot;我最近体重涨了，帮我看看怎么办&quot;   # 终端 B</code></pre></figure>
+<p>打开 <code>events.jsonl</code>（每行一个事件，带 <code>ts</code>），回答：</p>
+<ol><li>这次会话一共几步？用相邻事件的 <code>ts</code> 差，算出<strong>每一步耗时</strong>，哪一步最慢？</li><li>把事件按类型归并：<code>llm.call</code> 占多少时间？<code>tool.call→tool.result</code> 占多少？其余编排占多少？</li><li>如果 decode 的 350 token 是主要成本，工具只占 5%，你会先优化哪个？给出一个数字理由。</li></ol>
+<blockquote><p>这题不需要写代码，用 <code>python3 -c</code> 或 Excel 都行。<strong>算不出来说明第 2 节没读透。</strong></p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 复盘卡（写完发我）</h2>
+<figure class="code code--lang"><span class="code-lang">markdown</span><button class="copy" type="button">复制</button><pre><code>## 第 01 章复盘
+
+**一句话**：……
+
+**我算的**：7,000 QPS，单轮 3.5s → 在飞请求 = ______
+
+**我原来以为**：……  **实际是**：……  **差在**：……
+
+**还没懂**：……</code></pre></figure>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 延伸</h2>
+<ul><li>想更细的延迟拆解：<code>../theory.md</code> 第二部分</li><li>想看真实数字怎么推出来的：<code>../../model/capacity_model.py</code></li><li>下一章：<a href="ch02-model-physics.md">ch02-model-physics.md</a>（为什么 decode 由带宽决定）</li></ul>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="01-scale-slo-economics.html"><span>上一章</span><b>01 · 规模、SLO 与经济红线</b></a><a class="nav-next" href="09-parallelism.html"><span>下一章</span><b>09 · 并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all）</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

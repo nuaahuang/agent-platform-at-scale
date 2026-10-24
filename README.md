@@ -118,6 +118,17 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 
 ---
 
+## 在线阅读
+
+排版版（宋体正文 · 语义组件 · 暗色模式）：**https://nuaahuang.github.io/agent-platform-at-scale/**
+
+```bash
+make open     # 本地生成 docs/ 并打开
+```
+
+Markdown 是唯一源；`tools/build_site.py` 把它渲染成站点，
+导读卡、结论框、失败模式表、验收表都是按语义自动识别的。
+
 ## 写作标准（底线硬，形式软）
 
 **三条硬底线**，不满足不合并：

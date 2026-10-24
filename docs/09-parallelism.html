@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all） · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">推理工程 · 第 09 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>A.0 问题：单卡为什么不够</a><a href="#s2"><span>02</span>A.1 稠密 vs 稀疏：一张表</a><a href="#s3"><span>03</span>A.2 四种并行：DP / TP / PP / EP</a><a href="#s4"><span>04</span>A.3 五种集合通信（用 4 张卡举例）</a><a href="#s5"><span>05</span>A.4 为什么 EP 一定要 all-to-all：算一笔账</a><a href="#s6"><span>06</span>A.5 2:4 结构化稀疏：怎么剪、怎么微调</a><a href="#s7"><span>07</span>A.6 RDMA 与 rail-optimized</a><a href="#s8"><span>08</span>A.8 NVLink 域：TP 的天然边界</a><a href="#s9"><span>09</span>A.8.2 国产卡对照（2025–2026，数字随发布快速变化）</a><a href="#s10"><span>10</span>A.8.3 失败模式：并行最容易在哪坏</a><a href="#s11"><span>11</span>A.9 自测</a><a href="#s12"><span>12</span>A.10 复盘卡</a></nav>
+      <div class="rail-foot">推理工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose"><header class="ch-head"><div class="ch-ghost">09</div><div class="ch-kicker">推理工程</div><h1>并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all）</h1><div class="ch-rule"></div></header>
+<blockquote><p>迁移自 v1 <code>ch02a-parallelism.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../../MIGRATION.md">../../MIGRATION.md</a>。</p></blockquote>
+<blockquote><p>这是第 02 章的必备前置。读不懂 all-to-all，就不可能真正理解 MoE 推理为什么贵。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>A.0 问题：单卡为什么不够</h2>
+<p>200B 模型 FP8 权重 = 200 GB，H800 单卡 80 GB，<strong>装都装不下</strong>——这是并行的第一条理由。第二条是算力：prefill 一个 5K token 请求需要 2 × 30B × 5000 = 3.0e14 FLOP，单卡 1.98 PFLOPS 下要 0.43 s（还没算 MFU），乘上 7000 QPS 的峰值直接不可行。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>约束</th><th>单卡数字</th><th>后果</th><th>对应并行</th></tr></thead><tbody><tr><td>显存</td><td>80 GB vs 200 GB 权重</td><td>放不下</td><td>TP / PP / EP</td></tr><tr><td>算力</td><td>1.98 PFLOPS</td><td>prefill 太慢</td><td>TP / EP</td></tr><tr><td>带宽</td><td>3.35 TB/s</td><td>decode 每步读 30 GB → 8.96 ms</td><td><strong>并行解决不了</strong>，只能加卡</td></tr></tbody></table></div>
+<p>结论先行：<strong>TP 解决"放不下"和"单步太慢"，EP 解决"专家太多放不下"，PP 解决"跨机放得下但延迟高"。</strong>并行不是越多越好——每加一级，就多一次通信，通信是这条路上最贵的税。</p>
+<blockquote><p>小节编号沿用旧稿 <code>A.x</code>，方便与 v1 对照；迁入后未改号。</p></blockquote>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>A.1 稠密 vs 稀疏：一张表</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>稠密（Dense）</th><th>稀疏（MoE）</th></tr></thead><tbody><tr><td>每 token 算力</td><td>2 × N_total</td><td>2 × N_active</td></tr><tr><td>显存占用</td><td>N_total</td><td><strong>N_total（全部专家都要装）</strong></td></tr><tr><td>通信</td><td>TP 的 all-reduce</td><td>TP + <strong>EP 的 all-to-all</strong></td></tr><tr><td>延迟可预测性</td><td>高</td><td>低（路由不均、专家倾斜）</td></tr><tr><td>小 batch 表现</td><td>好</td><td>差（专家利用率低）</td></tr><tr><td>大 batch 表现</td><td>线性变贵</td><td><strong>摊薄后更便宜</strong></td></tr><tr><td>工程复杂度</td><td>低</td><td>高（路由、均衡、通信）</td></tr><tr><td>典型用途</td><td>延迟敏感、小模型</td><td>大模型、追求"每 FLOP 的质量"</td></tr></tbody></table></div>
+<p><strong>一句话</strong>：稀疏是用<strong>显存和通信</strong>换<strong>算力</strong>；稠密是用<strong>算力</strong>换<strong>简单和稳定</strong>。</p>
+<p><strong>什么时候稀疏不划算</strong>：</p>
+<ul><li>batch 很小（每个专家只分到几个 token，算力省了但通信没省）；</li><li>网络差（all-to-all 打满，GPU 等网络）；</li><li>延迟敏感（路由 + 通信让 p99 抖动）。</li></ul>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>A.2 四种并行：DP / TP / PP / EP</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>并行</th><th>切什么</th><th>通信</th><th>典型范围</th></tr></thead><tbody><tr><td><strong>DP</strong> 数据并行</td><td>切 batch，每卡一份完整模型</td><td>梯度 all-reduce（训练）</td><td>多机</td></tr><tr><td><strong>TP</strong> 张量并行</td><td>切<strong>一层内的矩阵</strong>（按列/行）</td><td>每层 <strong>all-reduce</strong></td><td>机内 ≤8 卡（NVLink）</td></tr><tr><td><strong>PP</strong> 流水并行</td><td>切<strong>层</strong>（前几层在 A 卡，后几层在 B 卡）</td><td>点对点 send/recv</td><td>多机</td></tr><tr><td><strong>EP</strong> 专家并行</td><td>切 <strong>MoE 专家</strong>（e1–e8 放不同卡）</td><td><strong>all-to-all</strong></td><td>多机（IB/RDMA）</td></tr></tbody></table></div>
+<h3>TP 长什么样</h3>
+<p>一个线性层 <code>Y = XW</code>，W 是 4096×4096。TP=2 时：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>GPU0: W 的左半（4096×2048）→ 算出一半输出
+GPU1: W 的右半（4096×2048）→ 算出另一半输出
+两边结果相加 → all-reduce → 得到完整 Y</code></pre></figure>
+<p><strong>每层都要 all-reduce 一次</strong>，所以 TP 很吃互联带宽。H800 的 NVLink 是 400GB/s，机内 TP=8 才划算；跨机 TP 基本不可用。</p>
+<h3>EP 长什么样</h3>
+<p>8 个专家，4 张卡，每卡 2 个专家：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>GPU0: e0 e1      GPU2: e4 e5
+GPU1: e2 e3      GPU3: e6 e7</code></pre></figure>
+<p>一个 token 在 GPU0 上，路由到 <code>e1</code>（本地）和 <code>e5</code>（GPU2）：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>① dispatch：GPU0 把 token 的隐藏状态发给 GPU2
+② 专家计算：GPU0 算 e1，GPU2 算 e5
+③ combine：GPU2 把结果发回 GPU0，加权求和</code></pre></figure>
+<p><strong>每张卡都要和所有其他卡交换数据</strong>——这就是 all-to-all。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>A.3 五种集合通信（用 4 张卡举例）</h2>
+<p>设 4 张卡各自持有一个向量：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>G0=[1,2]   G1=[3,4]   G2=[5,6]   G3=[7,8]</code></pre></figure>
+<h3>all-reduce：所有人得到"总和"</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>结果：G0=G1=G2=G3=[16,20]</code></pre></figure>
+<p>用途：TP 每层合并部分和；DP 同步梯度。代价：约 <code>2 × (N-1)/N × 数据量</code>，N 越大越接近 2 倍数据量。</p>
+<h3>all-gather：所有人拿到"全部片段"</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>G0 原本只有 A 段 → 最终 G0=[A,B,C,D]，其他卡同</code></pre></figure>
+<p>用途：TP 的输出拼接、ZeRO 推理取权重。</p>
+<h3>reduce-scatter：先求和，再各拿一片</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>总和 [16,20] 切成两片 → G0,G1 拿 [16]，G2,G3 拿 [20]</code></pre></figure>
+<p>用途：ZeRO 梯度分片。<strong>all-reduce = reduce-scatter + all-gather</strong>，所以能省一半流量。</p>
+<h3>all-to-all：每个人给每个人发"不同的东西"</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>交换前：每张卡有 4 份，分别属于 G0/G1/G2/G3
+交换后：G0 收到来自 G0/G1/G2/G3 的第 0 份</code></pre></figure>
+<p><strong>这是"转置"</strong>：把 <code>[卡][数据块]</code> 变成 <code>[数据块][卡]</code>。用途：EP 的 dispatch/combine；序列并行。</p>
+<h3>broadcast / send-recv</h3>
+<ul><li>broadcast：一个人发给所有人（配置下发）；</li><li>send/recv：点对点（PP 的层间传递）。</li></ul>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>A.4 为什么 EP 一定要 all-to-all：算一笔账</h2>
+<p>每层、每个 step：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>通信量 = tokens × top_k × hidden × bytes
+       = 512 × 2 × 7168 × 2 B
+       ≈ 14.7 MB（单向）</code></pre></figure>
+<p>60 层、dispatch + combine 两个方向：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>14.7 MB × 60 × 2 ≈ 1.76 GB / step</code></pre></figure>
+<p>如果每卡 100ms 出一个 step，光通信就要 <strong>17.6 GB/s</strong>，还没算拥塞和抖动。<strong>这就是 MoE 推理必须上 RDMA、必须做 rail-optimized 网络的原因。</strong></p>
+<p>对比 TP 的 all-reduce：每层通信量约等于<strong>激活值大小</strong>（512×7168×2B≈7.3MB），量级相近，但 TP 在机内走 NVLink（400GB/s），EP 跨机走 IB（400Gb/s=50GB/s）——<strong>同样的数据量，跨机贵 8 倍</strong>。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>A.5 2:4 结构化稀疏：怎么剪、怎么微调</h2>
+<h3>规则</h3>
+<p>每 <strong>4 个连续权重</strong>为一组，只能保留 <strong>2 个</strong>，另 2 个置零：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>原始： [0.9, 0.1, 0.7, 0.2]  → 保留 [0.9, _, 0.7, _]
+元数据： 2 bit 记录&quot;留了哪两个&quot;</code></pre></figure>
+<p>硬件（Ampere 之后的稀疏 Tensor Core）读到元数据就跳过零，<strong>理论算力 ×2</strong>。</p>
+<h3>三步落地</h3>
+<ol><li><strong>选保留谁</strong>：按绝对值大小（magnitude）或 SparseGPT 之类的方法，逐组选 2 个；</li><li><strong>固定 mask 继续训练（微调）</strong>：被剪掉的权重不再更新，其余权重用较小学习率再训一段，</li></ol>
+<p>   把掉下去的效果拉回来——<strong>这一步就是"并微调"</strong>；</p>
+<ol><li><strong>导出稀疏格式</strong>：cuSPARSELt / TensorRT-LLM 的 sparse 权重，推理引擎要支持。</li></ol>
+<h3>为什么生产里很少用</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>说明</th></tr></thead><tbody><tr><td>精度损失</td><td>LLM 权重存在离群通道（部分层 &gt;10σ），强行 2:4 精度掉 2–5 pt，微调也只补回一半</td></tr><tr><td>引擎支持</td><td>vLLM/SGLang 对 2:4 稀疏算子支持有限，主流还是 dense</td></tr><tr><td>收益打折</td><td>decode 是带宽受限，算力翻倍不代表速度翻倍（可能只快 1.2–1.5×）</td></tr><tr><td>维护成本</td><td>每换一版模型都要重新剪枝 + 微调 + 验证</td></tr></tbody></table></div>
+<p><strong>结论</strong>：2:4 稀疏适合"算力卡脖子、模型固定、愿意做精度补偿"的场景；通用推理平台<strong>默认用 dense</strong>，把钱花在 KV 压缩和批处理上更划算。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>A.6 RDMA 与 rail-optimized</h2>
+<h3>A.6.1 RDMA：让网卡直接写对方内存</h3>
+<p>普通 TCP 发数据要经过：<strong>用户态 → 内核 socket → 协议栈 → 网卡 → 对方内核 → 用户态</strong>，每一跳都有 CPU 拷贝和中断。RDMA 把这套全绕过：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>本机 GPU 显存 ──NIC DMA──→ 网络 ──→ 对方 NIC DMA──→ 对方 GPU 显存
+                （CPU 全程不参与，内核不参与）</code></pre></figure>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>TCP</th><th>RDMA</th></tr></thead><tbody><tr><td>延迟</td><td>20–100 µs</td><td><strong>2–5 µs</strong></td></tr><tr><td>CPU 占用</td><td>每包都要处理</td><td>≈0</td></tr><tr><td>拷贝次数</td><td>2–4 次</td><td>0（零拷贝）</td></tr><tr><td>带宽</td><td>受 CPU 限制</td><td>100–400 Gb/s 轻松跑满</td></tr></tbody></table></div>
+<p><strong>三种实现</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>说明</th><th>现状</th></tr></thead><tbody><tr><td><strong>InfiniBand</strong></td><td>原生 RDMA，专用网络</td><td>性能最好，交换机贵</td></tr><tr><td><strong>RoCEv2</strong></td><td>以太网上的 RDMA</td><td>便宜，但要配无损网络（PFC/ECN）</td></tr><tr><td><strong>iWARP</strong></td><td>老方案</td><td>少用</td></tr></tbody></table></div>
+<p><strong>GPUDirect RDMA</strong>：网卡直接读写 GPU 显存（走 PCIe/NVLink），不经过主机内存中转——多机推理的 all-to-all 必须开这个，否则多一次拷贝。</p>
+<p><strong>代价</strong>：RDMA 要求网络<strong>无损</strong>（丢包重传代价极高），要配 PFC、ECN、DCQCN，运维门槛比普通以太网高一个档次。</p>
+<h3>A.6.2 rail-optimized：一台机器 8 张卡，8 条独立的"车道"</h3>
+<p>普通做法：一个节点插 1–2 张网卡，8 张 GPU 共享 → all-to-all 时 8 卡抢一条车道。</p>
+<p>rail-optimized：<strong>每张 GPU 配一张网卡，各自接到独立的 leaf 交换机（一条 rail）</strong>。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>              Leaf0        Leaf1        ...      Leaf7
+                │            │                     │
+  节点 A:  GPU0─NIC0     GPU1─NIC1    ...      GPU7─NIC7
+                │            │                     │
+  节点 B:  GPU0─NIC0     GPU1─NIC1    ...      GPU7─NIC7</code></pre></figure>
+<p><strong>关键性质</strong>：节点 A 的 GPU3 和节点 B 的 GPU3 通信，<strong>只经过 Leaf3 一跳</strong>，不经过 spine，不和其他 rail 抢带宽 → <strong>同号 GPU 之间是"非阻塞"的</strong>。</p>
+<p><strong>为什么这对 EP 特别重要</strong>：all-to-all 里，每张 GPU 要和"其他所有卡的对应专家"交换数据。如果拓扑是 rail 对齐的，集合通信库（NCCL）可以把通信组织成"同号 GPU 之间"，把大部分流量关在 leaf 内，避免 spine 拥塞。</p>
+<p><strong>代价</strong>：8 张网卡 + 8 台 leaf 交换机，布线和成本都上去了；跨 rail 的流量仍要过 spine，所以专家放置策略要尽量"同号优先"。</p>
+<h3>A.6.3 与前面数字的对应</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>走什么</th><th>带宽</th></tr></thead><tbody><tr><td>TP 的 all-reduce（机内）</td><td>NVLink</td><td>400 GB/s</td></tr><tr><td>EP 的 all-to-all（跨机）</td><td>IB/RoCE + RDMA</td><td>50 GB/s（400Gb/s）</td></tr><tr><td>PD 分离的 KV 传输</td><td>RDMA（NIXL/Mooncake）</td><td>50 GB/s</td></tr><tr><td>模型权重/checkpoint 加载</td><td>3FS over RDMA</td><td>50 GB/s</td></tr></tbody></table></div>
+<p><strong>同一个 14.7MB 的 all-to-all，走 NVLink 是 0.04ms，走 IB 是 0.3ms，走 TCP 可能 1ms+。</strong>这就是为什么"跨机贵 8 倍"不是形容词，是算出来的。</p>
+<h3>A.6.4 PFC / ECN / DCQCN：无损网络的三件套</h3>
+<p>RoCEv2 跑在以太网上，而以太网<strong>默认会丢包</strong>。RDMA 最怕丢包，所以要把网络改造成"无损"：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>机制</th><th>全称</th><th>干什么</th><th>类比</th></tr></thead><tbody><tr><td><strong>PFC</strong></td><td>Priority Flow Control（802.1Qbb）</td><td>交换机队列快满时，向上游发 PAUSE 帧，让它<strong>暂停发送</strong>某个优先级的流量</td><td>路口红灯，整条路停下</td></tr><tr><td><strong>ECN</strong></td><td>Explicit Congestion Notification（RFC 3168）</td><td>队列超过阈值时，交换机在包头打<strong>拥塞标记</strong>，接收方通知发送方减速</td><td>在车上贴"前方拥堵"标签</td></tr><tr><td><strong>DCQCN</strong></td><td>Datacenter QCN</td><td>RoCE 网卡收到拥塞通知后<strong>降速，再逐步恢复</strong>的完整算法</td><td>看到标签后松油门的规则</td></tr></tbody></table></div>
+<p><strong>为什么要两个一起用</strong>：ECN 是"提前减速"（治本），PFC 是"马上刹停"（兜底）。只靠 PFC 会有两个严重问题：</p>
+<ul><li><strong>拥塞传播</strong>：一台交换机 PAUSE 上游，上游又 PAUSE 它的上游，一路传回去；</li><li><strong>PFC 死锁</strong>：缓冲区形成循环等待，整个网络卡死，要手动恢复。</li></ul>
+<p>所以好的无损网络是"ECN/DCQCN 把速度调平滑，PFC 尽量不触发，只在极端情况兜底"。</p>
+<h3>A.6.5 丢包为什么对 RDMA 是灾难</h3>
+<p>TCP 是为"会丢包的网络"设计的（SACK、快重传），RDMA 不是。丢一个包会发生：</p>
+<ol><li>RDMA 可靠连接要<strong>重传整个窗口</strong>（go-back-N），不是只补一个包；</li><li>集合通信有 <strong>barrier</strong>：all-reduce 必须等所有 GPU 都到齐——</li></ol>
+<p>   <strong>一张卡等重传，其余几十张卡全部空转</strong>；</p>
+<ol><li>显存里为这次通信准备的 buffer 不能释放，后续步骤全堵住；</li><li>延迟从微秒跳到毫秒，NCCL 超时（训练任务默认十几分钟无进展会直接崩溃重启）。</li></ol>
+<blockquote><p>类比：32 个人抬一根长木头，一个人绊倒，全部人停住；</p><p>如果木头掉了（超时），整趟重来。TCP 像各自跑步，摔一个不影响别人。</p></blockquote>
+<p><strong>0.1% 的丢包率在普通 Web 服务里毫无感觉，在 RDMA 集群里等于事故。</strong></p>
+<h3>A.6.6 rail 与 NCCL</h3>
+<p><strong>rail（轨道）</strong>：一张物理网卡 + 它直连的那组 leaf 交换机构成一个网络平面。一张 GPU 对应一条 rail，8 张 GPU 的节点就有 8 条互不共享的 rail。"多 rail"就是多条并行的独立平面，同号 GPU 之间永远在同一条 rail 上一跳直达。</p>
+<p><strong>NCCL（NVIDIA Collective Communications Library）</strong>：GPU 集合通信库，PyTorch 里的 <code>all_reduce</code> / <code>all_to_all</code> 最终都是调它。它做两件事：</p>
+<ol><li><strong>拓扑发现</strong>：启动时探测 NVLink、PCIe、网卡怎么连，给每张 GPU 编号；</li><li><strong>选算法和路由</strong>：ring 还是 tree、走哪张网卡、是否 rail 对齐——</li></ol>
+<p>   发现 GPU i 都在 rail i 上，就把通信组织成"同号通信"，流量不进 spine。</p>
+<p>类比：<strong>NCCL 是物流调度系统，NVLink/IB 是高速公路，rail 是专用车道。</strong>路修得再好，调度系统不按拓扑发货也会堵。</p>
+<h3>A.6.7 采购/上云时那句话怎么理解</h3>
+<blockquote><p>"跨节点是否 IB 或无损 RoCE？"</p></blockquote>
+<div class="table-wrap"><table class="table"><thead><tr><th>网络</th><th>含义</th><th>能不能跑 EP/PD</th></tr></thead><tbody><tr><td><strong>InfiniBand</strong></td><td>原生 RDMA，信用机制天然无损</td><td>✅ 最佳</td></tr><tr><td><strong>无损 RoCEv2</strong></td><td>以太网 + RDMA + PFC/ECN/DCQCN 全套配置</td><td>✅ 可以</td></tr><tr><td><strong>普通 VPC 以太网</strong></td><td>多租户、有损、没有无损配置</td><td>❌ 退回 TCP，慢 8 倍</td></tr></tbody></table></div>
+<p>要追问的四件事：</p>
+<ol><li>网卡型号与带宽（如 ConnectX-7、每 GPU 400Gb/s）；</li><li>是否 <strong>rail 对齐</strong>（8 卡 8 网，还是 8 卡共享 2 网）；</li><li>是否支持 <strong>GPUDirect RDMA</strong>（网卡直读写显存）；</li><li>实例能否<strong>强制放置在同一 RoCE 子网 / 集群放置组</strong>里。</li></ol>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>A.8 NVLink 域：TP 的天然边界</h2>
+<p><strong>NVLink</strong> 是 NVIDIA 的 GPU 间专有互联（不是 PCIe，也不是网络）。H800 一机 8 卡通过板上的 <strong>NVSwitch</strong> 芯片两两全互联：任意两张卡之间都有<strong>400 GB/s</strong> 的直连带宽（H100 是 900 GB/s，H800 出口受限版降到 400）。</p>
+<p><strong>NVLink 域</strong> = 被这张 NVSwitch 全互联网络覆盖、通信不出机的 GPU 集合：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>              ┌────── NVSwitch（板载，全互联） ──────┐
+              │                                       │
+          GPU0 ─── GPU1 ─── GPU2 ─── GPU3
+          GPU4 ─── GPU5 ─── GPU6 ─── GPU7
+              └──────── 一个 NVLink 域 = 8 卡 ────────┘
+                       │ PCIe + 网卡（IB 50GB/s）
+                   ──── 跨节点，出域 ────</code></pre></figure>
+<p>三层带宽对比：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>路径</th><th>带宽</th><th>延迟</th><th>谁走这里</th></tr></thead><tbody><tr><td>GPU ↔ HBM</td><td>3.35 TB/s</td><td>ns</td><td>权重/KV 读取</td></tr><tr><td>GPU ↔ GPU（<strong>NVLink 域内</strong>）</td><td><strong>400 GB/s</strong></td><td>µs</td><td>TP 的 all-reduce</td></tr><tr><td>GPU ↔ 跨节点 GPU（IB/RDMA）</td><td>50 GB/s</td><td>几 µs–几十 µs</td><td>EP 的 all-to-all、PD 传 KV</td></tr></tbody></table></div>
+<p><strong>为什么 TP 不出域</strong>：TP 每层都要 all-reduce，一次推理 60 层 ×2（attention/FFN）= 上百次。域内走 NVLink 总开销可接受；跨域走 IB，每层通信时间 ×8，TP 的加速比会被吃光。<strong>域的大小 = TP 的实际上限</strong>：H800/H100 是 8；GB200 <strong>NVL72</strong> 用机柜级 NVLink Switch把 72 张卡接成一张网，域才扩大到 72。</p>
+<p><strong>怎么查自己机器的域</strong>：</p>
+<figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code>nvidia-smi topo -m
+# 输出矩阵里：
+#   NV#  = 第 # 条 NVLink（域内）
+#   PIX  = 同 PCIe switch
+#   SYS  = 跨 NUMA/跨节点（出域了）</code></pre></figure>
+<p>NCCL 启动时做的"拓扑发现"，本质就是找到这个域，把 TP 通信排在域内、EP 通信走网卡。</p>
+<p><strong>K8s 调度含义</strong>：一个 TP=8 的 Pod 必须被调度到<strong>同一台 8 卡机</strong>（单 NUMA 节点），所以资源申请写 <code>nvidia.com/gpu: 8</code>；跨机的 EP 组则要配合放置组 + rail 对齐的网络。</p>
+<h3>A.8.1 历代服务器的 NVLink 域大小（选型速查）</h3>
+<p><strong>域大小是 NVIDIA 基板/机柜设计决定的，不能任意选</strong>——没有 12 卡这种原生域。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>平台</th><th>域大小</th><th>GPU 间带宽（聚合）</th><th>显存</th><th>典型用途</th></tr></thead><tbody><tr><td>PCIe 卡（L40S / H100 PCIe / 4090）</td><td><strong>1</strong>（无 NVLink 或仅成对桥接）</td><td>—</td><td>24–80GB</td><td>小模型、图形</td></tr><tr><td>DGX Station A100</td><td><strong>4</strong></td><td>600 GB/s</td><td>4×80GB</td><td>小型工作站</td></tr><tr><td><strong>HGX A100/A800 SXM4</strong></td><td><strong>8</strong></td><td>600 / 400（A800 出口版） GB/s</td><td>8×80GB</td><td>上一代机房主力</td></tr><tr><td><strong>HGX H100/H800 SXM5</strong></td><td><strong>8</strong></td><td>900 / <strong>400（H800）</strong> GB/s</td><td>8×80GB HBM3</td><td>当前推理主力</td></tr><tr><td>HGX H200</td><td><strong>8</strong></td><td>900 GB/s</td><td>8×141GB HBM3e</td><td>长上下文/大 KV</td></tr><tr><td>HGX H20（出口特供）</td><td><strong>8</strong></td><td>900 GB/s（互联没砍，算力砍）</td><td>8×141/96GB，4TB/s</td><td>中国区常见</td></tr><tr><td>DGX/HGX B200</td><td><strong>8</strong></td><td>1.8 TB/s（NVLink 5）</td><td>8×192GB</td><td>Blackwell 单机</td></tr><tr><td><strong>GB200 NVL72（整柜）</strong></td><td><strong>72</strong></td><td>每 GPU 1.8 TB/s</td><td>72×192GB</td><td>超大模型单域</td></tr><tr><td><strong>GB300 NVL72（2025）</strong></td><td><strong>72</strong></td><td>1.8 TB/s</td><td>72×288GB HBM3e</td><td>DeepSeek 671B 可单域</td></tr><tr><td>Rubin NVL144（路线图）</td><td><strong>144</strong></td><td>NVLink 6</td><td>未量产</td><td>2026</td></tr></tbody></table></div>
+<p><strong>几个关键判断</strong>：</p>
+<ol><li><strong>8 是事实上的标准域</strong>：云厂商 p5（AWS）、NDv5（Azure）、A3（GCP）、</li></ol>
+<p>   国内 H800/H20 实例几乎都是 8 卡；</p>
+<ol><li><strong>10/16 卡服务器 ≠ 16 卡域</strong>：超微等厂商的 16 卡机型通常是"两块 8 卡基板 + PCIe/IB 互联"，</li></ol>
+<p>   本质是<strong>两个域</strong>，跨基板通信立刻掉到 IB 级；</p>
+<ol><li><strong>72 域是机柜级域</strong>：NVL72 把 NVSwitch 做进整柜，671B FP8（670GB）可以</li></ol>
+<p>   "TP 不出域"地跑——这是它相对 DeepSeek"TP=8 + EP 跨机 RDMA"路线的卖点；</p>
+<ol><li><strong>选型不只看域</strong>：H20 互联满血但算力只有 H100 的 ~15%，适合<strong>推理/KV 大、prefill 不重</strong></li></ol>
+<p>   的场景；H800 算力强但互联被砍到 400GB/s。</p>
+<p><strong>模型怎么落</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>最小域</th><th>最佳部署</th></tr></thead><tbody><tr><td>8B FP16（16GB）</td><td>1 卡</td><td>一卡多实例</td></tr><tr><td>70B FP16（140GB）</td><td>2–4 卡</td><td>8 卡机内 TP=4，留显存给 KV</td></tr><tr><td><strong>200B MoE FP8（200GB）</strong></td><td>3 卡（下限）</td><td><strong>8 卡 H800/H200，TP=8</strong></td></tr><tr><td>671B FP8（670GB）</td><td>9 卡 → 必须跨域</td><td>TP=8×EP 跨机 RDMA，或 NVL72 单域</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>A.8.2 国产卡对照（2025–2026，数字随发布快速变化）</h2>
+<blockquote><p>数据为公开资料汇总（华为全联接大会 2025、行业研报），纸面参数与量产能差距，</p><p><strong>选型必须实测，不能抄表。</strong></p></blockquote>
+<h3>主要厂商与软件栈</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>厂商</th><th>代表卡</th><th>路线</th><th>软件栈</th><th>对 CUDA 生态</th></tr></thead><tbody><tr><td><strong>华为昇腾</strong></td><td>910B / 910C / 950PR·DT</td><td>NPU（ASIC）</td><td>CANN + MindIE；vLLM/SGLang 有 Ascend 后端</td><td>不兼容，迁移成本最高但生态最全</td></tr><tr><td><strong>寒武纪</strong></td><td>思元 590 / 690</td><td>MLU 专用 AI 芯片</td><td>NeuWare</td><td>独立栈，推理落地多</td></tr><tr><td><strong>沐曦</strong></td><td>曦云 C500/C600</td><td>通用 GPU</td><td>MXMACA</td><td><strong>CUDA 高兼容</strong>，迁移最容易</td></tr><tr><td><strong>海光</strong></td><td>深算 K100/K200（DCU）</td><td>GPGPU（类 ROCm）</td><td>DTK</td><td>类 CUDA，HPC/政企多</td></tr><tr><td><strong>昆仑芯</strong>（百度）</td><td>R200 / P800</td><td>XPU</td><td>自研栈</td><td>文心/搜索推理验证充分</td></tr><tr><td>摩尔线程/壁仞/燧原/天数</td><td>S4000 / BR 系列 / 邃思</td><td>GPGPU/ASIC</td><td>MUSA 等</td><td>各有生态，规模较小</td></tr></tbody></table></div>
+<h3>关键参数（与 H800 同口径粗比）</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>卡</th><th>FP16 算力</th><th>FP8</th><th>显存</th><th>备注</th></tr></thead><tbody><tr><td>H800（参照）</td><td>990 TF</td><td>1,979 TF</td><td>80GB / 3.35TB/s</td><td>互联砍到 400GB/s</td></tr><tr><td>昇腾 910B</td><td>~320–400 TF</td><td><strong>无</strong></td><td>64GB HBM2e</td><td>当前政企出货主力</td></tr><tr><td>昇腾 910C</td><td>~800 TF</td><td>无（950 才有）</td><td>128GB</td><td>双 die 合封</td></tr><tr><td>昇腾 950PR（推理）/950DT（训练）</td><td>~1 PF 级（FP8）</td><td><strong>有</strong>（含自研 HiF8）</td><td>950DT HBM 带宽 ~4TB/s</td><td>2025-09 发布，2026 量产</td></tr><tr><td>寒武纪 思元 590</td><td>~345 TF</td><td>部分支持</td><td>96GB</td><td>互联网推理采购多</td></tr><tr><td>寒武纪 思元 690</td><td>700+ TF</td><td>有</td><td>196GB HBM3</td><td>4nm Chiplet，纸面旗舰</td></tr><tr><td>沐曦 C600</td><td>500 TF</td><td>有</td><td>144GB HBM3e</td><td>2026 新旗舰</td></tr><tr><td>昆仑芯 P800</td><td>~345 TF</td><td>有</td><td>96GB HBM3</td><td>百度生态</td></tr></tbody></table></div>
+<h3>国产"NVLink 域"对应物</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>机内互联</th><th>超节点（机柜级域）</th></tr></thead><tbody><tr><td>NVIDIA</td><td>NVLink/NVSwitch，8 卡域</td><td>NVL72（72 卡）</td></tr><tr><td><strong>华为昇腾</strong></td><td><strong>HCCS</strong>，Atlas 800 服务器 8 卡</td><td><strong>CloudMatrix 384（Atlas 950）：384 颗 910C 经 UnifiedBus 全互联</strong>，对标 NVL72，已原生支持 DeepSeek V3/R1</td></tr><tr><td>其他国产卡</td><td>多为 PCIe + 标准 RoCE 以太网</td><td>暂无同等规模商用超节点，跨机靠网络</td></tr></tbody></table></div>
+<h3>用我们的架构语言评估国产卡</h3>
+<ol><li><strong>权重装得下吗</strong>：200B FP8 = 200GB；910 系列无 FP8，BF16 要 400GB——</li></ol>
+<p>   8×910C（128GB×8=1TB）装得下，但<strong>留给 KV 的比例下降，并发会话数变少</strong>，要重算容量；</p>
+<ol><li><strong>decode 看带宽</strong>：重点对比 HBM 带宽而非算力，910B 带宽约为 H800 的一半量级，</li></ol>
+<p>   单 token 成本要按实测重算，不能直接套用 3,490 tok/s 的上限；</p>
+<ol><li><strong>引擎</strong>：PagedAttention/连续批处理/前缀缓存不是免费的——需要厂商 kernel 适配。</li></ol>
+<p>   昇腾走 MindIE 或 vllm-ascend，成熟度和 SGLang 特性（RadixAttention）可能滞后；</p>
+<ol><li><strong>网络</strong>：只有华为有 UB 这种机柜级域；其他家的 EP 跨机依赖无损 RoCE（§A.6 全套照样要配）；</li><li><strong>采购策略</strong>：合规要求国产卡时，建议 <strong>H800 池与国产池双栈、网关层按模型路由</strong>，</li></ol>
+<p>   用同一套 SLO（TTFT/TPOT/单 token 成本）做 A/B，而不是假设两边等价。</p>
+<p>来源：华为全联接大会 2025 路线图报道（<a href="https://www.eet-china.com/mp/a486527.html">电子工程专辑</a>、<a href="https://cloud.tencent.com.cn/developer/article/2643177">腾讯云</a>）、国产卡参数汇总（<a href="https://www.iotdt.com/news/xingyezixun/2693.html">物联网百科</a>，厂商博客性质需交叉验证）、CloudMatrix 384 论文（<a href="https://ar5iv.labs.arxiv.org/html/2506.12708">arXiv:2506.12708</a>）。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>A.8.3 失败模式：并行最容易在哪坏</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>NCCL hang，无报错</td><td>拓扑不匹配 / MTU 不一致</td><td><code>nccl-tests</code> 卡在 init；<code>nvidia-smi topo -m</code></td><td>统一 MTU 9000，按 rail 建环</td></tr><tr><td>all-to-all 只有理论值 1/5</td><td>EP 跨 rail、PFC 风暴</td><td>IB 端口 <code>port_xmit_discards</code> 告警</td><td>双平面 + 专家按 rail 放置</td></tr><tr><td>TP 从 8 扩到 16 无加速</td><td>出了 NVLink 域</td><td><code>topo -m</code> 显示 <code>SYS</code></td><td>回到 TP≤8，跨机用 PP/EP</td></tr><tr><td>训练与推理互相拖慢</td><td>共用一张 IB 网</td><td>PFC pause 计数飙升</td><td>训练/推理分平面</td></tr><tr><td>decode 吞吐只有理论 60%</td><td>all-to-all 与 KV 读抢带宽</td><td>nsys 里 memcpy 占比过半</td><td>调 EP 度，换 EP8/TP8 组合</td></tr></tbody></table></div>
+<p>复算见 <code>labs/pd_cost_lab.py</code>（不同并行度下的吞吐与成本）。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>A.9 自测</h2>
+<ol><li>TP=8 时，一个线性层要做几次 all-reduce？为什么 TP 一般不跨机？</li><li>EP 的 all-to-all 传的是什么？为什么它是 MoE 推理的瓶颈？</li><li>all-reduce 和 all-to-all 的区别，用一句话说清。</li><li>2:4 稀疏的"2 倍"为什么在 decode 上拿不到？</li><li>什么情况下 MoE 反而不如稠密模型划算？</li></ol>
+<details><summary>参考答案</summary>
+<ol><li>每层 1 次（前向），因为要把各卡的部分和加起来；跨机 all-reduce 走 IB，带宽只有 NVLink 的 1/8，延迟高，所以 TP 限制在机内。</li><li>传 token 的隐藏状态（dispatch 送去专家，combine 送回结果）；量大、突发、跨机，且专家分布不均会加剧拥塞。</li><li>all-reduce 是"大家求和后人人都有全量结果"；all-to-all 是"人人把不同的数据发给不同的人"，本质是转置。</li><li>decode 受显存带宽限制，算力闲置率本就 &gt;80%（MFU &lt;10%）；稀疏只省算力、不省带宽，所以加速有限。</li><li>batch 小、网络差、延迟敏感、专家负载严重不均时，MoE 的通信和调度开销会吃掉算力优势。</li></ol>
+</details>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>A.10 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：并行的本质是&quot;用通信换显存和算力&quot;，TP 走 NVLink、EP 走 all-to-all、PP 走 P2P。
+我算的：TP8 后每卡权重 200 GB / 8 = 25 GB，剩 55 GB 给 KV。
+我原来以为…实际…差在：以为并行度越高越快，实际超过 NVLink 域（8 卡）后 all-reduce 走 IB，延迟涨 8 倍，扩卡反而变慢。
+还没懂：EP 的专家放置与 rail 拓扑怎么联合优化。</code></pre></figure>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="08-request-journey.html"><span>上一章</span><b>08 · 一次请求的完整旅程</b></a><a class="nav-next" href="10-inference-engine.html"><span>下一章</span><b>10 · 推理引擎：PagedAttention 与连续批处理</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

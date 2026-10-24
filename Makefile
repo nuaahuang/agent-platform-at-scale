@@ -1,10 +1,11 @@
 PY ?= python3
 
-.PHONY: help labs serve check style style-strict clean
+.PHONY: help labs serve check style style-strict html open clean
 
 help:
 	@echo "make style   检查硬底线（CI 用）"
 	@echo "make style-strict  终稿检查：密度不足也算失败"
+	@echo "make open    生成 HTML 并在浏览器打开"
 	@echo "make labs    跑全部实验脚本"
 	@echo "make serve   起 walking skeleton 网关 (8080)"
 	@echo "make check   语法检查"
@@ -18,6 +19,12 @@ style:
 
 style-strict:
 	$(PY) tools/check_style.py --strict
+
+html:
+	$(PY) tools/build_site.py
+
+open: html
+	open docs/index.html
 
 serve:
 	$(PY) platform/gateway.py --port 8080
