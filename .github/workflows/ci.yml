@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  labs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 语法检查
+        run: python -m compileall -q labs platform
+
+      - name: 跑全部实验（数字必须可复算）
+        run: |
+          for f in labs/*.py; do echo "== $f"; python "$f" >/dev/null; done
+
+      - name: 冒烟测试网关
+        run: |
+          python platform/gateway.py --port 8099 &
+          sleep 1
+          curl -sf http://127.0.0.1:8099/healthz
+          curl -sfN --max-time 5 "http://127.0.0.1:8099/v1/chat?tenant=ci&q=hi" | head -5
