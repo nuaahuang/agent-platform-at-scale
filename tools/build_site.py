@@ -35,12 +35,13 @@ def join_lines(buf):
 
 
 def inline(s):
+    s = s.replace("<br>", "\x00BR\x00").replace("<br/>", "\x00BR\x00")
     s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     s = re.sub(r"`([^`]+)`", lambda m: f"<code>{m.group(1)}</code>", s)
     s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>', s)
     s = re.sub(r"\*\*([^*]+)\*\*", lambda m: f"<strong>{m.group(1)}</strong>", s)
     s = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", lambda m: f"<em>{m.group(1)}</em>", s)
-    return s
+    return s.replace("\x00BR\x00", "<br>")
 
 
 def parse(lines):
@@ -421,7 +422,7 @@ TEMPLATE = """<!DOCTYPE html>
     </div>
   </aside>
   <main class="content">
-    <article class="prose">{{BODY}}</article>
+    <article class="prose{{WIDE}}">{{BODY}}</article>
     {{NAV}}
     <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
   </main>
@@ -517,6 +518,9 @@ em{font-style:italic;color:var(--ink-soft)}
 /* 正文 */
 .content{padding:0 44px 80px 56px;min-width:0}
 .prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
 .ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
 .ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
   line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;

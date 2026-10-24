@@ -64,6 +64,9 @@ em{font-style:italic;color:var(--ink-soft)}
 /* 正文 */
 .content{padding:0 44px 80px 56px;min-width:0}
 .prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
 .ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
 .ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
   line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
@@ -221,7 +224,7 @@ blockquote p{margin:.4em 0}
     </div>
   </aside>
   <main class="content">
-    <article class="prose"><header class="ch-head"><div class="ch-ghost">08</div><div class="ch-kicker">推理工程</div><h1>一次请求的完整旅程</h1><div class="ch-rule"></div></header>
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">08</div><div class="ch-kicker">推理工程</div><h1>一次请求的完整旅程</h1><div class="ch-rule"></div></header>
 <blockquote><p>迁移自 v1 <code>ch01-request-journey.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../../MIGRATION.md">../../MIGRATION.md</a>。</p></blockquote>
 <blockquote><p><strong>一句话结论</strong>：架构不是一张框图，是<strong>一条请求的时间线</strong>。</p><p>你能把这条线上一共几跳、每跳多少毫秒、钱花在哪一跳说清楚，架构就入门了。</p></blockquote>
 <div class="orn"></div>

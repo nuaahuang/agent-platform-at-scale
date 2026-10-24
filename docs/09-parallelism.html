@@ -64,6 +64,9 @@ em{font-style:italic;color:var(--ink-soft)}
 /* 正文 */
 .content{padding:0 44px 80px 56px;min-width:0}
 .prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
 .ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
 .ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
   line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
@@ -221,7 +224,7 @@ blockquote p{margin:.4em 0}
     </div>
   </aside>
   <main class="content">
-    <article class="prose"><header class="ch-head"><div class="ch-ghost">09</div><div class="ch-kicker">推理工程</div><h1>并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all）</h1><div class="ch-rule"></div></header>
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">09</div><div class="ch-kicker">推理工程</div><h1>并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all）</h1><div class="ch-rule"></div></header>
 <blockquote><p>迁移自 v1 <code>ch02a-parallelism.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../../MIGRATION.md">../../MIGRATION.md</a>。</p></blockquote>
 <blockquote><p>这是第 02 章的必备前置。读不懂 all-to-all，就不可能真正理解 MoE 推理为什么贵。</p></blockquote>
 <div class="orn"></div>

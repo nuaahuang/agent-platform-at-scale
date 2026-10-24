@@ -64,6 +64,9 @@ em{font-style:italic;color:var(--ink-soft)}
 /* 正文 */
 .content{padding:0 44px 80px 56px;min-width:0}
 .prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
 .ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
 .ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
   line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
@@ -221,7 +224,7 @@ blockquote p{margin:.4em 0}
     </div>
   </aside>
   <main class="content">
-    <article class="prose"><header class="ch-head"><div class="ch-ghost">01</div><div class="ch-kicker">方法篇</div><h1>规模、SLO 与经济红线</h1><div class="ch-rule"></div></header>
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">01</div><div class="ch-kicker">方法篇</div><h1>规模、SLO 与经济红线</h1><div class="ch-rule"></div></header>
 <aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>2000 万 DAU 到底要多少卡？</li><li>三层 SLO 分别由谁负责、违约长什么样？</li><li>每轮 0.52 分是怎么算出来的，什么情况下会变成 1 分？</li></ol></aside>
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：三个数字决定这个系统能不能做</h2>
@@ -240,7 +243,7 @@ blockquote p{margin:.4em 0}
 <p>所以 SLO 必须<strong>同时写清"谁让步"</strong>：默认顺序是 <strong>成本 &lt; 体验 &lt; 可用性</strong>，即宁可多花钱也不能不可用，但宁可慢一点也不能超预算。这个顺序要写进 ADR，否则每次故障复盘都会变成扯皮。</p>
 <h3>2.1 先把四个词定死：SLI / SLO / SLA / 错误预算</h3>
 <p>这四行业最常混用的词，本书用法如下——后面 39 章不再重复解释。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>词</th><th>是什么</th><th>本书的例子</th><th>常见误用</th></tr></thead><tbody><tr><td><strong>SLI</strong>（指标）</td><td>实际测出来的数</td><td>TTFT p95 = 780 ms</td><td>把"目标"当指标</td></tr><tr><td><strong>SLO</strong>（目标）</td><td>对 SLI 的内部目标值</td><td>TTFT p95 ≤ 800 ms</td><td>写成"尽量快"</td></tr><tr><td><strong>SLA</strong>（承诺）</td><td>对外合同，违约要赔</td><td>月可用性 ≥ 99.9%，否则赔 10% 月费</td><td>拿 SLO 当 SLA 对外承诺</td></tr><tr><td><strong>错误预算</strong></td><td>允许失败的额度 = 1 − SLO</td><td>99.9% → 每月 43.2 分钟 / 1,810 万次失败</td><td>当成"可以随便用"</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>词</th><th>是什么</th><th>本书的例子</th><th>常见误用</th></tr></thead><tbody><tr><td><strong>SLI</strong><br><em>Service Level Indicator</em>（指标）</td><td>实际测出来的数</td><td>TTFT p95 = 780 ms</td><td>把"目标"当指标</td></tr><tr><td><strong>SLO</strong><br><em>Service Level Objective</em>（目标）</td><td>对 SLI 的内部目标值</td><td>TTFT p95 ≤ 800 ms</td><td>写成"尽量快"</td></tr><tr><td><strong>SLA</strong><br><em>Service Level Agreement</em>（承诺）</td><td>对外合同，违约要赔</td><td>月可用性 ≥ 99.9%，否则赔 10% 月费</td><td>拿 SLO 当 SLA 对外承诺</td></tr><tr><td><strong>错误预算</strong><br><em>Error Budget</em></td><td>允许失败的额度 = 1 − SLO</td><td>99.9% → 每月 43.2 分钟 / 1,810 万次失败</td><td>当成"可以随便用"</td></tr></tbody></table></div>
 <p>错误预算的算法（以本系统为例）：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>月总请求 = 7000 QPS × 2,592,000 s = 1.81e10 次
 允许失败 = 1.81e10 × 0.1%            = 1,810 万次
