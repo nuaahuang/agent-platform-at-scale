@@ -3,11 +3,10 @@
 > **从一张卡到一亿用户。**
 > 一套从 GPU 物理到 Token 计费的完整工程方案，写给要自建 Agent 平台的人。
 
-[![CI](https://github.com/USER/agent-platform-at-scale/actions/workflows/ci.yml/badge.svg)](https://github.com/USER/agent-platform-at-scale/actions)
+[![CI](https://github.com/nuaahuang/agent-platform-at-scale/actions/workflows/ci.yml/badge.svg)](https://github.com/nuaahuang/agent-platform-at-scale/actions)
 ![chapters](https://img.shields.io/badge/chapters-4%2F40-yellow)
 ![license](https://img.shields.io/badge/license-MIT%20%2B%20CC%20BY--SA%204.0-blue)
 
-<!-- 发布前把上面两个 USER 换成你的 GitHub 用户名或组织名 -->
 
 ---
 
