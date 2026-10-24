@@ -1,8 +1,9 @@
 PY ?= python3
 
-.PHONY: help labs serve check clean
+.PHONY: help labs serve check style clean
 
 help:
+	@echo "make style   检查章节写作标准"
 	@echo "make labs    跑全部实验脚本"
 	@echo "make serve   起 walking skeleton 网关 (8080)"
 	@echo "make check   语法检查"
@@ -10,6 +11,9 @@ help:
 labs:
 	@for f in labs/*.py; do echo "== $$f"; $(PY) $$f >/dev/null || exit 1; done
 	@echo "all labs OK"
+
+style:
+	$(PY) tools/check_style.py
 
 serve:
 	$(PY) platform/gateway.py --port 8080

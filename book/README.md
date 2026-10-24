@@ -1,6 +1,6 @@
 # 正文
 
-40 章，12 部分。目录与进度见 [OUTLINE.md](OUTLINE.md)。
+40 章，12 部分。写作标准见 [STYLE.md](STYLE.md)，提交前跑 `make style`。目录与进度见 [OUTLINE.md](OUTLINE.md)。
 
 ## 写作约定
 

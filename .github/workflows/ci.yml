@@ -16,6 +16,9 @@ jobs:
       - name: 语法检查
         run: python -m compileall -q labs platform
 
+      - name: 章节写作标准（STYLE.md）
+        run: python tools/check_style.py
+
       - name: 跑全部实验（数字必须可复算）
         run: |
           for f in labs/*.py; do echo "== $f"; python "$f" >/dev/null; done

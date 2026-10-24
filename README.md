@@ -78,17 +78,22 @@
 
 ```
 book/          40 章正文（按 12 部分分目录）
+  STYLE.md     写作标准（数字密度、必须小节、禁止词）
+  appendix/    附录（模型物理速查）
 labs/          可复算脚本（容量/成本/缓存/PD）
 platform/      walking skeleton：网关 + mock 引擎（SSE）
+tools/         写作标准检查器
 deploy/        K8s / Helm / ArgoCD 清单
 benchmarks/    压测脚本与报告
 adr/           架构决策记录
-docs/assets/   图
 ```
 
 ## 快速开始
 
 ```bash
+# 0) 检查写作标准（每章必须过关）
+make style
+
 # 1) 算一遍容量与成本（纯标准库，无需依赖）
 python3 labs/calc.py
 python3 labs/pd_cost_lab.py
@@ -105,12 +110,27 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 | 阶段 | 状态 |
 |---|---|
 | 目录定稿（40 章） | ✅ |
-| 正文 | 🚧 4/40（v1 草稿，正在按新编号重切） |
+| 写作标准 + 自动检查 | ✅ `book/STYLE.md` + `make style` |
+| 正文 | ✅ 4/40（第 8–11 章）+ 附录 A |
 | labs | ✅ 6 个可运行 |
 | platform skeleton | ✅ 网关 + mock 引擎 |
 | deploy / benchmarks | ⏳ |
 
 ---
+
+## 写作标准（不达标不合并）
+
+| 指标 | 阈值 | 实测中位数 |
+|---|---|---|
+| 数字密度 | ≥45 个/百行 | 71 |
+| 表格行 | ≥25 | 80 |
+| 代码/ASCII 图 | ≥3 | 10 |
+| 小标题 | ≥10 | 21 |
+| 正文字数 | ≥5000 | 8000 |
+
+外加：禁止"赋能/抓手/大幅/显著"；每个选型必须写"否了什么"与"推翻条件"；
+每章必须含 问题 / 原理 / 设计 / 数字 / 失败模式 / 验收 / 复盘卡。
+细则见 [book/STYLE.md](book/STYLE.md)，检查器 `python3 tools/check_style.py`。
 
 ## 如何参与
 
