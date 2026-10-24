@@ -106,7 +106,7 @@ def main() -> int:
     strict = "--strict" in sys.argv
     files = [Path(a) for a in args] if args else sorted(
         p for p in Path("book").rglob("*.md")
-        if p.name not in {"README.md", "STYLE.md", "OUTLINE.md", "OUTLINE-v3.md", "MIGRATION.md"}
+        if p.name not in {"README.md", "STYLE.md", "OUTLINE.md", "OUTLINE-v3.md", "MIGRATION.md", "GLOSSARY.md"}
     )
     if not files:
         print("没有找到章节文件"); return 0

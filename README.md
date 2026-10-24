@@ -120,6 +120,9 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 
 ## 在线阅读
 
+查词：[术语表](book/GLOSSARY.md)（索引式，不替代章节）。
+
+
 排版版（宋体正文 · 语义组件 · 暗色模式）：**https://nuaahuang.github.io/agent-platform-at-scale/**
 
 ```bash

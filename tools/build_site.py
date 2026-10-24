@@ -200,7 +200,7 @@ def render(blocks, meta):
             lvl, text = b[1], b[2]
             if lvl == 1:
                 out.append(
-                    f'<header class="ch-head"><div class="ch-ghost">{meta["num"]}</div>'
+                    f'<header class="ch-head"><div class="ch-ghost">{(meta["num"] if meta["num"] != "G" else "§")}</div>'
                     f'<div class="ch-kicker">{meta["part"]}</div>'
                     f'<h1>{inline(meta["title"])}</h1>'
                     f'<div class="ch-rule"></div></header>'
@@ -318,7 +318,12 @@ def page(meta, body, toc, prev=None, next_=None):
         nx = f'<a class="nav-next" href="{next_[1]}"><span>下一章</span><b>{next_[0]}</b></a>' if next_ else "<i></i>"
         nav = f'<nav class="pager">{p}{nx}</nav>'
 
-    crumb = f'{meta["part"]} · 第 {meta["num"]} 章' if meta["num"].isdigit() else f'{meta["part"]} {meta["num"]}'
+    if meta["num"] == "G":
+        crumb = "参考 · 术语表"
+    elif meta["num"].isdigit():
+        crumb = f'{meta["part"]} · 第 {meta["num"]} 章'
+    else:
+        crumb = f'{meta["part"]} {meta["num"]}'
     return TEMPLATE.replace("{{TITLE}}", html.escape(meta["title"])).replace(
         "{{CSS}}", CSS
     ).replace("{{NUM}}", meta["num"]).replace("{{PART}}", meta["part"]).replace("{{CRUMB}}", crumb).replace(
@@ -348,7 +353,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     files = [Path(a) for a in args] if args else sorted(
         p for p in (ROOT / "book").rglob("*.md")
-        if p.name not in {"README.md", "STYLE.md", "OUTLINE.md", "OUTLINE-v3.md", "MIGRATION.md"}
+        if p.name not in {"README.md", "STYLE.md", "OUTLINE.md", "OUTLINE-v3.md", "MIGRATION.md", "GLOSSARY.md"}
     )
     OUT.mkdir(exist_ok=True)
     metas = []
@@ -368,9 +373,23 @@ def main():
         (OUT / m["file"]).write_text(page(m, m["html"], m["toc"], prev, nxt), encoding="utf-8")
         print(f"  + docs/{m['file']}")
 
-    (OUT / "index.html").write_text(build_index([(m, m["file"]) for m in metas]), encoding="utf-8")
+    entries = [(m, m["file"]) for m in metas]
+
+    gl = ROOT / "book" / "GLOSSARY.md"
+    if gl.exists():
+        gmeta = {"num": "G", "title": "术语表", "part": "参考", "raw": gl.read_text(encoding="utf-8")}
+        gblocks = parse(gmeta["raw"].split("\n"))
+        gmeta["html"] = render(gblocks, gmeta)
+        gmeta["toc"] = build_toc(gblocks)
+        gmeta["chars"] = len(re.sub(r"\s", "", gmeta["raw"]))
+        gmeta["file"] = "glossary.html"
+        (OUT / gmeta["file"]).write_text(page(gmeta, gmeta["html"], gmeta["toc"]), encoding="utf-8")
+        print(f"  + docs/{gmeta['file']}")
+        entries.append((gmeta, gmeta["file"]))
+
+    (OUT / "index.html").write_text(build_index(entries), encoding="utf-8")
     (OUT / ".nojekyll").write_text("", encoding="utf-8")
-    print(f"  + docs/index.html  （{len(metas)} 章）")
+    print(f"  + docs/index.html  （{len(entries)} 页）")
 
     if "--open" in sys.argv:
         import subprocess
