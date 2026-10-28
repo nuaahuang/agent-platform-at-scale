@@ -44,6 +44,9 @@
 | **MBU** | Memory Bandwidth Utilization | 实际带宽 ÷ 峰值带宽 | decode 60%–70% | 与 MFU 混用 |
 | **投机解码** | Speculative Decoding | 小模型草稿 + 大模型校验 | 接受率 60%–80%，提速 1.5–2× | 以为无损（分布会偏） |
 | **MoE / 激活参数** | Mixture of Experts | 总参数大、每 token 只走部分专家 | 200B 总 / 30B 激活 | 用总参数算算力 |
+| **SWA** | Sliding Window Attention | 只对最近 W 个 token 做注意力 | 深求保留 140 token 重算 | 以为能省 decode（它省 prefill） |
+| **DSpark** | Confidence-Scheduled Speculative Decoding | 半自回归草稿 + 置信度调度验证 | 验证 token −30%，吞吐 +4%–7% | 以为买的是吞吐（其实买交互性） |
+| **EPLB** | Expert Parallel Load Balancer | 按热度重排专家，压 all-to-all 热点 | 专家负载在线均衡 | 与 TP 混为一谈 |
 | **Roofline** | Roofline Model | 算力与带宽的瓶颈分界 | 脊点 590 FLOP/Byte | 以为 GPU 永远算力受限 |
 
 ## C. 平台与工程
@@ -62,6 +65,7 @@
 | **降级** | Graceful Degradation | 主路径不可用时走次优路径 | 降级率 <5% | 降级后不监控 |
 | **限流** | Rate Limiting | 主动丢弃超出配额的请求 | 令牌桶 3 QPS/用户 | 只在网关限，不管下游 |
 | **幂等** | Idempotency | 同一请求重放结果不变 | 幂等键 = 会话+轮次 | 靠"应该不会重复" |
+| **批不变性** | Batch Invariance | 换 batch 组合结果不变 | 评测与回放才可复现 | 以为只是"随机种子"问题 |
 | **RPO / RTO** | Recovery Point / Time Objective | 能丢多少数据 / 多久恢复 | RPO ≤ 5 min，RTO ≤ 30 min | 只做备份不做恢复演练 |
 
 ## D. 成本与运营
