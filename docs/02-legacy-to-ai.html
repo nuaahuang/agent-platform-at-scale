@@ -381,6 +381,7 @@ func classify(m Snapshot) Class {
 <div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>耗时</th><th>能优化吗</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>用预留池</td></tr><tr><td>镜像拉取</td><td>30–60 s</td><td>预置镜像</td></tr><tr><td><strong>权重加载 400 GB</strong></td><td>3–5 min</td><td>P2P 分发、本地 NVMe 缓存</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>冷启动预热脚本</td></tr><tr><td><strong>合计</strong></td><td><strong>8–10 min</strong></td><td>最优可压到 3–4 min</td></tr></tbody></table></div>
 <p>推论：<strong>容量是阶梯，不是滑杆</strong>。2512 卡扩 10% 是 251 卡 ≈ 31 个 TP8 实例，一次性要加载 31 × 400 GB = 12.4 TB——存储带宽会先成为瓶颈。</p>
 <blockquote><p>这就是第 33 章要讲"预热池"的原因：<strong>你不可能等它扩，只能提前准备好。</strong></p></blockquote>
+<p><strong>慢的物理原因不在这里，在下一层</strong>：为什么必须整卡 8 张、为什么镜像 8–15 GB、为什么驱动不能进容器——这些是 K8s 与 GPU 运行时决定的，展开见 <strong>第 32 章</strong>。本章只记结论：<strong>容量是阶梯</strong>。</p>
 <h3>8.2 案例二：一次重试有多贵</h3>
 <p>传统服务重试：CPU 空闲时成本接近 0。</p>
 <p>LLM 重试：<strong>要把整段上下文重新 prefill 一遍</strong>。</p>
@@ -438,7 +439,7 @@ func classify(m Snapshot) Class {
 </section>
 <section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 这张表在后面怎么用</h2>
 <p>本章是坐标系，后面每一章都对应表里的一格：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>判定为"失效/变形"的项</th><th>哪一章解决</th><th>那一章给什么</th></tr></thead><tbody><tr><td>无状态 → 路由亲和</td><td>23 网关</td><td>会话粘性与亲和路由</td></tr><tr><td>削峰 → 准入控制</td><td>25 背压</td><td>五道闸与拒绝语义</td></tr><tr><td>限流 → token 维度</td><td>25 背压</td><td>双维度限流公式</td></tr><tr><td>缓存 → KV 前缀</td><td>10 引擎 / 26 缓存</td><td>RadixAttention、命中率</td></tr><tr><td>多活 → 多 cell</td><td>34 高可用</td><td>cell 划分与切流</td></tr><tr><td>重试 → 预算化</td><td>24 契约</td><td>错误码与重试预算</td></tr><tr><td>灰度 → 三套版本</td><td>36 灰度</td><td>版本矩阵</td></tr><tr><td>扩容 → 预热池</td><td>33 弹性</td><td>预热池容量模型</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>判定为"失效/变形"的项</th><th>哪一章解决</th><th>那一章给什么</th></tr></thead><tbody><tr><td>无状态 → 路由亲和</td><td>23 网关</td><td>会话粘性与亲和路由</td></tr><tr><td>削峰 → 准入控制</td><td>25 背压</td><td>五道闸与拒绝语义</td></tr><tr><td>限流 → token 维度</td><td>25 背压</td><td>双维度限流公式</td></tr><tr><td>缓存 → KV 前缀</td><td>10 引擎 / 26 缓存</td><td>RadixAttention、命中率</td></tr><tr><td>多活 → 多 cell</td><td>34 高可用</td><td>cell 划分与切流</td></tr><tr><td>重试 → 预算化</td><td>24 契约</td><td>错误码与重试预算</td></tr><tr><td>灰度 → 三套版本</td><td>36 灰度</td><td>版本矩阵</td></tr><tr><td>扩容 → 预热池</td><td>33 弹性</td><td>预热池容量模型</td></tr><tr><td>扩容为什么是阶梯</td><td>32 K8s 与 GPU 调度</td><td>整卡分配、镜像分层、权重加载</td></tr></tbody></table></div>
 <p>读到这里不必记住细节，只要记住<strong>每一格都有一章接住它</strong>。</p>
 <div class="orn"></div>
 </section>
