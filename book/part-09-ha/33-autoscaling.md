@@ -15,7 +15,7 @@
 ```
 9:00   1,736 QPS  →  620 卡
 9:05   指标越线，HPA 触发扩容
-9:15   第一批实例可用（8–10 分钟）
+9:15   第一批实例可用（7–10 分钟）
 9:20   流量到顶 7,000 QPS，需要 2,512 卡
        此刻只有约 1,400 卡 → 排队、TTFT 从 600 ms 涨到 4.2 s
 9:35   终于补齐，但峰值已经过去 15 分钟
@@ -34,16 +34,16 @@
 |---|---|---|---|
 | 节点开机（云上） | 3–5 min | 预留节点池，常备空机 | 0 |
 | 镜像拉取 | 8–15 GB，1–3 min | 本地缓存 + P2P 分发 | 20–30 s |
-| **权重加载 400 GB** | 3–5 min | 本地 NVMe + P2P 分发 | 2–3 min |
+| **权重加载 200 GB**（200B FP8） | 2–3 min | 本地 NVMe + P2P 分发 | 1–2 min |
 | 预热（跑几个请求） | 30 s | 健康检查通过即可 | 10 s |
-| **合计** | **8–15 min** | | **3–4 min** |
+| **合计** | **7–10 min** | | **3–4 min** |
 
 即使用尽所有优化手段，天花板也是 **3–4 分钟**。
 
 对比：流量从 1,736 涨到 7,000 只要 **20 分钟**，翻倍只要 **5 分钟**。
 
 > **物理约束决定：反应式扩容永远追不上快变流量。**
-> 这不是工程能力问题，是加载 400 GB 权重所需时间的问题。
+> 这不是工程能力问题，是加载 200 GB 权重所需时间的问题。
 
 ### 2.1 为什么"干脆多买 30% 卡"不是答案
 
@@ -390,8 +390,8 @@ func (r *WarmPoolReconciler) Reconcile(ctx context.Context, _ ctrl.Request) erro
 
 | 池 | 模型 | 权重 | 冷启动 | 可行策略 |
 |---|---|---|---|---|
-| prefill | 200B MoE | 400 GB | 8–15 min | **只能预测式** |
-| decode | 200B MoE | 400 GB | 8–15 min | **只能预测式** |
+| prefill | 200B MoE | 200 GB | 7–10 min | **只能预测式** |
+| decode | 200B MoE | 200 GB | 7–10 min | **只能预测式** |
 | lite | 8B | 16 GB | 1–2 min | 反应式可用 |
 
 **一条判据：冷启动 < 流量翻倍时间的 1/3，才可以考虑反应式。**
@@ -413,11 +413,11 @@ func (r *WarmPoolReconciler) Reconcile(ctx context.Context, _ ctrl.Request) erro
 | 3 | 改副本数 | KEDA → HPA | `kubectl get hpa -w` | `DESIRED` 变化 | 15 s |
 | 4 | 等节点 | Karpenter | `kubectl get node` | 节点 Ready | 3–5 min |
 | 5 | 等镜像 | kubelet | `kubectl describe pod` | 容器 Running | 20 s（有缓存） |
-| 6 | 等权重 | 容器内 | `kubectl logs -f` | 日志出现 `model loaded` | 3–5 min |
+| 6 | 等权重 | 容器内 | `kubectl logs -f` | 日志出现 `model loaded` | 2–3 min |
 | 7 | 探针通过 | kubelet | `kubectl get pod` | READY 1/1 | 20 s |
 | 8 | 接流量 | Endpoint Controller | — | `Endpoints` 里出现新 IP | 5 s |
 
-**第 6 步是最长的一步，也是唯一没法跳过的**——400 GB 权重必须真的进显存。
+**第 6 步是最长的一步，也是唯一没法跳过的**——200 GB 权重必须真的进显存。
 
 ### 10.1 紧急扩容：怎么绕过自动决策
 

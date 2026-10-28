@@ -231,7 +231,7 @@ blockquote p{margin:.4em 0}
 <p>电商售后 Agent 的早高峰：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>9:00   1,736 QPS  →  620 卡
 9:05   指标越线，HPA 触发扩容
-9:15   第一批实例可用（8–10 分钟）
+9:15   第一批实例可用（7–10 分钟）
 9:20   流量到顶 7,000 QPS，需要 2,512 卡
        此刻只有约 1,400 卡 → 排队、TTFT 从 600 ms 涨到 4.2 s
 9:35   终于补齐，但峰值已经过去 15 分钟</code></pre></figure>
@@ -240,10 +240,10 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三个物理约束：为什么快不了</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>耗时</th><th>能否优化</th><th>优化后</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>预留节点池，常备空机</td><td>0</td></tr><tr><td>镜像拉取</td><td>8–15 GB，1–3 min</td><td>本地缓存 + P2P 分发</td><td>20–30 s</td></tr><tr><td><strong>权重加载 400 GB</strong></td><td>3–5 min</td><td>本地 NVMe + P2P 分发</td><td>2–3 min</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>健康检查通过即可</td><td>10 s</td></tr><tr><td><strong>合计</strong></td><td><strong>8–15 min</strong></td><td></td><td><strong>3–4 min</strong></td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>耗时</th><th>能否优化</th><th>优化后</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>预留节点池，常备空机</td><td>0</td></tr><tr><td>镜像拉取</td><td>8–15 GB，1–3 min</td><td>本地缓存 + P2P 分发</td><td>20–30 s</td></tr><tr><td><strong>权重加载 200 GB</strong>（200B FP8）</td><td>2–3 min</td><td>本地 NVMe + P2P 分发</td><td>1–2 min</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>健康检查通过即可</td><td>10 s</td></tr><tr><td><strong>合计</strong></td><td><strong>7–10 min</strong></td><td></td><td><strong>3–4 min</strong></td></tr></tbody></table></div>
 <p>即使用尽所有优化手段，天花板也是 <strong>3–4 分钟</strong>。</p>
 <p>对比：流量从 1,736 涨到 7,000 只要 <strong>20 分钟</strong>，翻倍只要 <strong>5 分钟</strong>。</p>
-<blockquote><p><strong>物理约束决定：反应式扩容永远追不上快变流量。</strong></p><p>这不是工程能力问题，是加载 400 GB 权重所需时间的问题。</p></blockquote>
+<blockquote><p><strong>物理约束决定：反应式扩容永远追不上快变流量。</strong></p><p>这不是工程能力问题，是加载 200 GB 权重所需时间的问题。</p></blockquote>
 <h3>2.1 为什么"干脆多买 30% 卡"不是答案</h3>
 <p>一个直觉方案：峰值不是 7000 吗？按 1.3 倍备足，不就永远不用扩了？</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>卡数</th><th>年成本</th><th>结果</th></tr></thead><tbody><tr><td>多买 30% 常备</td><td>+754 卡</td><td><strong>+¥8,494 万</strong></td><td>永远够用，但 20 小时在闲置</td></tr><tr><td>短时预热池</td><td>+377 卡 × 6 h</td><td><strong>+¥1,062 万</strong></td><td>峰值前就位</td></tr></tbody></table></div>
@@ -422,15 +422,15 @@ spec:
 <div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>触发</th><th>谁</th><th>动作</th><th>累计容量</th></tr></thead><tbody><tr><td>8:20</td><td>日周期预测</td><td>cron（KEDA）</td><td>目标 251 副本 = 2,008 卡开始拉起</td><td>620</td></tr><tr><td>8:20–8:35</td><td>冷启动</td><td>Karpenter + 节点池</td><td>补节点、拉镜像、加载权重</td><td>1,200</td></tr><tr><td>8:50</td><td>—</td><td>—</td><td>权重全部就位，进程转热</td><td>2,008</td></tr><tr><td>9:00</td><td>流量起</td><td>—</td><td>1,736 QPS 起爬，容量已 ≥2,008</td><td>2,008</td></tr><tr><td>9:05</td><td>排队 &gt;64</td><td>KEDA + prometheus</td><td>预热池 377 卡补位（30 s）</td><td>2,385</td></tr><tr><td>9:20</td><td>峰值 7,000</td><td>—</td><td>最后 127 卡由冷池补，接受 3 min 延迟</td><td>2,512</td></tr><tr><td>9:20</td><td>验收</td><td>—</td><td>TTFT p95 = 610 ms，SLO 达成</td><td>—</td></tr></tbody></table></div>
 <p><strong>关键在 8:20 这一步</strong>：预测式把 15 分钟的冷启动藏在了流量到来之前。如果等到 9:00 才动，就是 §1 那个烧掉 30% 预算的时间轴。</p>
 <h3>9.5 异构池：能不能反应式，取决于模型多大</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>模型</th><th>权重</th><th>冷启动</th><th>可行策略</th></tr></thead><tbody><tr><td>prefill</td><td>200B MoE</td><td>400 GB</td><td>8–15 min</td><td><strong>只能预测式</strong></td></tr><tr><td>decode</td><td>200B MoE</td><td>400 GB</td><td>8–15 min</td><td><strong>只能预测式</strong></td></tr><tr><td>lite</td><td>8B</td><td>16 GB</td><td>1–2 min</td><td>反应式可用</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>模型</th><th>权重</th><th>冷启动</th><th>可行策略</th></tr></thead><tbody><tr><td>prefill</td><td>200B MoE</td><td>200 GB</td><td>7–10 min</td><td><strong>只能预测式</strong></td></tr><tr><td>decode</td><td>200B MoE</td><td>200 GB</td><td>7–10 min</td><td><strong>只能预测式</strong></td></tr><tr><td>lite</td><td>8B</td><td>16 GB</td><td>1–2 min</td><td>反应式可用</td></tr></tbody></table></div>
 <p><strong>一条判据：冷启动 &lt; 流量翻倍时间的 1/3，才可以考虑反应式。</strong></p>
 <p>200B 的 10 分钟 &gt; 5 分钟的 1/3，所以必须预测；8B 的 2 分钟 &lt; 5 分钟，反应式能跟上——<strong>这也是第 6 章"lite 模型"的隐藏价值：它不只是便宜，它还可以弹性。</strong></p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 实操：扩容的八个步骤</h2>
 <p>指标越线之后，到"新实例真的能接流量"，中间有八步。<strong>每一步都有判据，缺一步就会扩了个寂寞。</strong></p>
-<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>动作</th><th>谁做</th><th>命令 / 配置</th><th>判据</th><th>耗时</th></tr></thead><tbody><tr><td>1</td><td>判定要扩</td><td>KEDA</td><td>排队 &gt;64 连续 2 窗口</td><td><code>num_requests_waiting</code> 曲线</td><td>1 min</td></tr><tr><td>2</td><td>算扩多少</td><td>KEDA / 控制器</td><td><code>ceil(waiting/64)</code> 个副本</td><td>不超过 <code>maxReplicaCount</code></td><td>立即</td></tr><tr><td>3</td><td>改副本数</td><td>KEDA → HPA</td><td><code>kubectl get hpa -w</code></td><td><code>DESIRED</code> 变化</td><td>15 s</td></tr><tr><td>4</td><td>等节点</td><td>Karpenter</td><td><code>kubectl get node</code></td><td>节点 Ready</td><td>3–5 min</td></tr><tr><td>5</td><td>等镜像</td><td>kubelet</td><td><code>kubectl describe pod</code></td><td>容器 Running</td><td>20 s（有缓存）</td></tr><tr><td>6</td><td>等权重</td><td>容器内</td><td><code>kubectl logs -f</code></td><td>日志出现 <code>model loaded</code></td><td>3–5 min</td></tr><tr><td>7</td><td>探针通过</td><td>kubelet</td><td><code>kubectl get pod</code></td><td>READY 1/1</td><td>20 s</td></tr><tr><td>8</td><td>接流量</td><td>Endpoint Controller</td><td>—</td><td><code>Endpoints</code> 里出现新 IP</td><td>5 s</td></tr></tbody></table></div>
-<p><strong>第 6 步是最长的一步，也是唯一没法跳过的</strong>——400 GB 权重必须真的进显存。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>动作</th><th>谁做</th><th>命令 / 配置</th><th>判据</th><th>耗时</th></tr></thead><tbody><tr><td>1</td><td>判定要扩</td><td>KEDA</td><td>排队 &gt;64 连续 2 窗口</td><td><code>num_requests_waiting</code> 曲线</td><td>1 min</td></tr><tr><td>2</td><td>算扩多少</td><td>KEDA / 控制器</td><td><code>ceil(waiting/64)</code> 个副本</td><td>不超过 <code>maxReplicaCount</code></td><td>立即</td></tr><tr><td>3</td><td>改副本数</td><td>KEDA → HPA</td><td><code>kubectl get hpa -w</code></td><td><code>DESIRED</code> 变化</td><td>15 s</td></tr><tr><td>4</td><td>等节点</td><td>Karpenter</td><td><code>kubectl get node</code></td><td>节点 Ready</td><td>3–5 min</td></tr><tr><td>5</td><td>等镜像</td><td>kubelet</td><td><code>kubectl describe pod</code></td><td>容器 Running</td><td>20 s（有缓存）</td></tr><tr><td>6</td><td>等权重</td><td>容器内</td><td><code>kubectl logs -f</code></td><td>日志出现 <code>model loaded</code></td><td>2–3 min</td></tr><tr><td>7</td><td>探针通过</td><td>kubelet</td><td><code>kubectl get pod</code></td><td>READY 1/1</td><td>20 s</td></tr><tr><td>8</td><td>接流量</td><td>Endpoint Controller</td><td>—</td><td><code>Endpoints</code> 里出现新 IP</td><td>5 s</td></tr></tbody></table></div>
+<p><strong>第 6 步是最长的一步，也是唯一没法跳过的</strong>——200 GB 权重必须真的进显存。</p>
 <h3>10.1 紧急扩容：怎么绕过自动决策</h3>
 <p>大促前发现预测失灵，要手工抢时间。但直接 <code>scale</code> 会和 KEDA 打架——它下一轮就把你的改动覆盖掉。</p>
 <figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code># 1) 先暂停 KEDA 的自动决策（只是暂停，不是删除）

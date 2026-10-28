@@ -248,10 +248,11 @@ blockquote p{margin:.4em 0}
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 分配器：free list + block table</h2>
 <p>物理上 KV 按 <strong>16 token 一块</strong>切分（第 10 章 §4）。一个 TP8 实例的真实账：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>显存总量   8 × 80 GB = 640 GB
-权重       400 GB（200B MoE，FP8）
-KV 可用    240 GB
+权重       200 GB（200B MoE，FP8，1 byte/参数）
+激活+工作区 40 GB
+KV 可用    400 GB
 单块大小   16 token × 120 KB = 1.92 MB
-块总数     240 GB ÷ 1.92 MB ≈ 125,000 块</code></pre></figure>
+块总数     400 GB ÷ 1.92 MB ≈ 208,000 块</code></pre></figure>
 <p>分配器维护两个结构：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>结构</th><th>内容</th><th>作用</th></tr></thead><tbody><tr><td><strong>free list</strong></td><td>所有空闲块的物理编号</td><td>O(1) 取块</td></tr><tr><td><strong>block table</strong></td><td>每请求的"逻辑第 i 块 → 物理第 j 块"</td><td>支持不连续存放</td></tr></tbody></table></div>
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def allocate(seq, n_blocks):
@@ -280,7 +281,7 @@ KV 可用    240 GB
 <p><strong>最危险的默认值是"队列无上限"</strong>：流量翻倍时队列长到 5,000，TTFT 变成 30 分钟，所有请求都在等一个永远不会释放的块——成功率 100%，体验归零。</p>
 <h3>3.2 队列会不会满：上限怎么定，满了怎么办</h3>
 <p>先分清三种"放不下"，它们的行为完全不同：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>默认上限</th><th>满了的表现</th></tr></thead><tbody><tr><td>网关熔断器</td><td>1,024</td><td>503，<strong>快速返回</strong></td></tr><tr><td><strong>引擎 waiting 队列</strong></td><td><strong>无上限</strong></td><td><strong>不报错，延迟无限涨</strong></td></tr><tr><td>KV 块池</td><td>125,000 块</td><td>请求卡在 waiting</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>默认上限</th><th>满了的表现</th></tr></thead><tbody><tr><td>网关熔断器</td><td>1,024</td><td>503，<strong>快速返回</strong></td></tr><tr><td><strong>引擎 waiting 队列</strong></td><td><strong>无上限</strong></td><td><strong>不报错，延迟无限涨</strong></td></tr><tr><td>KV 块池</td><td>208,000 块</td><td>请求卡在 waiting</td></tr></tbody></table></div>
 <p><strong>关键：引擎队列不会"满"，它只会一直涨。</strong></p>
 <p>涨到进程 OOM 被 kill，所有在飞请求一起丢——这比"满了直接拒绝"糟糕一个量级。</p>
 <p>所以队列必须由我们自己设上限。定法是一条除法：</p>
@@ -419,8 +420,9 @@ eviction_rate                  淘汰速率      高 = 缓存太小或租户太�
 <h3>8.2 <code>max_num_seqs</code> 怎么定</h3>
 <p>它决定"一个 batch 最多装几个请求"，直接影响会不会频繁抢占：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>max_num_seqs</th><th>单实例并发</th><th>抢占频率</th><th>吞吐</th><th>TTFT</th></tr></thead><tbody><tr><td>64</td><td>低</td><td>几乎为 0</td><td>低（-35%）</td><td>好</td></tr><tr><td><strong>128</strong></td><td>中</td><td>低</td><td>中</td><td>好</td></tr><tr><td>256</td><td>高</td><td>偶发</td><td><strong>高</strong></td><td>一般</td></tr><tr><td>512</td><td>很高</td><td><strong>频繁</strong></td><td>反而下降</td><td>差</td></tr></tbody></table></div>
-<p>我们的账：240 GB KV ÷ 0.96 GB（8K 请求）= <strong>250 个上限</strong>，所以配 256 刚好贴着天花板——峰值时必然抢占。</p>
-<p><strong>建议配 200</strong>，留 20% 余量给长请求。</p>
+<p>我们的账：400 GB KV ÷ 0.96 GB（8K 请求）= <strong>416 个上限</strong>。</p>
+<p>配 256 时有 40% 余量，但<strong>长请求会吃掉它</strong>：一个 32K 请求占 3.84 GB = 4 个 8K 请求的额度。峰值时长请求占比升高，等效并发就会突破 416，于是开始抢占。</p>
+<p><strong>建议配 256，并把 32K 以上请求路由到独立池</strong>（第 11 章）。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>

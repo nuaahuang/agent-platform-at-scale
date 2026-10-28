@@ -375,11 +375,11 @@ func classify(m Snapshot) Class {
 <h3>8.1 案例一：加机器为什么是阶梯不是滑杆</h3>
 <p>传统服务扩容：多起一个 Pod，容量 +1/N，秒级生效。</p>
 <p>GPU 扩容的真实路径：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>申请机器 → 开机 → 拉镜像 → 加载 400 GB 权重 → 预热 → 可服务
-  30 s      3-5 min   1 min      3-5 min      30 s    ≈ 8-10 min</code></pre></figure>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>申请机器 → 开机 → 拉镜像 → 加载 200 GB 权重 → 预热 → 可服务
+  30 s      3-5 min   1 min      2-3 min      30 s    ≈ 7-10 min</code></pre></figure>
 <p>而且扩的不是"1 张卡"，是 <strong>TP8 = 8 卡一个实例</strong>——因为 200B 模型的权重切不开到单卡。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>耗时</th><th>能优化吗</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>用预留池</td></tr><tr><td>镜像拉取</td><td>30–60 s</td><td>预置镜像</td></tr><tr><td><strong>权重加载 400 GB</strong></td><td>3–5 min</td><td>P2P 分发、本地 NVMe 缓存</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>冷启动预热脚本</td></tr><tr><td><strong>合计</strong></td><td><strong>8–10 min</strong></td><td>最优可压到 3–4 min</td></tr></tbody></table></div>
-<p>推论：<strong>容量是阶梯，不是滑杆</strong>。2512 卡扩 10% 是 251 卡 ≈ 31 个 TP8 实例，一次性要加载 31 × 400 GB = 12.4 TB——存储带宽会先成为瓶颈。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>耗时</th><th>能优化吗</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>用预留池</td></tr><tr><td>镜像拉取</td><td>30–60 s</td><td>预置镜像</td></tr><tr><td><strong>权重加载 200 GB</strong>（200B FP8）</td><td>2–3 min</td><td>P2P 分发、本地 NVMe 缓存</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>冷启动预热脚本</td></tr><tr><td><strong>合计</strong></td><td><strong>7–10 min</strong></td><td>最优可压到 3–4 min</td></tr></tbody></table></div>
+<p>推论：<strong>容量是阶梯，不是滑杆</strong>。2512 卡扩 10% 是 251 卡 ≈ 31 个 TP8 实例，一次性要加载 31 × 200 GB = 6.2 TB——存储带宽会先成为瓶颈。</p>
 <blockquote><p>这就是第 33 章要讲"预热池"的原因：<strong>你不可能等它扩，只能提前准备好。</strong></p></blockquote>
 <p><strong>慢的物理原因不在这里，在下一层</strong>：为什么必须整卡 8 张、为什么镜像 8–15 GB、为什么驱动不能进容器——这些是 K8s 与 GPU 运行时决定的，展开见 <strong>第 32 章</strong>。本章只记结论：<strong>容量是阶梯</strong>。</p>
 <h3>8.2 案例二：一次重试有多贵</h3>
