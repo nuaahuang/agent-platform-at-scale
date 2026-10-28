@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>扩缩容与弹性 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">高可用 · 第 33 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：扩容要 10 分钟，流量爬坡只要 20 分钟</a><a href="#s2"><span>02</span>. 三个物理约束：为什么快不了</a><a href="#s3"><span>03</span>. 为什么 HPA 必然失效</a><a href="#s4"><span>04</span>. 三种预测信号：在需要之前动手</a><a href="#s5"><span>05</span>. 预热池：备多少，花多少钱</a><a href="#s6"><span>06</span>. 缩容：比扩容更危险</a><a href="#s7"><span>07</span>. PD 分离后怎么分别扩</a><a href="#s8"><span>08</span>. 实现：三层配置</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 收口</a><a href="#s12"><span>12</span>. 复盘卡</a></nav>
+      <div class="rail-foot">高可用</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">33</div><div class="ch-kicker">高可用</div><h1>扩缩容与弹性</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>为什么 HPA（Horizontal Pod Autoscaler，水平 Pod 伸缩器）在 GPU 平台上必然失效？</li><li>预热池该备多少张卡，一年花多少钱？</li><li>缩容为什么比扩容更危险？</li><li>PD 分离后两个池怎么分别扩，比例漂了怎么办？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：扩容要 10 分钟，流量爬坡只要 20 分钟</h2>
+<p>电商售后 Agent 的早高峰：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>9:00   1,736 QPS  →  620 卡
+9:05   指标越线，HPA 触发扩容
+9:15   第一批实例可用（8–10 分钟）
+9:20   流量到顶 7,000 QPS，需要 2,512 卡
+       此刻只有约 1,400 卡 → 排队、TTFT 从 600 ms 涨到 4.2 s
+9:35   终于补齐，但峰值已经过去 15 分钟</code></pre></figure>
+<p>这一轮下来，SLO 错误预算烧掉 <strong>30%</strong>（全月只有 43.2 分钟）。</p>
+<p><strong>根因不是扩容慢，是"扩容速度 &lt; 流量变化速度"。</strong>弹性的目标从来不是"扩得快"，而是<strong>"在需要之前就位"</strong>。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三个物理约束：为什么快不了</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>耗时</th><th>能否优化</th><th>优化后</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>预留节点池，常备空机</td><td>0</td></tr><tr><td>镜像拉取</td><td>8–15 GB，1–3 min</td><td>本地缓存 + P2P 分发</td><td>20–30 s</td></tr><tr><td><strong>权重加载 400 GB</strong></td><td>3–5 min</td><td>本地 NVMe + P2P 分发</td><td>2–3 min</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>健康检查通过即可</td><td>10 s</td></tr><tr><td><strong>合计</strong></td><td><strong>8–15 min</strong></td><td></td><td><strong>3–4 min</strong></td></tr></tbody></table></div>
+<p>即使用尽所有优化手段，天花板也是 <strong>3–4 分钟</strong>。</p>
+<p>对比：流量从 1,736 涨到 7,000 只要 <strong>20 分钟</strong>，翻倍只要 <strong>5 分钟</strong>。</p>
+<blockquote><p><strong>物理约束决定：反应式扩容永远追不上快变流量。</strong></p><p>这不是工程能力问题，是加载 400 GB 权重所需时间的问题。</p></blockquote>
+<h3>2.1 为什么"干脆多买 30% 卡"不是答案</h3>
+<p>一个直觉方案：峰值不是 7000 吗？按 1.3 倍备足，不就永远不用扩了？</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>卡数</th><th>年成本</th><th>结果</th></tr></thead><tbody><tr><td>多买 30% 常备</td><td>+754 卡</td><td><strong>+¥8,494 万</strong></td><td>永远够用，但 20 小时在闲置</td></tr><tr><td>短时预热池</td><td>+377 卡 × 6 h</td><td><strong>+¥1,062 万</strong></td><td>峰值前就位</td></tr></tbody></table></div>
+<p>差 <strong>8 倍</strong>。原因很简单：<strong>峰值每天只占 4 小时，但买卡是 24 小时付费。</strong></p>
+<p>弹性要解决的不是"容量够不够"，是"容量在不在正确的时间点"。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 为什么 HPA 必然失效</h2>
+<p>HPA 的模型是"观察 → 决策 → 执行"，三段都有延迟：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>延迟段</th><th>时长</th><th>来源</th></tr></thead><tbody><tr><td><strong>指标滞后</strong></td><td>15–60 s</td><td>scrape 间隔 + 聚合窗口</td></tr><tr><td><strong>决策滞后</strong></td><td>60–300 s</td><td>冷却期、连续 N 个窗口确认</td></tr><tr><td><strong>执行滞后</strong></td><td>480–900 s</td><td>开机 + 拉镜像 + 加载权重</td></tr><tr><td><strong>总滞后</strong></td><td><strong>9–20 min</strong></td><td></td></tr></tbody></table></div>
+<p>而流量翻倍只要 5 分钟——<strong>总滞后 &gt; 流量变化时间，闭环在数学上就不成立</strong>。</p>
+<h3>3.1 第二个错误：指标选错了</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>性质</th><th>提前量</th><th>说明</th></tr></thead><tbody><tr><td>GPU 利用率</td><td><strong>滞后</strong></td><td>0</td><td>饱和才到 100%，此时已经排队</td></tr><tr><td>KV 水位</td><td>前导</td><td>60–120 s</td><td>逼近上限说明要拒绝</td></tr><tr><td><strong>排队数</strong>（<code>num_requests_waiting</code>）</td><td><strong>前导</strong></td><td>30–60 s</td><td>饱和前先抬头</td></tr><tr><td>TTFT p95</td><td>前导</td><td>30–60 s</td><td>用户已经感受到</td></tr></tbody></table></div>
+<p>HPA 默认看 CPU，改配自定义指标又走同一套滞后链路。<strong>用 GPU 利用率做伸缩信号，等于看着后视镜开车。</strong></p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 三种预测信号：在需要之前动手</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>信号</th><th>提前量</th><th>准确度</th><th>实现</th><th>适用场景</th></tr></thead><tbody><tr><td><strong>日周期（cron）</strong></td><td>30–60 min</td><td>高（±10%）</td><td>KEDA cron scaler / 定时任务</td><td>早高峰、晚高峰</td></tr><tr><td><strong>斜率检测</strong></td><td>5–10 min</td><td>中</td><td>网关 QPS 斜率 &gt; 2σ</td><td>突发爬坡</td></tr><tr><td><strong>业务日历</strong></td><td>小时–天</td><td>最高</td><td>大促预案 + 人工确认</td><td>已知事件</td></tr></tbody></table></div>
+<p>三者是<strong>叠加</strong>关系，不是三选一：</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code># 1) 日周期：每天 8:20 提前拉起
+triggers:
+- type: cron
+  metadata:
+    timezone: Asia/Shanghai
+    start: &quot;20 8 * * *&quot;
+    end: &quot;30 23 * * *&quot;
+    desiredReplicas: &quot;251&quot;
+
+# 2) 斜率/排队：兜底真实突发
+- type: prometheus
+  metadata:
+    query: sum(vllm:num_requests_waiting{pool=&quot;decode&quot;})
+    threshold: &quot;64&quot;</code></pre></figure>
+<p><strong>cron 负责"可预测的 80%"，prometheus 负责"不可预测的 20%"。</strong></p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 预热池：备多少，花多少钱</h2>
+<h3>5.1 定义与公式</h3>
+<p><strong>预热池 = 已经加载好权重、随时可接流量的空实例。</strong> 它不是"多买的卡"，而是"把要用的卡提前推进到就绪态"。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>预热池容量 = 峰值容量 × 预测误差 × 安全系数</code></pre></figure>
+<div class="table-wrap"><table class="table"><thead><tr><th>参数</th><th>取值</th><th>依据</th></tr></thead><tbody><tr><td>峰值容量</td><td>2,512 卡</td><td>第 13 章账本</td></tr><tr><td>预测误差</td><td>±15%</td><td>历史 cron 预测的实际偏差</td></tr><tr><td>安全系数</td><td>1.0</td><td>已有 ×1.3 的容量余量</td></tr><tr><td><strong>预热池</strong></td><td><strong>377 卡 ≈ 47 个 TP8 实例</strong></td><td></td></tr></tbody></table></div>
+<h3>5.2 三档策略与成本</h3>
+<p>单卡年成本 = 2.83 亿 ÷ 2,512 = <strong>¥112,660/卡·年</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>策略</th><th>池大小</th><th>存在时长</th><th>年成本</th><th>峰值表现</th></tr></thead><tbody><tr><td><strong>纯反应式</strong></td><td>0</td><td>—</td><td>0</td><td>每次峰值烧 30% 预算</td></tr><tr><td><strong>短时预热池</strong></td><td>377 卡</td><td>6 h/天</td><td><strong>¥1,062 万</strong></td><td>峰值前就位</td></tr><tr><td><strong>常驻预热池</strong></td><td>377 卡</td><td>24 h</td><td>¥4,247 万</td><td>全天就位</td></tr></tbody></table></div>
+<p><strong>选短时池</strong>：6 小时覆盖早、晚两个高峰，成本是常驻的 1/4。</p>
+<blockquote><p>一个容易被忽略的点：如果这些卡本来就是为了峰值买的、夜里也要付折旧，</p><p>那么"常驻预热"的<strong>边际成本只有电费</strong>（约 ¥4,240/卡·年），不是 ¥112,660。</p><p>先算清楚你的卡是"自有"还是"弹性租用"，结论完全不同。</p></blockquote>
+<h3>5.3 三级预热：热、温、冷</h3>
+<p>预热不是一个二元状态，而是三级，占用不同资源、对应不同提前量：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>级别</th><th>状态</th><th>占用什么</th><th>就位时间</th><th>成本</th></tr></thead><tbody><tr><td><strong>热</strong></td><td>进程跑着、KV 为空、健康检查通过</td><td>GPU</td><td>10–30 s</td><td>全额</td></tr><tr><td><strong>温</strong></td><td>节点就绪、镜像与权重已在本地 NVMe、进程未起</td><td>磁盘 + 节点</td><td>2–3 min</td><td>卡的折旧</td></tr><tr><td><strong>冷</strong></td><td>只有节点，什么都没拉</td><td>节点</td><td>8–10 min</td><td>节点费</td></tr></tbody></table></div>
+<p>用法是分层覆盖时间轴：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>峰值前 2 小时  → 温池就位（377 卡）
+峰值前 30 分钟 → 温转热（30 s）
+峰值中        → 冷池兜底（10 min，接受排队）</code></pre></figure>
+<p><strong>热池只覆盖"最后一分钟"，温池覆盖"最后十分钟"。</strong>只做热池，成本最高；只做冷池，等于没做。</p>
+<h3>5.4 预热池也要管水位</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>水位</th><th>含义</th><th>动作</th></tr></thead><tbody><tr><td>&lt; 30% 被占用</td><td>池子太大</td><td>缩减池子</td></tr><tr><td>30%–70%</td><td>健康</td><td>—</td></tr><tr><td>&gt; 70%</td><td>快用完</td><td>扩容池子或触发 cron 提前</td></tr><tr><td>= 100%</td><td>已击穿</td><td>只能靠 K8s 现开（10 min）</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 缩容：比扩容更危险</h2>
+<p>扩容失败只是慢，缩容失败是<strong>直接掉服务</strong>。</p>
+<h3>6.1 正确的缩容流程</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>摘流量（xDS 摘除端点）
+   ↓  等待 ≥ 30 s（覆盖最长在飞请求 9 s + 排空余量）
+等在飞请求清零
+   ↓
+丢弃 KV（或写入 swap）
+   ↓
+释放实例</code></pre></figure>
+<h3>6.2 四个坑</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>坑</th><th>后果</th><th>解法</th></tr></thead><tbody><tr><td>立刻 kill</td><td>在飞请求 500，用户看到失败</td><td>drain ≥30 s</td></tr><tr><td>缩完立刻又扩</td><td>整夜抖动</td><td><strong>滞回</strong>：扩容 80%、缩容 40%</td></tr><tr><td>缩到 0</td><td>8 分钟后才能回来</td><td><code>minReplicaCount</code> = 预热池</td></tr><tr><td>一次缩太多</td><td>容量瞬间腰斩</td><td>每分钟最多缩 5%</td></tr></tbody></table></div>
+<p><strong>一次误缩 10% = 251 卡 = 瞬间少 700 QPS 的处理能力</strong>，而它要 8 分钟才能回来。</p>
+<h3>6.3 滞回参数</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>扩容阈值：排队 &gt; 64  → 扩
+缩容阈值：排队 &lt; 16  → 缩（且持续 10 分钟）
+冷却期：扩容后 5 min 内不缩，缩容后 10 min 内不扩</code></pre></figure>
+<p>中间 48 个点的缓冲带，就是防震荡的全部秘密。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. PD 分离后怎么分别扩</h2>
+<p>第 11 章把集群拆成 prefill 池（909 卡）与 decode 池（700 卡）。两池的瓶颈完全不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>卡数</th><th>扩缩指标</th><th>谁在推高它</th></tr></thead><tbody><tr><td><strong>Prefill</strong></td><td>909</td><td>排队数、输入 token/s</td><td>输入长度变长</td></tr><tr><td><strong>Decode</strong></td><td>700</td><td>KV 水位、TPOT p95</td><td>并发会话变多、输出变长</td></tr></tbody></table></div>
+<p><strong>风险：两池比例会漂移。</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>输入长度 800 → 2,400 token（长文档功能上线）
+prefill 工作量 ×3，decode 不变
+P:D 从 1.3:1 漂到 3.9:1
+→ prefill 排队，TTFT 从 600 ms 涨到 4,000 ms，decode 池却闲着</code></pre></figure>
+<p>解法是<strong>比例守卫</strong>：每 5 分钟检查一次 P:D，偏离基线 ±20% 就触发重平衡。</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def guard_pd_ratio(current_pd, baseline=1.3, tol=0.2):
+    drift = current_pd / baseline - 1
+    if abs(drift) &lt;= tol:
+        return None
+    if drift &gt; 0:                       # prefill 不够
+        return {&quot;scale&quot;: &quot;prefill&quot;, &quot;delta&quot;: +int(909 * drift)}
+    return {&quot;scale&quot;: &quot;decode&quot;, &quot;delta&quot;: +int(700 * -drift)}</code></pre></figure>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 实现：三层配置</h2>
+<h3>8.1 第一层：KEDA 管副本数</h3>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code>apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: decode-pool
+spec:
+  scaleTargetRef:
+    name: decode-deployment
+  minReplicaCount: 12          # = 预热池，绝不为 0
+  maxReplicaCount: 120
+  pollingInterval: 30
+  cooldownPeriod: 600
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+        scaleDown:
+          stabilizationWindowSeconds: 600   # 缩容慢，扩容快
+  triggers:
+  - type: prometheus
+    metadata:
+      query: sum(vllm:num_requests_waiting{pool=&quot;decode&quot;})
+      threshold: &quot;64&quot;</code></pre></figure>
+<h3>8.2 第二层：Karpenter 管节点</h3>
+<p>KEDA 只扩 Pod，不扩节点。节点不够时 Pod 会停在 <code>Pending</code>。</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code>apiVersion: karpenter.sh/v1
+kind: NodePool
+spec:
+  limits:
+    nvidia.com/gpu: &quot;3000&quot;
+  template:
+    spec:
+      requirements:
+      - key: node.kubernetes.io/instance-type
+        operator: In
+        values: [&quot;p5.48xlarge&quot;]        # 8×H800</code></pre></figure>
+<h3>8.3 第三层：预热池控制器</h3>
+<figure class="code code--lang"><span class="code-lang">go</span><button class="copy" type="button">复制</button><pre><code>func (r *WarmPoolReconciler) Reconcile(ctx context.Context, _ ctrl.Request) error {
+    pool := r.currentWarmInstances()
+    demand := r.predictedDemand(30 * time.Minute)   // cron + 斜率
+    target := int(float64(demand) * 0.15)           // 15% 预热
+    switch {
+    case pool &lt; target-2:
+        return r.warmUp(target - pool)              // 提前加载
+    case pool &gt; target+5:
+        return r.coolDown(pool - target)            // 缩容也走 drain
+    }
+    return nil
+}</code></pre></figure>
+<h3>8.4 完整时序：8:20 到 9:20 谁在做什么</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>触发</th><th>谁</th><th>动作</th><th>累计容量</th></tr></thead><tbody><tr><td>8:20</td><td>日周期预测</td><td>cron（KEDA）</td><td>目标 251 副本 = 2,008 卡开始拉起</td><td>620</td></tr><tr><td>8:20–8:35</td><td>冷启动</td><td>Karpenter + 节点池</td><td>补节点、拉镜像、加载权重</td><td>1,200</td></tr><tr><td>8:50</td><td>—</td><td>—</td><td>权重全部就位，进程转热</td><td>2,008</td></tr><tr><td>9:00</td><td>流量起</td><td>—</td><td>1,736 QPS 起爬，容量已 ≥2,008</td><td>2,008</td></tr><tr><td>9:05</td><td>排队 &gt;64</td><td>KEDA + prometheus</td><td>预热池 377 卡补位（30 s）</td><td>2,385</td></tr><tr><td>9:20</td><td>峰值 7,000</td><td>—</td><td>最后 127 卡由冷池补，接受 3 min 延迟</td><td>2,512</td></tr><tr><td>9:20</td><td>验收</td><td>—</td><td>TTFT p95 = 610 ms，SLO 达成</td><td>—</td></tr></tbody></table></div>
+<p><strong>关键在 8:20 这一步</strong>：预测式把 15 分钟的冷启动藏在了流量到来之前。如果等到 9:00 才动，就是 §1 那个烧掉 30% 预算的时间轴。</p>
+<h3>8.5 异构池：能不能反应式，取决于模型多大</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>模型</th><th>权重</th><th>冷启动</th><th>可行策略</th></tr></thead><tbody><tr><td>prefill</td><td>200B MoE</td><td>400 GB</td><td>8–15 min</td><td><strong>只能预测式</strong></td></tr><tr><td>decode</td><td>200B MoE</td><td>400 GB</td><td>8–15 min</td><td><strong>只能预测式</strong></td></tr><tr><td>lite</td><td>8B</td><td>16 GB</td><td>1–2 min</td><td>反应式可用</td></tr></tbody></table></div>
+<p><strong>一条判据：冷启动 &lt; 流量翻倍时间的 1/3，才可以考虑反应式。</strong></p>
+<p>200B 的 10 分钟 &gt; 5 分钟的 1/3，所以必须预测；8B 的 2 分钟 &lt; 5 分钟，反应式能跟上——<strong>这也是第 6 章"lite 模型"的隐藏价值：它不只是便宜，它还可以弹性。</strong></p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>每次高峰都慢半拍</td><td>用反应式扩容</td><td>扩容完成时间 &gt; 流量到顶时间</td><td>cron 提前 60 min</td></tr><tr><td>整夜扩缩震荡</td><td>阈值无滞回</td><td>每小时伸缩次数 &gt;6</td><td>扩 80 / 缩 40</td></tr><tr><td>Pod 一直 Pending</td><td>有 Pod 无节点</td><td><code>kubectl get pod</code> Pending</td><td>补 Karpenter</td></tr><tr><td>缩容后 500 错误率上升</td><td>没 drain</td><td>缩容时间点错误率尖峰</td><td>摘流量后等 30 s</td></tr><tr><td>长文档上线后 TTFT 爆</td><td>P:D 漂移</td><td>prefill 排队、decode 空闲</td><td>比例守卫</td></tr><tr><td>预热池常年占满</td><td>池子配小了</td><td>水位长期 &gt;70%</td><td>扩池或加 cron 提前量</td></tr></tbody></table></div>
+<p>第三条最隐蔽：KEDA 显示"已扩到 120 副本"，但全都 Pending，实际算力一张没加。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>预测覆盖</td><td>≥80% 的扩容由 cron 触发，而非反应式</td></tr><tr><td>就位时间</td><td>峰值到顶时容量已 ≥95% 就位</td></tr><tr><td>预热池水位</td><td>常态 30%–70%，从未击穿</td></tr><tr><td>滞回生效</td><td>日伸缩次数 ≤6</td></tr><tr><td>缩容排空</td><td>缩容期间错误率上升 &lt;0.01%</td></tr><tr><td>PD 守卫</td><td>P:D 偏离 ≤20%</td></tr><tr><td>成本</td><td>预热成本 ≤ 总成本的 5%</td></tr></tbody></table></div>
+<p>最后一条是关键：<strong>弹性不是免费的</strong>。377 卡短时预热 = ¥1,062 万/年，占 ¥2.83 亿的 3.8%——这笔钱要能说清楚换回了什么。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 收口</h2>
+<blockquote><p>**HPA 假设"扩得快"，GPU 的物理假设"扩要 10 分钟"。</p><p>假设冲突时，赢的永远是物理——所以弹性只能靠预测，不能靠反应。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：扩容有物理下限（3-4 分钟），所以弹性必须前置，靠 cron + 预热池而不是 HPA。
+我算的：预热池 = 2512 × 15% = 377 卡；短时 6 h/天 = ¥1,062 万/年。
+我原来以为…实际…差在：以为伸缩是&quot;扩得快&quot;，实际是&quot;提前判断 + 提前加载&quot;。
+还没懂：预测误差 ±15% 在极端天气/大促叠加时会不会同时失效。</code></pre></figure>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="12-advanced-and-benchmarking.html"><span>上一章</span><b>12 · 高级特性与压测方法论</b></a><a class="nav-next" href="A-model-physics.html"><span>下一章</span><b>A · 模型层的物理：显存、带宽、算力</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
