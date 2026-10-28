@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高级特性与压测方法论 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">推理工程 · 第 12 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：压测过的配置，上线三小时就崩</a><a href="#s2"><span>02</span>. 特性矩阵：先分清"白拿"和"要付代价"</a><a href="#s3"><span>03</span>. 投机解码：什么时候是赚的</a><a href="#s4"><span>04</span>. 压测方法论：五个必须钉死的变量</a><a href="#s5"><span>05</span>. 三个必测场景</a><a href="#s6"><span>06</span>. 一份压测报告必须有的字段</a><a href="#s7"><span>07</span>. 五个常见误判</a><a href="#s8"><span>08</span>. 一组可对齐的数字</a><a href="#s9"><span>09</span>. 验收：怎么证明压测是可信的</a><a href="#s10"><span>10</span>. 收口</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 延伸</a></nav>
+      <div class="rail-foot">推理工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">12</div><div class="ch-kicker">推理工程</div><h1>高级特性与压测方法论</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>前缀缓存、投机解码、结构化输出、多 LoRA——哪些是"白拿的"，哪些要付代价？</li><li>为什么投机解码在低并发下能快 3 倍，在 1000 并发下几乎没收益？</li><li>为什么"闭环压测很稳"的系统，上线就崩？</li><li>一份能让老板和 SRE 都认的压测报告，必须有哪些字段？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：压测过的配置，上线三小时就崩</h2>
+<p>三种最常见的翻车：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>现场</th><th>压测时看到的</th><th>上线后</th></tr></thead><tbody><tr><td>A</td><td>并发 1，TTFT 120 ms</td><td>7000 QPS 时 TTFT 4.2 s，超时雪崩</td></tr><tr><td>B</td><td>固定 512 token 输入，吞吐 3200 tok/s/GPU</td><td>真实输入 p95 4800 token，吞吐掉到 1100</td></tr><tr><td>C</td><td>闭环 200 并发，QPS 稳定 6500</td><td>开环到达率 7000 时排队爆炸，p99 到 30 s</td></tr></tbody></table></div>
+<p>根因只有一个：<strong>压测测的是"系统最快能跑多快"，而生产要的是"在 SLO 下最多能接多少"。</strong></p>
+<p>这两个数字能差 2–3 倍。本章讲的就是怎么测后面那个。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 特性矩阵：先分清"白拿"和"要付代价"</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>特性</th><th>收益</th><th>代价</th><th>什么时候开</th><th>什么时候必须关</th></tr></thead><tbody><tr><td><strong>前缀缓存</strong></td><td>命中 85% → 卡数 2512→1808（−28%）</td><td>常驻显存 + 租户隔离风险</td><td>系统提示/工具 Schema 稳定</td><td>多租户且提示含敏感数据</td></tr><tr><td><strong>Chunked prefill</strong></td><td>TPOT 尖刺消失</td><td>TTFT 略增（多几个 step）</td><td>长短请求混跑</td><td>纯短请求（无收益）</td></tr><tr><td><strong>投机解码</strong></td><td>低并发下单用户 +60%–85%</td><td>高并发下挤占 batch</td><td>交互型产品、并发 &lt;128</td><td>批处理型、GPU 已饱和</td></tr><tr><td><strong>结构化输出</strong></td><td>解析失败率 3.2%→0.1%</td><td>每步多一次 mask 计算</td><td>工具调用、JSON 输出</td><td>自由文本创作</td></tr><tr><td><strong>多 LoRA</strong></td><td>一个基座服务 N 个租户</td><td>batch 内多 adapter 掉吞吐</td><td>租户多、单租户量小</td><td>单租户占满集群</td></tr><tr><td><strong>KV 量化 FP8</strong></td><td>显存减半，并发 ×1.8</td><td>长上下文精度 −1.3 pt</td><td>显存瓶颈</td><td>长文档精确检索</td></tr><tr><td><strong>长上下文扩展</strong></td><td>32K → 128K</td><td>卡数 ×4（2k→16k 是 1664→5632）</td><td>真有长文档需求</td><td>只是"怕不够"</td></tr></tbody></table></div>
+<blockquote><p>这张表的用法：<strong>每一项都要能在评审会上回答"开了它，SLO 和成本各变多少"</strong>。</p><p>答不上来的，就是没测过。</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 投机解码：什么时候是赚的</h2>
+<h3>3.1 一个够用的公式</h3>
+<p>设草稿长度 k、接受率 α、验证的相对成本 c（约为 0.05）：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>期望接受 token 数  E = 1 + α + α² + … + α^k = (1 − α^(k+1)) / (1 − α)
+加速比             S = E / (1 + k·c)</code></pre></figure>
+<p>k = 4 时的结果：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>接受率 α</th><th>期望接受 E</th><th>加速比 S</th></tr></thead><tbody><tr><td>0.9</td><td>4.10</td><td>3.41×</td></tr><tr><td>0.8</td><td>3.36</td><td>2.80×</td></tr><tr><td>0.6</td><td>2.31</td><td>1.92×</td></tr><tr><td>0.4</td><td>1.65</td><td>1.37×</td></tr><tr><td>0.2</td><td>1.25</td><td>1.04×</td></tr></tbody></table></div>
+<p><strong>α &lt; 0.4 就别做了</strong>——忙半天，1.37 倍，还不够补复杂度的运维成本。</p>
+<h3>3.2 但并发一上来，收益会消失</h3>
+<p>这是最容易被忽略的一点：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>并发</th><th>有效加速比</th><th>原因</th></tr></thead><tbody><tr><td>1</td><td>2.8×</td><td>GPU 空闲，验证是白赚</td></tr><tr><td>16</td><td>2.6×</td><td>仍有空余算力</td></tr><tr><td>128</td><td>1.4×</td><td>batch 接近饱和</td></tr><tr><td>512</td><td>1.05×</td><td>只多了计算，没多产出</td></tr><tr><td>1024</td><td><strong>0.95×</strong></td><td>挤占他人 batch，净亏</td></tr></tbody></table></div>
+<p>原因在于 decode 是<strong>带宽受限</strong>的：GPU 已经在满负荷读 KV，此时多算 4 个候选 token，只增加计算量，不增加内存吞吐——总吞吐不变，而每个请求占用的 batch 槽位变长了。</p>
+<blockquote><p><strong>以为</strong>投机解码能提吞吐，<strong>其实</strong>它买的是"低并发下的交互性"。</p><p>DeepSeek 的 DSpark 数据正是这个形状：单用户 +60%–85%，整体吞吐只 +4%–7%（第 10 章 §9）。</p></blockquote>
+<h3>3.3 决策</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>开不开</th></tr></thead><tbody><tr><td>C 端对话，并发 20–100</td><td><strong>开</strong>，收益最大</td></tr><tr><td>Agent 长任务，并发 500+</td><td>谨慎，先测总吞吐</td></tr><tr><td>离线批处理</td><td><strong>不开</strong>，直接拉满 batch</td></tr><tr><td>已撞 SLO 上限</td><td>不开，会把 p95 推高</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 压测方法论：五个必须钉死的变量</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>变量</th><th>为什么重要</th><th>怎么固定</th></tr></thead><tbody><tr><td><strong>输入长度分布</strong></td><td>固定长度会高估吞吐 2–3 倍</td><td>用生产采样，或对数正态（p50 800 / p95 4800）</td></tr><tr><td><strong>输出长度分布</strong></td><td>决定 decode 步数</td><td>记录真实 EOS 分布，别用 max_tokens</td></tr><tr><td><strong>并发模型</strong></td><td>闭环会掩盖排队</td><td>开环 Poisson 到达</td></tr><tr><td><strong>缓存状态</strong></td><td>冷启动和热缓存差 30%</td><td>冷/热各测一轮，分开报</td></tr><tr><td><strong>是否含网关</strong></td><td>引擎内 TTFT ≠ 用户 TTFT</td><td>端到端压测，至少含网关与网络</td></tr></tbody></table></div>
+<h3>4.1 闭环 vs 开环：最容易被忽略的一条</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>闭环（closed-loop）：固定 N 个客户端，一个请求完成才发下一个
+   → 系统变慢时，客户端也自动变慢，排队被&quot;吸收&quot;了
+
+开环（open-loop）：按固定速率 λ 发请求，不等响应
+   → 系统变慢时请求继续堆积，排队与超时立刻暴露</code></pre></figure>
+<p>这就是 <strong>coordinated omission</strong>：闭环压测里，系统越慢，压测工具发的越少，于是你永远测不到真实的 p99。<strong>生产是开环的</strong>，所以压测也必须是开环。</p>
+<h3>4.2 一个 30 行的开环压测脚本</h3>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>import asyncio, aiohttp, random, time, statistics
+
+async def one(session, url, in_len, out_len, rec):
+    t0 = time.perf_counter()
+    first = None
+    async with session.post(url, json={&quot;max_tokens&quot;: out_len,
+                                       &quot;stream&quot;: True}) as r:
+        async for line in r.content:
+            if line.startswith(b&quot;data:&quot;) and first is None:
+                first = time.perf_counter()
+    t1 = time.perf_counter()
+    rec.append(((first - t0) * 1000, (t1 - first) * 1000 / max(out_len, 1)))
+
+async def main(rate, duration, url):
+    rec = []
+    conn = aiohttp.TCPConnector(limit=0)          # 不设上限，避免客户端成瓶颈
+    async with aiohttp.ClientSession(connector=conn) as s:
+        tasks, t0 = [], time.perf_counter()
+        while time.perf_counter() - t0 &lt; duration:
+            await asyncio.sleep(random.expovariate(rate))   # Poisson 到达
+            tasks.append(asyncio.create_task(one(s, url, 800, 300, rec)))
+        await asyncio.gather(*tasks)
+    ttft = sorted(x[0] for x in rec)
+    print(f&quot;n={len(rec)} TTFT p50={ttft[len(ttft)//2]:.0f}ms &quot;
+          f&quot;p95={ttft[int(len(ttft)*0.95)]:.0f}ms&quot;)</code></pre></figure>
+<p>三个坑：<code>limit=0</code> 不设连接上限、客户端要多核、时钟要 NTP 同步。</p>
+<h3>4.3 长度分布为什么值 3 倍</h3>
+<p>同一套硬件，只换输入分布：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>负载</th><th>平均输入</th><th>平均输出</th><th>单卡吞吐</th></tr></thead><tbody><tr><td>固定 512 / 256</td><td>512</td><td>256</td><td>3,200 tok/s</td></tr><tr><td>均匀 100–2,000</td><td>1,050</td><td>256</td><td>1,900 tok/s</td></tr><tr><td>生产分布（p50 800 / p95 4,800）</td><td>1,250</td><td>300</td><td><strong>1,100 tok/s</strong></td></tr></tbody></table></div>
+<p>原因有两个：attention 的计算随长度平方增长；长请求的 KV 常驻，挤掉并发。<strong>用固定长度压测，等于给系统开了一张 3 倍的假支票。</strong></p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 三个必测场景</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>怎么打</th><th>通过标准</th></tr></thead><tbody><tr><td><strong>稳态容量</strong></td><td>阶梯加压 500→8000 QPS，每档 5 分钟</td><td>找到 TTFT p95 = 800 ms 的拐点</td></tr><tr><td><strong>尖峰</strong></td><td>0→3× 峰值，持续 30 s</td><td>不雪崩；恢复时间 &lt;60 s</td></tr><tr><td><strong>长稳</strong></td><td>24 小时，70% 负载</td><td>KV 碎片不涨、内存无泄漏、p95 不漂移</td></tr></tbody></table></div>
+<p>尖峰测试的关键不是"扛住"，是<strong>"扛不住时怎么退化"</strong>：是拒绝新请求（好），还是所有请求一起变慢（坏）。这就是第 24 章背压要解决的问题。</p>
+<p>长上下文还要单测一层：在 32K 上下文里埋 10 个事实（needle-in-a-haystack），看召回率。吞吐达标但召回掉 3 个点，等于这个配置不能用——<strong>性能达标不等于能力达标</strong>。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 一份压测报告必须有的字段</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>示例</th><th>为什么必须有</th></tr></thead><tbody><tr><td><strong>配置指纹</strong></td><td>模型 v4.1-flash-1017、引擎 v0.9.2、TP8、max_num_seqs 256、block 16、KV FP8</td><td>没有它，结果无法复现</td></tr><tr><td><strong>负载画像</strong></td><td>输入 p50 800 / p95 4800，输出 p50 220 / p95 900，Poisson</td><td>换分布结果全变</td></tr><tr><td><strong>结果</strong></td><td>QPS 7600、TTFT p95 610 ms、TPOT p95 38 ms、错误率 0.03%</td><td>只看均值等于没测</td></tr><tr><td><strong>拐点</strong></td><td>8000 QPS 时 TTFT p95 破 800 ms</td><td>容量结论</td></tr><tr><td><strong>资源</strong></td><td>GPU 利用率 71%、KV 占用 78%、显存峰值 76 GB</td><td>判断瓶颈在哪</td></tr><tr><td><strong>结论</strong></td><td>单卡 3.0 QPS，2512 卡余量 8.6%</td><td>能直接进容量模型</td></tr></tbody></table></div>
+<div class="callout callout--check"><span class="callout-tag">验收</span><div>判据：<strong>别人拿这份报告，能不能不问你一句话就复现出同样的数</strong>。<br>不能，就说明缺字段。</div></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 五个常见误判</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>正确做法</th></tr></thead><tbody><tr><td>压到 5000 QPS 很稳，上线 3000 就崩</td><td>闭环压测掩盖排队</td><td>改开环 Poisson</td></tr><tr><td>引擎 TTFT 200 ms，用户看到 1500 ms</td><td>没算网关、排队、网络</td><td>端到端压测</td></tr><tr><td>吞吐很高，但用户投诉卡</td><td>只看吞吐不看 p99</td><td>SLO 优先，看 p95/p99</td></tr><tr><td>首轮快，跑两小时变慢</td><td>KV 碎片、缓存膨胀、连接泄漏</td><td>24h 长稳</td></tr><tr><td>换模型后结果不可比</td><td>输出长度变了</td><td>按 token 数对齐，不按请求数</td></tr></tbody></table></div>
+<p>第二条最普遍：<strong>引擎内指标和用户体感之间，隔着 3–4 跳</strong>（第 8 章的 12 跳链路里，网关 + 排队 + 网络约占 300–800 ms）。只压引擎，等于只测了一半。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 一组可对齐的数字</h2>
+<p>以本书教学案例（2512 卡、7000 QPS 峰值）为例，一次合格压测应产出：</p>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>目标</th><th>实测</th><th>余量</th></tr></thead><tbody><tr><td>QPS</td><td>7000</td><td>7600</td><td>+8.6%</td></tr><tr><td>TTFT p95</td><td>≤800 ms</td><td>610 ms</td><td>24%</td></tr><tr><td>TPOT p95</td><td>≤50 ms</td><td>38 ms</td><td>24%</td></tr><tr><td>端到端 p95</td><td>≤9 s</td><td>7.9 s</td><td>12%</td></tr><tr><td>错误率</td><td>&lt;0.1%</td><td>0.03%</td><td>—</td></tr><tr><td>KV 占用</td><td>&lt;90%</td><td>78%</td><td>12 pt</td></tr></tbody></table></div>
+<p><strong>余量最小的那一项，就是下一次扩容的触发点</strong>——这里是端到端（12%），不是 QPS。看错指标会导致"提前扩卡但体验没改善"。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 验收：怎么证明压测是可信的</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>是否开环</td><td>到达过程是 Poisson，不是固定并发</td></tr><tr><td>客户端不是瓶颈</td><td>压测机 CPU &lt;60%，无连接池上限</td></tr><tr><td>长度分布来自生产</td><td>有采样依据，不是拍脑袋</td></tr><tr><td>冷/热缓存分别报</td><td>两个数都给了</td></tr><tr><td>端到端覆盖</td><td>至少含网关与网络</td></tr><tr><td>配置指纹完整</td><td>六项齐全</td></tr><tr><td>长稳 ≥24h</td><td>有 p95 漂移曲线</td></tr></tbody></table></div>
+<p>七条里缺任何一条，这份报告只能当"参考"，不能进容量模型。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 收口</h2>
+<blockquote><p>**压测不是找系统的极限，是找 SLO 的边界。</p><p>极限告诉你"还能撑多久"，边界告诉你"该在哪里停"。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：特性都有代价，压测要开环——闭环压测会替系统把排队藏起来。
+我算的：α=0.8、k=4 时 E=3.36，S=2.8×；并发 1024 时掉到 0.95×。
+我原来以为…实际…差在：以为投机解码提吞吐，实际它只在低并发买交互性。
+还没懂：多 LoRA 在 batch 内混排时，kernel 切换开销怎么精确建模。</code></pre></figure>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 延伸</h2>
+<ul><li>vLLM 的 <code>benchmarks/</code> 与 SGLang 的 <code>benchmark/</code>：两种主流压测脚本，都支持 <code>--request-rate</code> 开环模式；</li><li>第 24 章背压：尖峰测试里"怎么优雅退化"的完整方案；</li><li>第 33 章过载保护：拐点之后发生了什么。</li></ul>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="11-pd-disaggregation.html"><span>上一章</span><b>11 · 调度与 PD 分离</b></a><a class="nav-next" href="A-model-physics.html"><span>下一章</span><b>A · 模型层的物理：显存、带宽、算力</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
