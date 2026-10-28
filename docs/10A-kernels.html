@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：同一张 H800，吞吐能差 3 倍</a><a href="#s2"><span>02</span>. 四个概念：层、算子、kernel、指令</a><a href="#s3"><span>03</span>. 一次 decode step 有多少个 kernel</a><a href="#s4"><span>04</span>. 一个 kernel 的内部结构</a><a href="#s5"><span>05</span>. 用什么写：五种技术栈</a><a href="#s6"><span>06</span>. 融合的收益与代价</a><a href="#s7"><span>07</span>. 通信也是算子</a><a href="#s8"><span>08</span>. 硬件绑定：为什么换卡要重写</a><a href="#s9"><span>09</span>. 开源地图：谁在维护什么</a><a href="#s10"><span>10</span>. 怎么学：四级路径</a><a href="#s11"><span>11</span>. 失败模式：kernel 最常见的六个坑</a><a href="#s12"><span>12</span>. 验收：用 ncu 看五个指标</a><a href="#s13"><span>13</span>. 收口</a><a href="#s14"><span>14</span>. 复盘卡</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：同一张 H800，吞吐能差 3 倍</a><a href="#s2"><span>02</span>. 四个概念：层、算子、kernel、指令</a><a href="#s3"><span>03</span>. 一次 decode step 有多少个 kernel</a><a href="#s4"><span>04</span>. 一个 kernel 的内部结构</a><a href="#s5"><span>05</span>. 用什么写：五种技术栈</a><a href="#s6"><span>06</span>. 融合的收益与代价</a><a href="#s7"><span>07</span>. 通信也是算子</a><a href="#s8"><span>08</span>. 硬件绑定：为什么换卡要重写</a><a href="#s9"><span>09</span>. 开源地图：谁在维护什么</a><a href="#s10"><span>10</span>. 怎么学：四级路径</a><a href="#s11"><span>11</span>. 失败模式：kernel 最常见的六个坑</a><a href="#s12"><span>12</span>. 验收：用 ncu（Nsight Compute）看五个指标</a><a href="#s13"><span>13</span>. 收口</a><a href="#s14"><span>14</span>. 复盘卡</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -236,7 +236,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四个概念：层、算子、kernel、指令</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>概念</th><th>是什么</th><th>例子</th><th>谁定义</th></tr></thead><tbody><tr><td><strong>层（layer）</strong></td><td>一组算子的组合</td><td>一个 Transformer block</td><td>模型结构</td></tr><tr><td><strong>算子（operator）</strong></td><td>数学语义上的一个操作</td><td><code>matmul</code>、<code>softmax</code>、<code>rmsnorm</code>、<code>topk</code></td><td>框架（ATen 等）</td></tr><tr><td><strong>kernel</strong></td><td>算子在某硬件上的<strong>具体实现</strong></td><td><code>cuBLAS gemm</code>、<code>flash_mla_with_kvcache</code></td><td>kernel 作者</td></tr><tr><td><strong>指令</strong></td><td>GPU 线程执行的机器指令</td><td><code>HMMA</code>、<code>LDGSTS</code>、<code>TMA</code></td><td>编译器/架构</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>概念</th><th>是什么</th><th>例子</th><th>谁定义</th></tr></thead><tbody><tr><td><strong>层（layer）</strong></td><td>一组算子的组合</td><td>一个 Transformer block</td><td>模型结构</td></tr><tr><td><strong>算子（operator）</strong></td><td>数学语义上的一个操作</td><td><code>matmul</code>、<code>softmax</code>、<code>rmsnorm</code>、<code>topk</code></td><td>框架（ATen 等）</td></tr><tr><td><strong>kernel</strong></td><td>算子在某硬件上的<strong>具体实现</strong></td><td><code>cuBLAS gemm</code>、<code>flash_mla_with_kvcache</code></td><td>kernel 作者</td></tr><tr><td><strong>指令</strong></td><td>GPU 线程执行的机器指令</td><td><code>HMMA</code>（半精度矩阵乘加）、<code>LDGSTS</code>（全局→共享异步拷贝）、<code>TMA</code>（张量内存加速器）</td><td>编译器/架构</td></tr></tbody></table></div>
 <p>关键区别：<strong>算子是不变的语义，kernel 是可变的实现。</strong></p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>model.forward()            ← 层
   └─ F.linear(x, w)        ← 层内一步
@@ -262,10 +262,13 @@ blockquote p{margin:.4em 0}
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一个 kernel 的内部结构</h2>
 <p>GPU 的执行层次：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>Grid
-└── CTA（block）        一个 CTA 跑在一个 SM 上
-    └── Warp            32 个线程，同一条指令
-        └── Thread      一个 lane</code></pre></figure>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>Grid                     一次 kernel 启动
+└── CTA                  跑在一个 SM 上，最多 1024 线程
+    └── Warp             32 个线程，同一条指令
+        └── Thread       一个 lane</code></pre></figure>
+<p><strong>CTA 是什么</strong>：Cooperative Thread Array，NVIDIA 对 thread block 的正式叫法（CUDA 里 <code>blockIdx</code> 指的就是它；OpenCL 叫 work-group，WebGPU 叫 workgroup）。</p>
+<p>它是 GPU 上<strong>资源分配的单位</strong>——shared memory 按 CTA 分配，所以：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>约束</th><th>数值（H800/H100）</th><th>后果</th></tr></thead><tbody><tr><td>每 CTA 最多线程</td><td>1024</td><td>再大要拆</td></tr><tr><td>每 SM 最多线程</td><td>2048（64 warp）</td><td>一个 CTA 占满，其他进不来</td></tr><tr><td>每 SM shared memory</td><td>228 KB</td><td>CTA 要 200 KB → 单 SM 只能跑 1 个</td></tr><tr><td>SM 总数</td><td>132</td><td>决定并行上限</td></tr></tbody></table></div>
 <p>写 kernel 就是在回答四个问题：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>典型答案（paged attention）</th></tr></thead><tbody><tr><td>怎么切 grid？</td><td>每个 <code>(请求, 头)</code> 一个 CTA</td></tr><tr><td>每个 CTA 搬什么进 shared memory？</td><td>一个 KV block（16 token × 576 维）</td></tr><tr><td>怎么并行？</td><td>warp 内按 16×16 分块做 QK^T</td></tr><tr><td>怎么处理长序列？</td><td><strong>online softmax</strong>：边算边更新 running max/sum</td></tr></tbody></table></div>
 <p><strong>shared memory 是稀缺资源</strong>：H800/H100 每个 SM 只有 228 KB。一个 CTA 要 200 KB，那这个 SM 同时只能跑一个 CTA——占用率直接掉到下限。</p>
@@ -273,7 +276,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 用什么写：五种技术栈</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>技术栈</th><th>代表</th><th>门槛</th><th>能达到的峰值</th><th>可移植性</th></tr></thead><tbody><tr><td><strong>CUDA C++</strong></td><td>大多数生产 kernel</td><td>极高</td><td>90%+</td><td>只 NVIDIA</td></tr><tr><td><strong>CUTLASS / CuTe</strong></td><td>DeepGEMM 起点、cuBLAS 同源</td><td>高</td><td>90%+</td><td>只 NVIDIA，按架构模板化</td></tr><tr><td><strong>PTX / SASS 手写</strong></td><td>少量极致优化</td><td>极高</td><td>接近 100%</td><td>绑死具体架构</td></tr><tr><td><strong>DSL：Triton</strong></td><td>PyTorch 生态、FlashInfer</td><td>中</td><td>70%–90%</td><td>NVIDIA/AMD</td></tr><tr><td><strong>DSL：TileLang</strong></td><td>DeepInfer、昇腾适配</td><td>中</td><td>70%–95%</td><td>CUDA 与昇腾双后端</td></tr><tr><td><strong>Ascend C</strong></td><td>昇腾原生算子</td><td>中高</td><td>依算子</td><td>只昇腾</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>技术栈</th><th>代表</th><th>门槛</th><th>能达到的峰值</th><th>可移植性</th></tr></thead><tbody><tr><td><strong>CUDA C++</strong></td><td>大多数生产 kernel</td><td>极高</td><td>90%+</td><td>只 NVIDIA</td></tr><tr><td><strong>CUTLASS / CuTe</strong></td><td>DeepGEMM 起点、cuBLAS 同源</td><td>高</td><td>90%+</td><td>只 NVIDIA，按架构模板化</td></tr><tr><td><strong>PTX / SASS 手写</strong></td><td>少量极致优化</td><td>极高</td><td>接近 100%</td><td>绑死具体架构（PTX 是 NVIDIA 虚拟指令集，SASS 是 GPU 真正执行的机器码）</td></tr><tr><td><strong>DSL：Triton</strong></td><td>PyTorch 生态、FlashInfer</td><td>中</td><td>70%–90%</td><td>NVIDIA/AMD</td></tr><tr><td><strong>DSL：TileLang</strong></td><td>DeepInfer、昇腾适配</td><td>中</td><td>70%–95%</td><td>CUDA 与昇腾双后端</td></tr><tr><td><strong>Ascend C</strong></td><td>昇腾原生算子</td><td>中高</td><td>依算子</td><td>只昇腾</td></tr></tbody></table></div>
 <p><strong>趋势是</strong>：新项目用 DSL 起步，遇到热点再下沉到 CUDA/CUTLASS。DeepInfer 就是这个组合——<code>tilelang_ops</code> 写通用部分，FlashMLA/DeepGEMM 写极致部分。</p>
 <div class="orn"></div>
 </section>
@@ -305,7 +308,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 怎么学：四级路径</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>做什么</th><th>时间</th><th>验收</th></tr></thead><tbody><tr><td>1</td><td>用 Triton 写一个 softmax kernel</td><td>2 小时</td><td>与 PyTorch 结果一致</td></tr><tr><td>2</td><td>读 FlashAttention 前向，手推 online softmax</td><td>1 天</td><td>能讲清为什么省 HBM</td></tr><tr><td>3</td><td>跑 CUTLASS <code>examples/00_basic_gemm</code></td><td>2 天</td><td>能改 tile 大小看性能变化</td></tr><tr><td>4</td><td>用 ncu 把一个小 kernel 从 40% 优化到 70%</td><td>1 周</td><td>能说出每一步改动的理由</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>做什么</th><th>时间</th><th>验收</th></tr></thead><tbody><tr><td>1</td><td>用 Triton 写一个 softmax kernel</td><td>2 小时</td><td>与 PyTorch 结果一致</td></tr><tr><td>2</td><td>读 FlashAttention 前向，手推 online softmax</td><td>1 天</td><td>能讲清为什么省 HBM</td></tr><tr><td>3</td><td>跑 CUTLASS <code>examples/00_basic_gemm</code></td><td>2 天</td><td>能改 tile 大小看性能变化</td></tr><tr><td>4</td><td>用 ncu（Nsight Compute）把一个小 kernel 从 40% 优化到 70%</td><td>1 周</td><td>能说出每一步改动的理由</td></tr></tbody></table></div>
 <p>第 4 阶段才是真正的分水岭：<strong>能看指标定位瓶颈</strong>，而不是靠猜。</p>
 <div class="orn"></div>
 </section>
@@ -314,8 +317,8 @@ blockquote p{margin:.4em 0}
 <p>第二条最隐蔽：寄存器溢出不会报错，只在某些 shape 下慢 30%，很容易被当成"正常波动"。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收：用 ncu 看五个指标</h2>
-<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>期望</th><th>说明</th></tr></thead><tbody><tr><td><code>sm__throughput</code></td><td>&gt;60%</td><td>SM 整体是否忙</td></tr><tr><td><code>gpu__dram_throughput</code></td><td>按 roofline 判断</td><td>是否撞带宽墙</td></tr><tr><td><code>sm__pipe_tensor_cycles_active</code></td><td>&gt;50%</td><td>tensor core 是否真在用</td></tr><tr><td><code>launch__registers_per_thread</code></td><td>&lt;128</td><td>过高会掉占用率</td></tr><tr><td><code>l1tex__data_bank_conflicts</code></td><td>接近 0</td><td>shared memory 冲突</td></tr></tbody></table></div>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收：用 ncu（Nsight Compute）看五个指标</h2>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>ncu 指标</th><th>期望</th><th>说明</th></tr></thead><tbody><tr><td><code>sm__throughput</code></td><td>&gt;60%</td><td>SM 整体是否忙</td></tr><tr><td><code>gpu__dram_throughput</code></td><td>按 roofline 判断</td><td>是否撞带宽墙</td></tr><tr><td><code>sm__pipe_tensor_cycles_active</code></td><td>&gt;50%</td><td>tensor core 是否真在用</td></tr><tr><td><code>launch__registers_per_thread</code></td><td>&lt;128</td><td>过高会掉占用率</td></tr><tr><td><code>l1tex__data_bank_conflicts</code></td><td>接近 0</td><td>shared memory 冲突</td></tr></tbody></table></div>
 <p><strong>判据</strong>：一个 kernel 优化完，这五个数里至少有两项改善超过 10 个百分点，且端到端吞吐提升可测。只看 kernel 时间不看端到端，容易优化了 5% 的算子、丢了 20% 的收益。</p>
 <div class="orn"></div>
 </section>

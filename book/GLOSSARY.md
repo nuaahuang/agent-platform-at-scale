@@ -48,6 +48,11 @@
 | **DSpark** | Confidence-Scheduled Speculative Decoding | 半自回归草稿 + 置信度调度验证 | 验证 token −30%，吞吐 +4%–7% | 以为买的是吞吐（其实买交互性） |
 | **EPLB** | Expert Parallel Load Balancer | 按热度重排专家，压 all-to-all 热点 | 专家负载在线均衡 | 与 TP 混为一谈 |
 | **算子** | Operator | 数学语义上的一个操作 | matmul / softmax / topk | 与 kernel 混为一谈 |
+| **CTA** | Cooperative Thread Array | NVIDIA 对 thread block 的正式名，跑在一个 SM 上 | 最多 1024 线程；H800 132 SM | 与 warp 混为一谈 |
+| **PTX** | Parallel Thread Execution | NVIDIA 虚拟指令集，CUDA 与机器码之间 | 由 ptxas 编成 SASS | 以为它就是机器码 |
+| **SASS** | Shader Assembly | GPU 实际执行的机器码 | 每个架构一套 | 以为可移植 |
+| **TMA** | Tensor Memory Accelerator | 异步张量搬运单元 | Hopper 起引入 | 与 LDGSTS 混 |
+| **ncu** | Nsight Compute | NVIDIA 的 kernel 性能分析器 | 看 SM/DRAM/TC 五类指标 | 与 nsys 混 |
 | **Kernel** | GPU Kernel | 在 GPU 上并行执行的一个函数 | 单 step 约 750 次启动 | 以为它是"库"（它是一个函数） |
 | **CUDA Graph** | CUDA Graph | 把 kernel 序列录制为图，一次提交 | 启动开销趋近 0 | 以为能处理变长 batch（形状须固定） |
 | **Mega MoE** | Fused MoE with Overlapped Communication | 通信与计算融进一个 kernel | NVLink 与 tensor core 重叠 | 以为是调度优化（其实是 kernel 融合） |

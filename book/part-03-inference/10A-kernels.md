@@ -36,7 +36,7 @@ attention 与 GEMM 的 kernel 写得好不好，端到端吞吐能差 **2–3 �
 | **层（layer）** | 一组算子的组合 | 一个 Transformer block | 模型结构 |
 | **算子（operator）** | 数学语义上的一个操作 | `matmul`、`softmax`、`rmsnorm`、`topk` | 框架（ATen 等） |
 | **kernel** | 算子在某硬件上的**具体实现** | `cuBLAS gemm`、`flash_mla_with_kvcache` | kernel 作者 |
-| **指令** | GPU 线程执行的机器指令 | `HMMA`、`LDGSTS`、`TMA` | 编译器/架构 |
+| **指令** | GPU 线程执行的机器指令 | `HMMA`（半精度矩阵乘加）、`LDGSTS`（全局→共享异步拷贝）、`TMA`（张量内存加速器） | 编译器/架构 |
 
 关键区别：**算子是不变的语义，kernel 是可变的实现。**
 
@@ -93,11 +93,23 @@ torch.matmul
 GPU 的执行层次：
 
 ```
-Grid
-└── CTA（block）        一个 CTA 跑在一个 SM 上
-    └── Warp            32 个线程，同一条指令
-        └── Thread      一个 lane
+Grid                     一次 kernel 启动
+└── CTA                  跑在一个 SM 上，最多 1024 线程
+    └── Warp             32 个线程，同一条指令
+        └── Thread       一个 lane
 ```
+
+**CTA 是什么**：Cooperative Thread Array，NVIDIA 对 thread block 的正式叫法
+（CUDA 里 `blockIdx` 指的就是它；OpenCL 叫 work-group，WebGPU 叫 workgroup）。
+
+它是 GPU 上**资源分配的单位**——shared memory 按 CTA 分配，所以：
+
+| 约束 | 数值（H800/H100） | 后果 |
+|---|---|---|
+| 每 CTA 最多线程 | 1024 | 再大要拆 |
+| 每 SM 最多线程 | 2048（64 warp） | 一个 CTA 占满，其他进不来 |
+| 每 SM shared memory | 228 KB | CTA 要 200 KB → 单 SM 只能跑 1 个 |
+| SM 总数 | 132 | 决定并行上限 |
 
 写 kernel 就是在回答四个问题：
 
@@ -123,7 +135,7 @@ Grid
 |---|---|---|---|---|
 | **CUDA C++** | 大多数生产 kernel | 极高 | 90%+ | 只 NVIDIA |
 | **CUTLASS / CuTe** | DeepGEMM 起点、cuBLAS 同源 | 高 | 90%+ | 只 NVIDIA，按架构模板化 |
-| **PTX / SASS 手写** | 少量极致优化 | 极高 | 接近 100% | 绑死具体架构 |
+| **PTX / SASS 手写** | 少量极致优化 | 极高 | 接近 100% | 绑死具体架构（PTX 是 NVIDIA 虚拟指令集，SASS 是 GPU 真正执行的机器码） |
 | **DSL：Triton** | PyTorch 生态、FlashInfer | 中 | 70%–90% | NVIDIA/AMD |
 | **DSL：TileLang** | DeepInfer、昇腾适配 | 中 | 70%–95% | CUDA 与昇腾双后端 |
 | **Ascend C** | 昇腾原生算子 | 中高 | 依算子 | 只昇腾 |
@@ -214,7 +226,7 @@ kernel 是按 **SM 架构**编译的，架构一换，指令集、tensor core �
 | 1 | 用 Triton 写一个 softmax kernel | 2 小时 | 与 PyTorch 结果一致 |
 | 2 | 读 FlashAttention 前向，手推 online softmax | 1 天 | 能讲清为什么省 HBM |
 | 3 | 跑 CUTLASS `examples/00_basic_gemm` | 2 天 | 能改 tile 大小看性能变化 |
-| 4 | 用 ncu 把一个小 kernel 从 40% 优化到 70% | 1 周 | 能说出每一步改动的理由 |
+| 4 | 用 ncu（Nsight Compute）把一个小 kernel 从 40% 优化到 70% | 1 周 | 能说出每一步改动的理由 |
 
 第 4 阶段才是真正的分水岭：**能看指标定位瓶颈**，而不是靠猜。
 
@@ -235,9 +247,9 @@ kernel 是按 **SM 架构**编译的，架构一换，指令集、tensor core �
 
 ---
 
-## 12. 验收：用 ncu 看五个指标
+## 12. 验收：用 ncu（Nsight Compute）看五个指标
 
-| 指标 | 期望 | 说明 |
+| ncu 指标 | 期望 | 说明 |
 |---|---|---|
 | `sm__throughput` | >60% | SM 整体是否忙 |
 | `gpu__dram_throughput` | 按 roofline 判断 | 是否撞带宽墙 |
