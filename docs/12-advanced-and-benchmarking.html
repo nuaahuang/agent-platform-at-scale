@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：压测过的配置，上线三小时就崩</a><a href="#s2"><span>02</span>. 特性矩阵：先分清"白拿"和"要付代价"</a><a href="#s3"><span>03</span>. 投机解码：什么时候是赚的</a><a href="#s4"><span>04</span>. 压测方法论：五个必须钉死的变量</a><a href="#s5"><span>05</span>. 三个必测场景</a><a href="#s6"><span>06</span>. 一份压测报告必须有的字段</a><a href="#s7"><span>07</span>. 五个常见误判</a><a href="#s8"><span>08</span>. 一组可对齐的数字</a><a href="#s9"><span>09</span>. 没有同规模环境怎么压</a><a href="#s10"><span>10</span>. 验收：怎么证明压测是可信的</a><a href="#s11"><span>11</span>. 收口</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：压测过的配置，上线三小时就崩</a><a href="#s2"><span>02</span>. 特性矩阵：先分清"白拿"和"要付代价"</a><a href="#s3"><span>03</span>. 投机解码：什么时候是赚的</a><a href="#s4"><span>04</span>. 压测方法论：五个必须钉死的变量</a><a href="#s5"><span>05</span>. 三个必测场景</a><a href="#s6"><span>06</span>. 一份压测报告必须有的字段</a><a href="#s7"><span>07</span>. 五个常见误判</a><a href="#s8"><span>08</span>. 一组可对齐的数字</a><a href="#s9"><span>09</span>. 没有同规模环境怎么压</a><a href="#s10"><span>10</span>. 过载怎么测：测的不是"扛住"，是"退化曲线"</a><a href="#s11"><span>11</span>. 验收：怎么证明压测是可信的</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -388,23 +388,53 @@ async def main(rate, duration, url):
 <p><strong>可信判据</strong>：拿 L2 小集群的一次真实实验做回放，仿真出的 p95 误差 <strong>&lt; 15%</strong> 才敢用于决策。达不到，就只是漂亮的数字。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收：怎么证明压测是可信的</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 过载怎么测：测的不是"扛住"，是"退化曲线"</h2>
+<p>设计容量 7000 QPS，那 10,500 QPS 打进来会发生什么？这才是生产最关心的问题。</p>
+<p><strong>过载测试的产出不是"最大 QPS"，是三条曲线：</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>有效吞吐 goodput  ──┐
+                     ├── 随到达率变化的形状
+成功率            ──┤
+TTFT p95          ──┘</code></pre></figure>
+<h3>10.1 好形状 vs 坏形状</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>形状</th><th>表现</th><th>含义</th></tr></thead><tbody><tr><td><strong>好</strong>（优雅退化）</td><td>到达率超容量后，goodput 走平，成功率缓降，p95 温和上升</td><td>系统在"推掉多余"，保护了在处理的</td></tr><tr><td><strong>坏</strong>（拥塞崩溃）</td><td>p95 直线上升 → 全超时 → goodput 归零</td><td>谁也没服务好，还占着资源</td></tr></tbody></table></div>
+<p>拥塞崩溃的典型链条：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>过载 1.2× → 排队变长 → 请求超时 → 客户端重试 → 实际负载 2.4× → 彻底崩</code></pre></figure>
+<p><strong>重试放大是最常见的放大器</strong>：1.2 倍的过载，能被重试放大成 2.4 倍。</p>
+<h3>10.2 五级降级阶梯（先设计，再测）</h3>
+<p>测之前必须先有"降级去哪"的答案，否则测出来也不知道该看什么：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>级</th><th>动作</th><th>省下什么</th><th>用户感知</th></tr></thead><tbody><tr><td>L0</td><td>全功能</td><td>—</td><td>正常</td></tr><tr><td>L1</td><td>关投机解码</td><td>算力（batch 槽位）</td><td>单用户变慢，吞吐升</td></tr><tr><td>L2</td><td>max_tokens 4096 → 1024</td><td>decode 时长</td><td>长回答被截断</td></tr><tr><td>L3</td><td>关工具调用 / 检索</td><td>一跳 + token</td><td>能力降级</td></tr><tr><td>L4</td><td>切 8B lite 模型</td><td>算力 ×3</td><td>质量下降</td></tr><tr><td>L5</td><td>429 + Retry-After</td><td>全部</td><td>排队/重试</td></tr></tbody></table></div>
+<p><strong>顺序不能反</strong>：先牺牲"锦上添花"（投机、长度），最后才牺牲可用性（拒绝）。这也呼应第 1 章的优先级：<strong>可用性 &gt; 体验 &gt; 成本</strong>。</p>
+<h3>10.3 怎么打：四个必测档位</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>档位</th><th>到达率</th><th>持续</th><th>看什么</th></tr></thead><tbody><tr><td>稳态</td><td>1.0×</td><td>10 min</td><td>基线，SLO 应全绿</td></tr><tr><td>轻度过载</td><td>1.2×</td><td>10 min</td><td>是否开始排队、丢弃率</td></tr><tr><td>中度过载</td><td>1.5×</td><td>10 min</td><td>降级是否触发、goodput 是否走平</td></tr><tr><td>重度/尖峰</td><td>0→3× in 10 s</td><td>5 min</td><td>是否拥塞崩溃、恢复时间</td></tr></tbody></table></div>
+<p><strong>必须持续到稳态</strong>（至少 3 倍的平均排队时间），否则测的是瞬态，不是过载行为。</p>
+<h3>10.4 验收清单：合格 vs 不合格</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>合格</th><th>不合格</th></tr></thead><tbody><tr><td>拒绝发生的位置</td><td>入口快速拒绝（&lt;50 ms）</td><td>排队 30 s 后超时</td></tr><tr><td>拒绝的语义</td><td>429 + Retry-After + 可重试标记</td><td>500 或直接断连</td></tr><tr><td>公平性</td><td>按租户配额，小客户不被饿死</td><td>先到先得，大客户挤爆</td></tr><tr><td>降级是否自动</td><td>阈值触发、可观测</td><td>靠人手动切</td></tr><tr><td>GPU 保护</td><td>KV 水位不超 90%，不 OOM</td><td>打满后 OOM 重启</td></tr><tr><td>恢复</td><td>撤压后 5 min 内回到 SLO</td><td>越等越糟</td></tr><tr><td>级联</td><td>无重试风暴</td><td>客户端重试把负载放大 2×</td></tr></tbody></table></div>
+<h3>10.5 小集群怎么测这个</h3>
+<p>好消息：<strong>过载行为主要由控制面决定，与集群规模弱相关。</strong></p>
+<p>限流阈值、队列长度、降级触发点都是"按设计容量比例"配置的。在 64 卡的小集群上把阈值等比缩到 1/40，压到 1.5× 设计容量，看到的退化曲线和生产是同一形状。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>参数</th><th>生产（2512 卡）</th><th>测试（64 卡）</th></tr></thead><tbody><tr><td>设计容量</td><td>7000 QPS</td><td>175 QPS</td></tr><tr><td>限流阈值</td><td>7200 QPS</td><td>180 QPS</td></tr><tr><td>队列上限</td><td>2.5 万在飞</td><td>625 在飞</td></tr><tr><td>降级触发</td><td>排队 &gt; 2 s</td><td>排队 &gt; 2 s（不变）</td></tr></tbody></table></div>
+<p><strong>只有"排队时间"这类时间量纲的阈值不用缩放</strong>——这也是为什么过载测试在小集群上特别可信。</p>
+<h3>10.6 观测：判断"优雅"需要的六个指标</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>看什么</th></tr></thead><tbody><tr><td>goodput（达标请求/秒）</td><td>核心，别的都是解释它</td></tr><tr><td>丢弃率与丢弃位置</td><td>入口拒绝比队列超时好</td></tr><tr><td>队列深度</td><td>是否无界增长</td></tr><tr><td>KV 水位</td><td>是否逼近 OOM</td></tr><tr><td>降级命中计数</td><td>哪一级被触发</td></tr><tr><td>客户端重试率</td><td>是否在放大故障</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 验收：怎么证明压测是可信的</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>是否开环</td><td>到达过程是 Poisson，不是固定并发</td></tr><tr><td>客户端不是瓶颈</td><td>压测机 CPU &lt;60%，无连接池上限</td></tr><tr><td>长度分布来自生产</td><td>有采样依据，不是拍脑袋</td></tr><tr><td>冷/热缓存分别报</td><td>两个数都给了</td></tr><tr><td>端到端覆盖</td><td>至少含网关与网络</td></tr><tr><td>配置指纹完整</td><td>六项齐全</td></tr><tr><td>长稳 ≥24h</td><td>有 p95 漂移曲线</td></tr></tbody></table></div>
 <p>七条里缺任何一条，这份报告只能当"参考"，不能进容量模型。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 收口</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 收口</h2>
 <blockquote><p>**压测不是找系统的极限，是找 SLO 的边界。</p><p>极限告诉你"还能撑多久"，边界告诉你"该在哪里停"。**</p></blockquote>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 复盘卡</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：特性都有代价，压测要开环——闭环压测会替系统把排队藏起来。
 我算的：α=0.8、k=4 时 E=3.36，S=2.8×；并发 1024 时掉到 0.95×。
 我原来以为…实际…差在：以为投机解码提吞吐，实际它只在低并发买交互性。
 还没懂：多 LoRA 在 batch 内混排时，kernel 切换开销怎么精确建模。</code></pre></figure>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 延伸</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 延伸</h2>
 <ul><li>vLLM 的 <code>benchmarks/</code> 与 SGLang 的 <code>benchmark/</code>：两种主流压测脚本，都支持 <code>--request-rate</code> 开环模式；</li><li>第 24 章背压：尖峰测试里"怎么优雅退化"的完整方案；</li><li>第 33 章过载保护：拐点之后发生了什么。</li></ul>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="11-pd-disaggregation.html"><span>上一章</span><b>11 · 调度与 PD 分离</b></a><a class="nav-next" href="A-model-physics.html"><span>下一章</span><b>A · 模型层的物理：显存、带宽、算力</b></a></nav>
