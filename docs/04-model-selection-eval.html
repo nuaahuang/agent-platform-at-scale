@@ -232,7 +232,7 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>激活参数</th><th>推理成本</th><th>50 题通过率</th><th>结论</th></tr></thead><tbody><tr><td>8B 稠密</td><td>8B</td><td>0.078 分/轮</td><td>62%</td><td>❌ 工具调用经常错参</td></tr><tr><td>30B 稠密</td><td>30B</td><td>0.294 分/轮</td><td>74%</td><td>❌ 多步任务掉链子</td></tr><tr><td>70B 稠密</td><td>70B</td><td><strong>0.686 分/轮</strong></td><td>78%</td><td>❌ 贵且不够好</td></tr><tr><td><strong>200B MoE（30B 激活）</strong></td><td>30B</td><td><strong>0.294 分/轮</strong></td><td><strong>91%</strong></td><td>✅</td></tr></tbody></table></div>
 <p><strong>最反直觉的一行是最后一行</strong>：200B 的总参数是 70B 的 2.9 倍，但成本只有它的 <strong>43%</strong>。</p>
 <p>因为推理成本由<strong>激活参数</strong>决定，不由总参数决定。</p>
-<blockquote><p>这一条是本章的全部前提：<strong>能力看总参数，成本看激活参数。</strong></p></blockquote>
+<blockquote><p>这一条是本章的前提：<strong>能力看总参数，算力成本看激活参数。</strong></p><p>但带宽成本要看"专家并集"——§3.0.3 会把它拆开讲。</p></blockquote>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三个维度，不能只看一个</h2>
@@ -243,6 +243,44 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 为什么是 200B MoE / 30B 激活</h2>
+<h3>3.0 四个词先分清：稠密、稀疏、总参数、激活参数</h3>
+<p>它们不是同一个维度上的四种东西，而是<strong>两组正交的概念</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>组</th><th>概念</th><th>回答什么</th></tr></thead><tbody><tr><td><strong>结构</strong></td><td>稠密（dense） / 稀疏（sparse, MoE）</td><td>算一个 token 时，是否用到全部参数</td></tr><tr><td><strong>数量</strong></td><td>总参数（total） / 激活参数（active）</td><td>权重一共多大 / 单 token 实际用多少</td></tr></tbody></table></div>
+<p>两者的关系是一句话：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>稠密模型：active = total          （稀疏度 0）
+MoE 模型：active &lt; total          （稀疏度 = 1 − active/total）</code></pre></figure>
+<p><strong>所以"稠密"是"激活等于总量"的特例，不是另一种参数。</strong></p>
+<p>我们的 200B MoE：总参数 200B，激活 30B，<strong>稀疏度 85%</strong>。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>┌─────────────────────────────────────┐
+│ 总参数 200B（权重全在显存里）          │  ← 决定显存、决定&quot;知识容量&quot;
+│  ┌───────────────┐                  │
+│  │ 激活 30B       │  ← 这个 token 用到 │  ← 决定 FLOPs、决定成本
+│  └───────────────┘                  │
+└─────────────────────────────────────┘</code></pre></figure>
+<h3>3.0.1 为什么能力看总参数</h3>
+<p>这<strong>不是定理，是经验规律</strong>，而且要说清它的适用范围：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>论点</th><th>依据</th><th>局限</th></tr></thead><tbody><tr><td>参数是"知识存储"</td><td>缩放定律对稠密模型拟合：loss ∝ N^(−α)</td><td>拟合对象是稠密模型</td></tr><tr><td>专家=不同技能子网</td><td>路由可把 token 分给擅长它的专家</td><td>需要足够训练数据</td></tr><tr><td>同激活下 MoE &gt; 稠密</td><td>知识类任务差距大（可达 10+ 点）</td><td><strong>推理链/数学类差距小</strong>（2–4 点）</td></tr></tbody></table></div>
+<p>所以我们那个 91% vs 74% 是<strong>实测结果</strong>，不能从"参数大"直接推出来。诚实的表述是：<strong>在知识密集型任务上，同等算力下 MoE 的能力上限更高，但推理类任务收益有限。</strong></p>
+<h3>3.0.2 为什么成本看激活参数</h3>
+<p>算力这一侧是严格的：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>每 token 前向 FLOPs ≈ 2 × 激活参数
+稠密 30B：2 × 30e9 = 6.0e10 FLOPs
+MoE 200B/30B：2 × 30e9 = 6.0e10 FLOPs   ← 完全相同
+稠密 70B：2 × 70e9 = 1.4e11 FLOPs        ← 2.33 倍</code></pre></figure>
+<p><strong>这就是"200B 比 70B 便宜"的全部原因</strong>：算力只认激活，不认总量。</p>
+<p>但带宽这一侧有个坑，必须讲清。</p>
+<h3>3.0.3 带宽侧：专家并集会随 batch 放大</h3>
+<p>decode 每步要把权重读一遍。稠密模型读全部；MoE 只读<strong>被路由到的专家</strong>。</p>
+<p>问题在于：一个 batch 里有 B 个 token，它们激活的专家可能不同，要读的是<strong>并集</strong>：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>期望并集专家数 = E × (1 − (1 − k/E)^B)
+E = 专家总数，k = 每 token 激活数</code></pre></figure>
+<p>按 E=64、k=8 算：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>batch</th><th>并集专家数</th><th>占全集</th><th>含义</th></tr></thead><tbody><tr><td>1</td><td>8</td><td>12.5%</td><td>只读 1/8 权重，很省</td></tr><tr><td>8</td><td>42</td><td>66%</td><td>省一半</td></tr><tr><td>16</td><td>56</td><td>88%</td><td>基本读全了</td></tr><tr><td>64</td><td>64</td><td>100%</td><td><strong>和稠密模型一样读全量</strong></td></tr></tbody></table></div>
+<p><strong>结论要修正一句</strong>：</p>
+<blockquote><p><strong>成本看激活——在算力受限时严格成立；在带宽受限时，要看"有效激活"（专家并集）。</strong></p></blockquote>
+<p>对实践的指导：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>瓶颈</th><th>MoE 收益</th></tr></thead><tbody><tr><td>Prefill（算力受限）</td><td>FLOPs</td><td><strong>完全按激活算，收益最大</strong></td></tr><tr><td>Decode 小 batch</td><td>带宽</td><td>收益大（只读 1/8）</td></tr><tr><td>Decode 大 batch（≥32）</td><td>带宽</td><td>收益缩小（读全量，但摊到更多 token）</td></tr></tbody></table></div>
+<p>单 token 的带宽成本 = 并集字节 ÷ B，所以 batch 越大越便宜——<strong>这也是为什么吞吐要靠大 batch，而不是靠堆卡。</strong></p>
 <h3>3.1 一条经验规律</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>能力 ≈ f(log 总参数)
 成本 ∝ 激活参数</code></pre></figure>
