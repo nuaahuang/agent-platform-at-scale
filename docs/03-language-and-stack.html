@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>语言栈与技术栈总表 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">技术栈 · 第 03 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：一套 Python 打天下，网关先崩</a><a href="#s2"><span>02</span>. 判据：按延迟预算与并发形态分工</a><a href="#s3"><span>03</span>. 三套语言的边界：只走协议，不共享内存</a><a href="#s4"><span>04</span>. 为什么模型服务只能是 Python</a><a href="#s5"><span>05</span>. 中间件选型矩阵</a><a href="#s6"><span>06</span>. 自研还是用现成</a><a href="#s7"><span>07</span>. 团队技能映射：10 个人怎么裁</a><a href="#s8"><span>08</span>. 代码：一份 proto 定义三个语言</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：全用一套语言会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
+      <div class="rail-foot">技术栈</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">03</div><div class="ch-kicker">技术栈</div><h1>语言栈与技术栈总表</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>为什么不能让一套语言打天下？</li><li>Go / Java / Python 各管哪一段，边界划在哪？</li><li>中间件怎么选：选了什么、否了什么、什么条件下推翻？</li><li>只有 10 个人时，这套栈怎么裁到能跑？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：一套 Python 打天下，网关先崩</h2>
+<p>一个真实的重构：团队全是 Python 背景，于是网关也用 FastAPI 写。</p>
+<p>上线后的三个数：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>Python 网关</th><th>Go 网关</th><th>差距</th></tr></thead><tbody><tr><td>单机 QPS（8 核）</td><td>8,000</td><td>60,000</td><td><strong>7.5×</strong></td></tr><tr><td>单实例内存</td><td>300 MB</td><td>50 MB</td><td>6×</td></tr><tr><td>p99 抖动（GC）</td><td>40 ms</td><td>3 ms</td><td>13×</td></tr></tbody></table></div>
+<p>按 7,000 QPS 峰值算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>Python：7,000 ÷ 8,000 × 1.5（冗余）= 2 台？——实际要 40 台，因为延迟预算不够
+Go：    7,000 ÷ 60,000 × 2 = 1 台，配 6 台覆盖多 AZ</code></pre></figure>
+<p><strong>不是 Python 不行，是每个位置有它的最优语言。</strong>网关的活是"每毫秒转发十万个连接"，Python 的 GIL 与对象开销天生不适合；模型服务的活是"调 CUDA kernel"，Python 只做控制面，那 5% 的开销就无所谓。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 判据：按延迟预算与并发形态分工</h2>
+<p>选语言只看两个变量：<strong>这个位置的延迟预算是多少、并发是什么形态。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>延迟预算</th><th>并发形态</th><th>选它</th><th>理由</th></tr></thead><tbody><tr><td>网关 / BFF</td><td>&lt;5 ms</td><td>高并发短连接</td><td><strong>Go</strong></td><td>协程轻、内存小、启动快</td></tr><tr><td>Harness 编排</td><td>10–100 ms</td><td>长事务、IO 密集</td><td><strong>Python</strong></td><td>LLM SDK、生态最全</td></tr><tr><td>工具沙箱</td><td>100 ms–10 s</td><td>不可信代码</td><td><strong>Go</strong></td><td>隔离好、可控</td></tr><tr><td>模型服务</td><td>25 ms/step</td><td>GPU 密集</td><td><strong>Python + CUDA</strong></td><td>引擎生态绑定</td></tr><tr><td>计费 / 账务</td><td>批处理</td><td>强一致事务</td><td><strong>Java</strong></td><td>事务与金融生态</td></tr><tr><td>数据管道</td><td>分钟级</td><td>批 / 流</td><td><strong>Python / Scala</strong></td><td>生态</td></tr><tr><td>运维工具</td><td>无</td><td>一次性</td><td><strong>Go</strong></td><td>单二进制，无依赖</td></tr></tbody></table></div>
+<p><strong>一句话</strong>：延迟越紧、并发越高 → 越往 Go 走；越靠近模型与数据 → 越往 Python 走；<strong>越涉及钱和事务 → 越往 Java 走</strong>。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 三套语言的边界：只走协议，不共享内存</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>   ┌─────────┐  gRPC   ┌──────────┐  gRPC   ┌────────────┐
+   │  Go     │ ──────▶ │ Python   │ ──────▶ │ 推理引擎    │
+   │ 网关    │         │ Harness  │         │ (Python)   │
+   └─────────┘         └──────────┘         └────────────┘
+        │                    │                     │
+        └────────────┬───────┴─────────────────────┘
+                     ▼
+              ┌────────────┐
+              │  Java 计费  │  ← 消费 Kafka，异步
+              └────────────┘</code></pre></figure>
+<p>三条纪律：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>纪律</th><th>原因</th></tr></thead><tbody><tr><td>跨语言只走 gRPC/HTTP</td><td>不共享内存，不做 FFI</td></tr><tr><td><strong>proto 是唯一真相</strong></td><td>三语言各自生成代码，不许手写结构体</td></tr><tr><td>跨边界调用要少</td><td>gRPC 一次 0.2–0.5 ms，本地调用 0.1 μs，<strong>差 5,000 倍</strong></td></tr></tbody></table></div>
+<p>第三条最容易违反：如果按 token 逐次跨语言调用，单次 0.3 ms × 300 token = <strong>90 ms</strong>，比整个 TPOT 预算还大。所以流式必须<strong>批量推送</strong>（每 10–20 token 一批）。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 为什么模型服务只能是 Python</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>事实</th><th>说明</th></tr></thead><tbody><tr><td>vLLM / SGLang / DeepInfer 都是 Python 控制面</td><td>调度器、block manager、API 层</td></tr><tr><td>热点在 C++/CUDA</td><td>attention、GEMM、通信全是编译产物</td></tr><tr><td>Python 开销占比</td><td><strong>&lt;5%</strong> 的 step 时间（第 10A 章实测口径）</td></tr></tbody></table></div>
+<p><strong>推翻条件</strong>：如果你要做极致定制（自研调度器、极致延迟），可以把控制面重写成 C++——TensorRT-LLM 的 C++ runtime 就是这么做的。代价是失去 Python 生态（评测、工具、调试）。</p>
+<p>对 99% 的团队，<strong>不值得</strong>。</p>
+<h3>4.1 真正难的不是选语言，是锁版本</h3>
+<p>模型服务的依赖链比业务服务脆得多，任一层错配就是编译失败或运行崩：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>约束</th><th>错配后果</th></tr></thead><tbody><tr><td>驱动</td><td>≥ 535（CUDA 12.2+）</td><td>装不上 CUDA 12.4</td></tr><tr><td>CUDA</td><td>与 PyTorch 编译版本严格绑定</td><td><code>undefined symbol</code></td></tr><tr><td>PyTorch</td><td>与 vLLM 版本绑定</td><td>引擎启动即崩</td></tr><tr><td>vLLM</td><td>与 flash-attn / xformers 绑定</td><td>kernel 不可用</td></tr><tr><td>flash-attn</td><td>必须现编，20–40 min</td><td>CI 时间失控</td></tr></tbody></table></div>
+<p><strong>做法：整条链打进一个镜像，锁死 digest，CI 只认这个 digest。</strong>不要在生产机上 <code>pip install</code> —— 一次升级会连锁破坏三个包。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 中间件选型矩阵</h2>
+<p>每一行都回答"选了什么、否了什么、什么条件下推翻"。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>能力</th><th>候选</th><th>选它</th><th>否了什么</th><th>推翻条件</th></tr></thead><tbody><tr><td><strong>入口网关</strong></td><td>Envoy / Nginx / APISIX / 自研 Go</td><td><strong>Envoy</strong></td><td>Nginx（扩展难）、APISIX（生态弱）</td><td>需要深度定制协议时自研</td></tr><tr><td><strong>服务间 RPC</strong></td><td>gRPC / Thrift / HTTP+JSON</td><td><strong>gRPC</strong></td><td>Thrift（生态萎缩）、JSON（体积 3×）</td><td>浏览器直连时退回 HTTP</td></tr><tr><td><strong>消息队列</strong></td><td>Kafka / Pulsar / RabbitMQ</td><td><strong>Kafka</strong></td><td>RabbitMQ（吞吐不足）、Pulsar（运维重）</td><td>需要延迟队列时加 RabbitMQ</td></tr><tr><td><strong>缓存</strong></td><td>Redis / Memcached</td><td><strong>Redis</strong></td><td>Memcached（无数据结构）</td><td>纯 KV 且要极致时 Memcached</td></tr><tr><td><strong>关系库</strong></td><td>MySQL / PostgreSQL</td><td><strong>MySQL</strong></td><td>PG（团队不熟）</td><td>要 JSONB/向量时换 PG</td></tr><tr><td><strong>分析库</strong></td><td>ClickHouse / Doris</td><td><strong>ClickHouse</strong></td><td>Doris（运维复杂）</td><td>要强一致点查时 Doris</td></tr><tr><td><strong>向量库</strong></td><td>Milvus / pgvector / Qdrant</td><td><strong>pgvector 起步</strong></td><td>Milvus（独立运维）</td><td>超过 5,000 万向量换 Milvus</td></tr><tr><td><strong>对象存储</strong></td><td>S3 兼容</td><td><strong>S3 协议</strong></td><td>私有协议（锁定）</td><td>—</td></tr><tr><td><strong>配置中心</strong></td><td>Apollo / Nacos / etcd</td><td><strong>Nacos</strong></td><td>Apollo（重）</td><td>已有 etcd 时直接用</td></tr><tr><td><strong>容器编排</strong></td><td>K8s + Volcano</td><td><strong>K8s + Volcano</strong></td><td>Slurm（服务化弱）</td><td>纯训练场景用 Slurm</td></tr><tr><td><strong>可观测</strong></td><td>Prometheus + OTel</td><td><strong>OTel 打点 + Prometheus 存储</strong></td><td>自研 SDK</td><td>基数爆炸时换 VictoriaMetrics</td></tr></tbody></table></div>
+<p><strong>选型的三个反模式</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>反模式</th><th>后果</th></tr></thead><tbody><tr><td>每个能力都选最强的</td><td>12 个中间件，5 个人运维不动</td></tr><tr><td>只选团队会用的</td><td>用 MySQL 存时序数据，半年后查询慢 100 倍</td></tr><tr><td>不写推翻条件</td><td>三年后没人知道为什么选它</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 自研还是用现成</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>能力</th><th>现成方案</th><th>什么时候必须自研</th></tr></thead><tbody><tr><td>路由亲和</td><td>无</td><td><strong>必须自研</strong>（第 2 章 §6.1）</td></tr><tr><td>配额中心</td><td>Envoy RL / Sentinel</td><td>需要 token 维度（第 2 章 §6.2）</td></tr><tr><td>版本矩阵</td><td>无</td><td><strong>必须自研</strong>（第 36 章）</td></tr><tr><td>网关</td><td>Envoy</td><td>用 WASM 扩展即可，别重写</td></tr><tr><td>调度</td><td>Volcano / Kueue</td><td>拓扑感知不足时扩</td></tr><tr><td>可观测</td><td>OTel + Prometheus</td><td>极少需要</td></tr></tbody></table></div>
+<p>判据：<strong>能用扩展点解决的，绝不 fork</strong>。fork 一个中间件，三年后升级不了。</p>
+<h3>6.1 一个真实的选型过程</h3>
+<p>需求：事件总线要支撑 1.5 亿轮/日的会话事件与计费流水。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>候选</th><th>吞吐</th><th>延迟</th><th>运维</th><th>结论</th></tr></thead><tbody><tr><td>RabbitMQ</td><td>5 万 msg/s</td><td>1 ms</td><td>简单</td><td>❌ 吞吐不够</td></tr><tr><td>Pulsar</td><td>100 万 msg/s</td><td>5 ms</td><td>需 BookKeeper</td><td>❌ 多一套存储要运维</td></tr><tr><td><strong>Kafka</strong></td><td>100 万 msg/s</td><td>5 ms</td><td>成熟</td><td>✅ 够用且团队会</td></tr></tbody></table></div>
+<p><strong>否掉 Pulsar 的理由不是性能，是"多一套 BookKeeper 要三个人维护"。</strong>选型的胜负手经常不在技术指标，在运维成本。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 团队技能映射：10 个人怎么裁</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>人数</th><th>语言栈</th><th>砍掉什么</th></tr></thead><tbody><tr><td><strong>0→1</strong></td><td>5</td><td>全 Python（FastAPI + 单机引擎）</td><td>不上 Go，不上 K8s，一台机器跑通</td></tr><tr><td><strong>1→10</strong></td><td>10</td><td>+1 个 Go 写网关；Python 做 Harness</td><td>砍掉 Java，计费先写 Python 脚本</td></tr><tr><td><strong>10→100</strong></td><td>30</td><td>Go（网关/工具）+ Python（模型/Harness）+ Java（计费）</td><td>保留三种，砍掉 Scala</td></tr><tr><td><strong>100+</strong></td><td>100+</td><td>全栈分工，每段独立团队</td><td>—</td></tr></tbody></table></div>
+<p><strong>关键原则：语言数量 ≤ 团队能维护的边界数量。</strong>5 个人维护 3 种语言，结果是三种都半吊子。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 代码：一份 proto 定义三个语言</h2>
+<figure class="code code--lang"><span class="code-lang">proto</span><button class="copy" type="button">复制</button><pre><code>syntax = &quot;proto3&quot;;
+package agent.v1;
+
+service Chat {
+  rpc Stream(ChatRequest) returns (stream ChatChunk);
+}
+
+message ChatRequest {
+  string tenant_id = 1;
+  string session_id = 2;
+  repeated Message messages = 3;
+  int32 max_tokens = 4;
+  string model = 5;          // 版本由服务端解析，客户端不传权重版本
+}
+
+message ChatChunk {
+  string delta = 1;
+  bool done = 2;
+  Usage usage = 3;           // 最后一个 chunk 才带
+}
+
+message Usage {
+  int32 input_tokens = 1;
+  int32 cached_tokens = 2;
+  int32 output_tokens = 3;
+}</code></pre></figure>
+<p>三个纪律：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>纪律</th><th>原因</th></tr></thead><tbody><tr><td>字段只增不删</td><td>老客户端不会崩</td></tr><tr><td>枚举值留 <code>UNSPECIFIED = 0</code></td><td>默认值可识别</td></tr><tr><td><strong>版本号不进请求体</strong></td><td>由服务端解析，客户端改不了（第 24 章契约层）</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>网关 CPU 打满</td><td>用 Python 写网关</td><td><code>top</code> 单核 100%</td><td>换 Go / Envoy</td></tr><tr><td>跨语言调用成瓶颈</td><td>每 token 一次 RPC</td><td>trace 里 RPC 占比 &gt;30%</td><td>批量推送</td></tr><tr><td>三种语言三种日志格式</td><td>没有统一打点</td><td>排障时要翻三个系统</td><td>统一 OTel schema</td></tr><tr><td>proto 不兼容</td><td>删字段 / 改类型</td><td>老客户端报解析错</td><td>只增不删 + CI 检查</td></tr><tr><td>中间件太多没人会</td><td>每个能力都选最强</td><td>故障时无人能修</td><td>砍到 6 个以内</td></tr><tr><td>团队都会一点</td><td>语言数 &gt; 团队容量</td><td>PR 评审质量下降</td><td>收敛到 2–3 种</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>网关语言</td><td>非 Python（Go 或 Envoy）</td></tr><tr><td>跨语言调用</td><td>流式按批（≥10 token/次），非逐 token</td></tr><tr><td>proto 兼容</td><td>CI 里有 breaking change 检查</td></tr><tr><td>中间件数量</td><td>≤8 个，每个有 owner</td></tr><tr><td>选型文档</td><td>每个都写了"否了什么 + 推翻条件"</td></tr><tr><td>语言数量</td><td>≤3 种</td></tr></tbody></table></div>
+<p>最后一条是给技术负责人的：<strong>每多一种语言，就多一套招聘、CI、监控、on-call。</strong></p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 备选方案：全用一套语言会怎样</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>优点</th><th>代价</th></tr></thead><tbody><tr><td><strong>全 Python</strong></td><td>招聘统一、生态好</td><td>网关 QPS 差 7.5×，内存 6×</td></tr><tr><td><strong>全 Go</strong></td><td>性能好、部署简单</td><td>缺 LLM 生态，模型侧要重写</td></tr><tr><td><strong>全 Java</strong></td><td>事务强、企业生态</td><td>模型侧几乎无生态，启动慢</td></tr><tr><td><strong>Go + Python</strong>（推荐）</td><td>各取所长，两种够用</td><td>需要 proto 契约纪律</td></tr></tbody></table></div>
+<p><strong>推荐：Go（网关/工具）+ Python（模型/Harness）</strong>，计费到了 30 人再加 Java。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 收口</h2>
+<blockquote><p>**语言不是信仰问题，是延迟预算问题。</p><p>谁的预算最紧谁用 Go，谁离模型最近谁用 Python，谁管钱谁用 Java。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：按延迟预算分工——网关 Go（&lt;5ms）、Harness Python（10-100ms）、计费 Java（事务）。
+我算的：Python 网关单机 8K QPS，Go 60K，峰值 7000 QPS 差 7.5 倍机器数。
+我原来以为…实际…差在：以为一套语言能打天下，实际每种语言的&quot;预算适配&quot;不同。
+还没懂：Go 写 Harness 的可行性——生态差距到底值不值那 5ms。</code></pre></figure>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="02-legacy-to-ai.html"><span>上一章</span><b>02 · 传统互联网架构在 AI 服务中的复用、变形与失效</b></a><a class="nav-next" href="08-request-journey.html"><span>下一章</span><b>08 · 一次请求的完整旅程</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

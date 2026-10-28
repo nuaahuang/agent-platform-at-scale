@@ -111,7 +111,7 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 |---|---|
 | 目录定稿（40 章） | ✅ |
 | 写作标准 + 自动检查 | ✅ `book/STYLE.md` + `make style` |
-| 正文 | ✅ 9/44（第 1、2、8–12、33 章）+ 10A + 附录 A |
+| 正文 | ✅ 10/44（第 1、2、8–12、33 章）+ 10A + 附录 A |
 | labs | ✅ 6 个可运行 |
 | platform skeleton | ✅ 网关 + mock 引擎 |
 | deploy / benchmarks | ⏳ |
