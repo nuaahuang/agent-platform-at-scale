@@ -243,7 +243,9 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>全称</th><th>定义</th><th>目标</th><th>用户体验</th></tr></thead><tbody><tr><td><strong>TTFT</strong></td><td>Time To First Token</td><td>请求发出到第 1 个 token（排队+prefill）</td><td>&lt; 800ms</td><td>"它开始回答了"</td></tr><tr><td><strong>TPOT</strong></td><td>Time Per Output Token</td><td>decode 每多生成一个 token 的间隔（一个 step）</td><td>≤ 50ms</td><td>"字在流畅地冒"</td></tr><tr><td><strong>端到端</strong></td><td>—</td><td>TTFT + TPOT×输出长度 + 工具</td><td>3–9s</td><td>"它答完了"</td></tr></tbody></table></div>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>发出请求 ──TTFT──▶ 字₁ ─TPOT─▶ 字₂ ─TPOT─▶ … ─▶ 字₃₅₀
 端到端 = TTFT + 349 × TPOT（+工具时间）</code></pre></figure>
-<p>TPOT = 一个 step 的时长 ≈ (30GB + B×0.96GB) ÷ 3.35TB/s；B 越大它越长。TTFT 归 prefill 池管（看排队数），TPOT 归 decode 池管（看 TPOT p95 与 KV 水位）。</p>
+<p>TPOT = 一个 step 的时长 ≈ (30GB + B×0.96GB) ÷ 3.35TB/s；B 越大它越长。</p>
+<blockquote><p>这个加和<strong>只对"同一个请求"成立</strong>（一次真实的端到端就是这几段相加）。</p><p>跨请求谈 p95 时不能这么加——p95 不可加，见第 1 章 §2.3。</p></blockquote>
+<p>TTFT 归 prefill 池管（看排队数），TPOT 归 decode 池管（看 TPOT p95 与 KV 水位）。</p>
 <p><strong>新手最常犯的错</strong>：把 TTFT 当成总延迟，然后奇怪"为什么用户还是嫌慢"。</p>
 <div class="orn"></div>
 </section>
