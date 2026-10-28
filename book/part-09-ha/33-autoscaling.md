@@ -351,7 +351,146 @@ func (r *WarmPoolReconciler) Reconcile(ctx context.Context, _ ctrl.Request) erro
 
 ---
 
-## 9. 失败模式
+## 9. 实操：扩容的八个步骤
+
+指标越线之后，到"新实例真的能接流量"，中间有八步。**每一步都有判据，缺一步就会扩了个寂寞。**
+
+| 步 | 动作 | 谁做 | 命令 / 配置 | 判据 | 耗时 |
+|---|---|---|---|---|---|
+| 1 | 判定要扩 | KEDA | 排队 >64 连续 2 窗口 | `num_requests_waiting` 曲线 | 1 min |
+| 2 | 算扩多少 | KEDA / 控制器 | `ceil(waiting/64)` 个副本 | 不超过 `maxReplicaCount` | 立即 |
+| 3 | 改副本数 | KEDA → HPA | `kubectl get hpa -w` | `DESIRED` 变化 | 15 s |
+| 4 | 等节点 | Karpenter | `kubectl get node` | 节点 Ready | 3–5 min |
+| 5 | 等镜像 | kubelet | `kubectl describe pod` | 容器 Running | 20 s（有缓存） |
+| 6 | 等权重 | 容器内 | `kubectl logs -f` | 日志出现 `model loaded` | 3–5 min |
+| 7 | 探针通过 | kubelet | `kubectl get pod` | READY 1/1 | 20 s |
+| 8 | 接流量 | Endpoint Controller | — | `Endpoints` 里出现新 IP | 5 s |
+
+**第 6 步是最长的一步，也是唯一没法跳过的**——400 GB 权重必须真的进显存。
+
+### 9.1 紧急扩容：怎么绕过自动决策
+
+大促前发现预测失灵，要手工抢时间。但直接 `scale` 会和 KEDA 打架——它下一轮就把你的改动覆盖掉。
+
+```bash
+# 1) 先暂停 KEDA 的自动决策（只是暂停，不是删除）
+kubectl annotate scaledobject decode-pool autoscaling.keda.sh/paused=true
+
+# 2) 手工扩到目标值
+kubectl scale deployment/decode --replicas=120
+
+# 3) 盯住就绪进度
+kubectl get pods -l app=decode -w | grep -v Running
+
+# 4) 峰值过后恢复自动
+kubectl annotate scaledobject decode-pool autoscaling.keda.sh/paused-
+```
+
+**顺序不能反**：先暂停再改，否则你改完 15 秒就被覆盖回去。
+
+### 9.2 扩容后必须验证的三件事
+
+| 验证 | 命令 | 不合格的表现 |
+|---|---|---|
+| 真的接了流量 | `kubectl get endpointslices` | 新 Pod 不在 endpoints 里 |
+| 真的在算 | `vllm:num_requests_running` 上升 | 一直是 0（路由没打过来） |
+| 真的有效 | TTFT p95 开始下降 | 扩完没变化（瓶颈不在容量） |
+
+第三条最容易被忽略：**扩了 20 个副本，TTFT 没动，说明你扩错了方向**。
+
+---
+
+## 10. 实操：缩容的七个步骤
+
+缩容比扩容难，因为它会**打断正在进行的请求**。核心是"先摘流、后停机"。
+
+### 10.1 完整流程
+
+```
+① 选候选（负载最低、无长请求）
+② 让 readiness 变红 → Endpoint 自动摘除
+③ 轮询在飞请求数，等它归零（≤30 s）
+④ preStop 兜底再等 20 s
+⑤ 发 SIGTERM，引擎优雅退出
+⑥ 等 terminationGracePeriodSeconds（60 s）
+⑦ 释放 GPU，回池
+```
+
+### 10.2 三个关键配置
+
+**① 可被主动触发的 readiness 探针**
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8000
+  periodSeconds: 5
+  failureThreshold: 1
+```
+
+`/ready` 里检查一个文件：存在 `/tmp/drain` 就返回 503。
+于是"摘流"变成一条命令：
+
+```bash
+kubectl exec decode-xxx -- touch /tmp/drain
+# 5 秒内 Endpoint 摘除，新请求不再进来
+```
+
+**② preStop 兜底**
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "sleep 20"]
+terminationGracePeriodSeconds: 60
+```
+
+为什么要 sleep 20？因为 **Endpoint 摘除是异步的**：kube-proxy / Envoy 更新规则需要 1–5 秒，
+这期间仍可能有新请求打进来。preStop 给这段时间兜底。
+
+**③ PDB 保住下限**
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: decode-pdb
+spec:
+  minAvailable: 90%
+```
+
+PDB 只管"自愿驱逐"（节点维护、缩容），不管崩溃。它是缩容时的最后一道闸。
+
+### 10.3 一次性缩多少
+
+```
+每分钟最多缩 5%，且缩完等 10 分钟再看
+```
+
+按 2,512 卡 ≈ 314 个实例算，5% 就是 15 个实例。
+一次缩 15 个 = 瞬间少 42 卡 ≈ 117 QPS 的处理能力，这个台阶还能接受；
+一次缩 50 个，就是自由落体。
+
+### 10.4 一个真实 bug：没配 preStop
+
+某次发版滚动更新，每次滚动都有 **0.3% 的 500 错误**。
+
+| 现象 | 根因 |
+|---|---|
+| 发版期间 500 占比 0.3% | Pod 收到 SIGTERM 立刻退出，在飞请求被掐断 |
+| 只有发版时出现 | 平时不触发终止 |
+| 日志里没有异常 | 进程是被 kill 的，来不及打日志 |
+
+修法就是上面两条：**readiness 可主动摘流 + preStop sleep 20**。
+修完 500 降到 0.00x%。
+
+**这个 bug 的代价**：每次发版烧掉约 0.3% 的日请求，按 1.5 亿轮算就是 45 万次失败。
+
+---
+
+## 11. 失败模式
 
 | 现象 | 根因 | 怎么发现 | 怎么修 |
 |---|---|---|---|
@@ -366,7 +505,7 @@ func (r *WarmPoolReconciler) Reconcile(ctx context.Context, _ ctrl.Request) erro
 
 ---
 
-## 10. 验收
+## 12. 验收
 
 | 检查项 | 通过标准 |
 |---|---|
@@ -383,14 +522,14 @@ func (r *WarmPoolReconciler) Reconcile(ctx context.Context, _ ctrl.Request) erro
 
 ---
 
-## 11. 收口
+## 13. 收口
 
 > **HPA 假设"扩得快"，GPU 的物理假设"扩要 10 分钟"。
 > 假设冲突时，赢的永远是物理——所以弹性只能靠预测，不能靠反应。**
 
 ---
 
-## 12. 复盘卡
+## 14. 复盘卡
 
 ```
 一句话：扩容有物理下限（3-4 分钟），所以弹性必须前置，靠 cron + 预热池而不是 HPA。
