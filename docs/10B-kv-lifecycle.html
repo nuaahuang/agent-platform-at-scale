@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：每秒 58 万次块分配</a><a href="#s2"><span>02</span>. 三种回收不是一回事</a><a href="#s3"><span>03</span>. 分配器：free list + block table</a><a href="#s4"><span>04</span>. 前缀缓存淘汰：叶子 LRU + 引用计数</a><a href="#s5"><span>05</span>. 抢占：recompute 还是 swap</a><a href="#s6"><span>06</span>. 卸载：把 KV 搬到显存之外</a><a href="#s7"><span>07</span>. 多租户：朴素 LRU 会闯祸</a><a href="#s8"><span>08</span>. 指标与调参</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：如果不这么做会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：每秒 58 万次块分配</a><a href="#s2"><span>02</span>. 三种回收不是一回事</a><a href="#s3"><span>03</span>. 分配器：free list + block table</a><a href="#s4"><span>04</span>. 前缀缓存淘汰：叶子 LRU + 引用计数</a><a href="#s5"><span>05</span>. 抢占：recompute 还是 swap</a><a href="#s6"><span>06</span>. 卸载：把 KV 搬到显存之外</a><a href="#s7"><span>07</span>. 多租户：朴素 LRU 会闯祸</a><a href="#s8"><span>08</span>. 指标与调参</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收：七条怎么测</a><a href="#s11"><span>11</span>. 备选方案：如果不这么做会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -428,10 +428,62 @@ eviction_rate                  淘汰速率      高 = 缓存太小或租户太�
 <p>第一条最伤体验：用户眼看着字一个个出来，突然停住，然后<strong>从头开始</strong>。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>抢占率</td><td>&lt; 0.1% 的请求被抢占</td></tr><tr><td>前缀命中率</td><td>≥85%（第 1 章账本假设）</td></tr><tr><td>KV 水位</td><td>稳态 &lt;85%，峰值 &lt;95%</td></tr><tr><td>块泄漏</td><td>24 h 长稳后块总数不增长</td></tr><tr><td>租户公平</td><td>单租户缓存占用 ≤30%</td></tr><tr><td>淘汰正确性</td><td>被淘汰块无 <code>ref&gt;0</code>（断言）</td></tr><tr><td>版本切换</td><td>权重更新后旧 KV 100% 失效，无脏命中</td></tr></tbody></table></div>
-<p>最后一条最难验也最危险：<strong>旧 KV 被新权重复用</strong>，输出会莫名其妙地错，且无法复现。</p>
-<div class="orn"></div>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收：七条怎么测</h2>
+<h3>10.1 逐条测法</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>怎么测</th><th>通过标准</th></tr></thead><tbody><tr><td><strong>抢占率</strong></td><td>压测 30 min，读 <code>num_preemptions_total</code> ÷ 总请求</td><td>&lt;0.1%</td></tr><tr><td><strong>前缀命中率</strong></td><td>跑生产分布流量，读 <code>prefix_cache_hit_rate</code></td><td>≥85%</td></tr><tr><td><strong>KV 水位</strong></td><td>观察 <code>gpu_cache_usage_perc</code> 的 p95 与峰值</td><td>稳态 &lt;85%，峰值 &lt;95%</td></tr><tr><td><strong>块泄漏</strong></td><td>24 h 长稳，前后对拍 <code>total_blocks − free_blocks</code></td><td>差值不增长</td></tr><tr><td><strong>租户公平</strong></td><td>造一个大租户 + 三个小租户，跑 1 h</td><td>单租户 ≤30%，小租户命中率 ≥60%</td></tr><tr><td><strong>淘汰正确性</strong></td><td>在 <code>free_node()</code> 加断言 <code>ref == 0</code></td><td>0 次触发</td></tr><tr><td><strong>版本切换</strong></td><td>见 10.2</td><td>0 次跨版本命中</td></tr></tbody></table></div>
+<p>前六条都能靠跑和看指标完成，<strong>第七条必须专门设计测试</strong>，而且它一旦出错是静默的。</p>
+<h3>10.2 版本切换：什么叫"旧 KV 被新权重复用"</h3>
+<h4>一个具体的坏例子</h4>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>10:00  模型 v1 上线，前缀缓存里存了 [系统提示] 的 KV（v1 权重算的）
+10:30  灰度 v2，5% 流量打到新实例
+10:31  新实例收到请求，前缀哈希命中 → 从共享 KV 池取回那段 KV
+10:31  新实例用它跑 decode —— 但这 KV 是 v1 的权重算出来的</code></pre></figure>
+<p>结果：<strong>不报错、不崩溃、不超时</strong>，只是输出开始变得奇怪——答非所问、格式错乱、偶尔胡说。而且<strong>不可复现</strong>（换台机器就不出现）。</p>
+<blockquote><p>这就是"脏命中"（dirty hit）：拿旧权重的 KV，当新权重的用。</p></blockquote>
+<h4>它比崩溃可怕在哪</h4>
+<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>崩溃</th><th>脏命中</th></tr></thead><tbody><tr><td>发现速度</td><td>秒级</td><td>天级（靠用户投诉）</td></tr><tr><td>定位难度</td><td>有堆栈</td><td>无痕迹</td></tr><tr><td>影响面</td><td>全部失败，立刻回滚</td><td>部分答错，还在灰度里</td></tr><tr><td>数据后果</td><td>请求失败可重试</td><td><strong>错误答案已经发出去了</strong></td></tr></tbody></table></div>
+<h4>四种会触发混跑的场景</h4>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>为什么会混</th></tr></thead><tbody><tr><td>灰度发布新旧实例并存</td><td>两版实例共享同一个 KV 池</td></tr><tr><td>滚动更新</td><td>旧 Pod 还没退，新 Pod 已经开始接流量</td></tr><tr><td>多模型共池</td><td>大小模型共用一套前缀缓存服务</td></tr><tr><td>回滚</td><td>回滚到 v1，但缓存里已经混进了 v2 的块</td></tr></tbody></table></div>
+<h4>三层防御，缺一不可</h4>
+<p><strong>① 键层：缓存键必须带权重指纹</strong></p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>key = sha256(
+    model_weight_sha +      # 不是模型名，是权重的指纹
+    tokenizer_version +     # 分词器变了 token 就变了
+    tenant_salt +           # 防跨租户（见 §7.3）
+    block_tokens
+)</code></pre></figure>
+<p><strong>用模型名不够</strong>——<code>deepseek-v4.1</code> 这个词在打了补丁之后还是同一个名字，但权重已经变了。</p>
+<p><strong>② 实例层：灰度期间物理隔离</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>v1 实例 → v1 KV 池
+v2 实例 → v2 KV 池
+两组之间不共享，灰度结束后统一清理</code></pre></figure>
+<p><strong>③ 数据层：上线即失效</strong></p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def on_model_activate(new_version):
+    kv_store.delete_prefix(f&quot;kv:{old_version}:&quot;)   # 批量按版本前缀清
+    assert kv_store.count(f&quot;kv:{new_version}:&quot;) == 0</code></pre></figure>
+<p><strong>这是全书唯一该用"过期"的地方</strong>：不是时间过期，是版本过期（§4.2）。</p>
+<h4>怎么验证：三个层次的测试</h4>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code># ① 单元测试：同一段 token，两版必须 miss
+def test_no_cross_version_hit():
+    pool = FakeKVPool()
+    pool.put(version=&quot;v1&quot;, tokens=[1, 2, 3], kv=make_kv())
+    assert pool.get(version=&quot;v2&quot;, tokens=[1, 2, 3]) is None
+
+# ② 集成测试：灰度期间打探针
+def probe_dirty_hit():
+    # 用一个已知 prompt 分别打 v1 / v2，比对首 token 概率分布
+    p1 = run(v1, PROMPT).logprobs[:10]
+    p2 = run(v2, PROMPT).logprobs[:10]
+    assert divergence(p1, p2) &lt; 0.01 or KNOWN_DIFF
+
+# ③ 端到端：50 条黄金用例在新版上重跑
+assert golden_pass_rate(v2) &gt;= golden_pass_rate(v1) - 0.02</code></pre></figure>
+<h4>一个数字：污染窗口有多大</h4>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>灰度 5% × 7,000 QPS × 10 分钟 = 21 万次请求</code></pre></figure>
+<p><strong>发现得晚 10 分钟，就是 21 万个可能答错的答案已经发出去了。</strong></p>
+<h4>运行时怎么发现"已经在脏命中"</h4>
+<div class="table-wrap"><table class="table"><thead><tr><th>信号</th><th>正常</th><th>异常</th></tr></thead><tbody><tr><td>命中率</td><td>平稳</td><td><strong>突然跳升</strong>（新旧共享了缓存）</td></tr><tr><td>输出长度分布</td><td>稳定</td><td>突变</td></tr><tr><td>困惑度</td><td>稳定</td><td>上升</td></tr><tr><td>拒答率</td><td>稳定</td><td>上升或归零</td></tr></tbody></table></div>
+<p>第一条最直接：<strong>灰度期间命中率莫名变高，就是跨版本共享的信号。</strong></p>
 </section>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 备选方案：如果不这么做会怎样</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>备选做法</th><th>代价</th><th>为什么没成主流</th></tr></thead><tbody><tr><td><strong>预分配最大长度</strong>（PagedAttention 之前）</td><td>按 32K 预留 → 实际用 2K 时浪费 94% 显存</td><td>并发上不去</td></tr><tr><td><strong>连续分配 + 搬移</strong></td><td>每次扩容要拷贝整段 KV</td><td>拷贝成本随长度平方增长</td></tr><tr><td><strong>固定块但不共享</strong></td><td>无前缀复用</td><td>命中率 0，等于没有缓存</td></tr><tr><td><strong>全量下沉 CPU</strong></td><td>每次 decode 都过 PCIe</td><td>带宽被打爆，TPOT 从 25 ms 涨到 200 ms+</td></tr><tr><td><strong>不分页 + 大页（2 MB）</strong></td><td>内部碎片</td><td>短请求浪费，长请求仍不连续</td></tr></tbody></table></div>
