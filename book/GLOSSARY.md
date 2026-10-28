@@ -34,6 +34,7 @@
 |---|---|---|---|---|
 | **Prefill** | Prefill / Prompt Processing | 一次性算完所有输入 token | 5,000 token / 450 ms | 以为它按 token 逐个算 |
 | **Decode** | Decoding / Autoregressive Generation | 逐 token 生成，每步重读权重 | 25 ms/token | 以为它算力受限（其实是带宽） |
+| **端到端时延** | End-to-End Latency | 用户发出请求到收到最后一个 token | p95 ≤ 9 s | 只测引擎内，漏掉网关与排队 |
 | **TTFT** | Time To First Token | 首 token 延迟 = 排队 + prefill + 网络 | ≤ 800 ms | 只算 prefill，漏掉排队 |
 | **TPOT** | Time Per Output Token | 相邻 token 间隔 | ≤ 50 ms | 与"端到端 ÷ 字数"混用 |
 | **KV Cache** | Key-Value Cache | 已算过的注意力键值，避免重算 | 120 KB/token（H800 TP8） | 按模型参数量估显存 |
