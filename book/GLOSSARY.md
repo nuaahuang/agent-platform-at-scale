@@ -58,6 +58,8 @@
 | **SASS** | Shader Assembly | GPU 实际执行的机器码 | 每个架构一套 | 以为可移植 |
 | **TMA** | Tensor Memory Accelerator | 异步张量搬运单元 | Hopper 起引入 | 与 LDGSTS 混 |
 | **ncu** | Nsight Compute | NVIDIA 的 kernel 性能分析器 | 看 SM/DRAM/TC 五类指标 | 与 nsys 混 |
+| **KEDA** | Kubernetes Event-driven Autoscaling | 事件驱动的 K8s 扩缩容器，HPA 的补充 | 60+ 触发器，可缩到 0 | 以为能替代 HPA（它靠 HPA 执行） |
+| **HPA** | Horizontal Pod Autoscaler | K8s 原生副本伸缩 | 只认 CPU/内存/自定义指标 | 以为能直接读队列长度 |
 | **Kernel** | GPU Kernel | 在 GPU 上并行执行的一个函数 | 单 step 约 750 次启动 | 以为它是"库"（它是一个函数） |
 | **CUDA Graph** | CUDA Graph | 把 kernel 序列录制为图，一次提交 | 启动开销趋近 0 | 以为能处理变长 batch（形状须固定） |
 | **Mega MoE** | Fused MoE with Overlapped Communication | 通信与计算融进一个 kernel | NVLink 与 tensor core 重叠 | 以为是调度优化（其实是 kernel 融合） |
