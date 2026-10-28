@@ -74,7 +74,7 @@
 | 6 | 推理形态与压缩 | FP8/INT4 掉几点？KV 量化？lite-8B 何时上？多 LoRA 隔离？ | 精度-成本曲线 |
 | 7 | 模型版本管理 | 灰度、回滚、旧 KV 作废、评测门禁 | 版本矩阵 + 灰度方案 |
 
-### Part III · 推理工程（5 章 + 10A）
+### Part III · 推理工程（5 章 + 10A + 10B）
 
 | # | 章节 | 核心问题 | 交付物 |
 |---|---|---|---|
@@ -82,6 +82,7 @@
 | 9 | [并行与互联](part-03-inference/09-parallelism.md) | TP/EP/PP、集合通信、RDMA、NVLink 域 | 拓扑 + 网络清单 |
 | 10 | [引擎：PagedAttention / 连续批处理 / 前缀缓存](part-03-inference/10-inference-engine.md) | 300GB 怎么分、碎片怎么消 | 配置 + 压测脚本 |
 | 10A | [Kernel 层](part-03-inference/10A-kernels.md) | 用什么写？有哪些开源件？为什么换卡要重写？ | 技术栈表 + 开源地图 |
+| 10B | [KV 的生命周期](part-03-inference/10B-kv-lifecycle.md) | 淘汰/抢占/卸载三件事怎么分？为什么没有 TTL？ | 算法 + 调参表 |
 | 11 | [调度与 PD 分离](part-03-inference/11-pd-disaggregation.md) | 两池怎么拆、异构 SKU、成本量化 | P:D 配比 + 对比表 |
 | 12 | [高级特性 + 压测方法论](part-03-inference/12-advanced-and-benchmarking.md) | 投机解码/结构化输出；SLO 下怎么测；过载怎么退化 | 特性矩阵 + 压测报告 |
 

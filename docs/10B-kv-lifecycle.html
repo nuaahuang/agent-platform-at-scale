@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KV 的生命周期：分配、淘汰、抢占与卸载 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">推理工程 · 第 10B 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：每秒 58 万次块分配</a><a href="#s2"><span>02</span>. 三种回收不是一回事</a><a href="#s3"><span>03</span>. 分配器：free list + block table</a><a href="#s4"><span>04</span>. 前缀缓存淘汰：叶子 LRU + 引用计数</a><a href="#s5"><span>05</span>. 抢占：recompute 还是 swap</a><a href="#s6"><span>06</span>. 卸载：第三层存储</a><a href="#s7"><span>07</span>. 多租户：朴素 LRU 会闯祸</a><a href="#s8"><span>08</span>. 指标与调参</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：如果不这么做会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
+      <div class="rail-foot">推理工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">10B</div><div class="ch-kicker">推理工程</div><h1>KV 的生命周期：分配、淘汰、抢占与卸载</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>大家嘴里的"KV 淘汰"，其实是三件不同的事，分别是什么？</li><li>为什么前缀缓存的淘汰必须从叶子开始？</li><li>抢占一个请求，recompute 和 swap 差多少，怎么选？</li><li>为什么 KV 不需要 TTL？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：每秒 58 万次块分配</h2>
+<p>一个 2,000 万 DAU 的平台，每天 1.5 亿轮对话、平均 5,350 token：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>1.5e8 轮 × 5,350 token ÷ 16（块大小）÷ 86,400 s ≈ 58 万次/秒</code></pre></figure>
+<p><strong>每秒 58 万次 KV 块分配与释放。</strong> 每一次都要回答三个问题：</p>
+<ol><li>有没有空闲块？（<strong>分配</strong>）</li><li>没有的话，能不能挤掉部分缓存？（<strong>淘汰</strong>）</li><li>还不能的话，牺牲哪个正在跑的请求？（<strong>抢占</strong>）</li></ol>
+<p>三个问题对应三套机制，混在一起讲必然讲糊。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三种回收不是一回事</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>触发时机</th><th>影响</th><th>负责模块</th><th>用户感知</th></tr></thead><tbody><tr><td><strong>① 空闲块回收</strong></td><td>请求正常结束</td><td>无</td><td>BlockAllocator</td><td>无</td></tr><tr><td><strong>② 前缀缓存淘汰</strong></td><td>要腾空间给新请求</td><td>下次命中率下降</td><td>LRU / 基数树</td><td>变慢一点</td></tr><tr><td><strong>③ 抢占 preemption</strong></td><td>正在跑的请求被夺走 KV</td><td>该请求回炉</td><td>Scheduler</td><td><strong>可见卡顿（1.6 s）</strong></td></tr></tbody></table></div>
+<p>日常说的"淘汰"是 ②，但生产事故多来自 ③——因为它直接让用户看到一个<strong>正在输出的回答突然停住</strong>。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>请求到达 ─▶ 分配块 ─▶ [算 KV] ─▶ 输出 ─▶ 释放块
+                │                    │
+                │ 无空闲块            │ 引用计数 -1
+                ▼                    ▼
+           ② 淘汰缓存 ──▶ 无缓存可淘汰 ──▶ ③ 抢占</code></pre></figure>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 分配器：free list + block table</h2>
+<p>物理上 KV 按 <strong>16 token 一块</strong>切分（第 10 章 §4）。一个 TP8 实例的真实账：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>显存总量   8 × 80 GB = 640 GB
+权重       400 GB（200B MoE，FP8）
+KV 可用    240 GB
+单块大小   16 token × 120 KB = 1.92 MB
+块总数     240 GB ÷ 1.92 MB ≈ 125,000 块</code></pre></figure>
+<p>分配器维护两个结构：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>结构</th><th>内容</th><th>作用</th></tr></thead><tbody><tr><td><strong>free list</strong></td><td>所有空闲块的物理编号</td><td>O(1) 取块</td></tr><tr><td><strong>block table</strong></td><td>每请求的"逻辑第 i 块 → 物理第 j 块"</td><td>支持不连续存放</td></tr></tbody></table></div>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def allocate(seq, n_blocks):
+    if len(free_list) &gt;= n_blocks:
+        blocks = [free_list.pop() for _ in range(n_blocks)]
+        seq.block_table.extend(blocks)
+        return True
+    if evict_prefix_cache(n_blocks - len(free_list)):   # ②
+        return allocate(seq, n_blocks)
+    victim = scheduler.pick_victim()                     # ③
+    return preempt(victim) and allocate(seq, n_blocks)</code></pre></figure>
+<p><strong>关键：<code>block table</code> 是间接层</strong>，所以物理块可以不连续——这正是 PagedAttention 的全部意义（第 10 章 §4）。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 前缀缓存淘汰：叶子 LRU + 引用计数</h2>
+<h3>4.1 为什么是树，为什么从叶子删</h3>
+<p>前缀缓存的结构天然是树（RadixAttention）：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>        [系统提示 2.5K]          ← 根，全体共享
+         /            \
+   [会话 A 历史]   [会话 B 历史]
+        |              |
+   [A 新增]        [B 新增]      ← 叶子</code></pre></figure>
+<p>两条硬约束：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>约束</th><th>原因</th></tr></thead><tbody><tr><td><strong>从叶子开始删</strong></td><td>父节点被子节点引用，先删父会让子悬空</td></tr><tr><td><strong><code>ref &gt; 0</code> 不能删</strong></td><td>正在被请求使用，删了就是读写已释放内存</td></tr></tbody></table></div>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def evict_prefix_cache(need):
+    freed = 0
+    while freed &lt; need:
+        # 只在&quot;引用计数为 0 的叶子&quot;里挑，按最后访问时间
+        cand = min(evictable_leaves, key=lambda n: n.last_access)
+        freed += free_node(cand)      # 回收它独占的块
+    return True</code></pre></figure>
+<p>vLLM 是扁平版：块有内容哈希和引用计数，空闲块进 LRU 队列，分配时从队尾取。SGLang 是树版：同上，但粒度到 token，且多一层 HiCache 下沉。</p>
+<h3>4.2 没有 TTL：为什么 KV 不需要时间过期</h3>
+<p>这是最容易被问住的一点：<strong>KV 缓存不设过期时间。</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>HTTP 响应缓存  →  TTL / Cache-Control / ETag
+Redis key      →  TTL
+JWT            →  exp
+KV cache       →  token 序列的哈希</code></pre></figure>
+<p>同一段 token、同一个权重，算出来的 KV <strong>永远一样</strong>。既然结果恒定，"过期"就不成立。</p>
+<p>所以主流引擎里没有时间过期逻辑，只有两种回收：<strong>引用归零</strong>、<strong>容量压力</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>情况</th><th>算过期吗</th><th>说明</th></tr></thead><tbody><tr><td>请求结束</td><td>❌</td><td>块回 free list，但内容还在，下次能命中</td></tr><tr><td><strong>权重版本变了</strong></td><td>✅ <strong>真失效</strong></td><td>旧 KV 用旧权重算的，必须整批作废</td></tr><tr><td>显存压力</td><td>❌</td><td>被挤掉，不是过期</td></tr><tr><td>租户隔离</td><td>❌</td><td>逻辑隔离，与时间无关</td></tr></tbody></table></div>
+<p><strong>唯一的真失效是权重版本</strong>——所以第 36 章讲灰度时，第一件事就是"KV 不跨版本共享"。</p>
+<h3>4.3 位置依赖：只有"从 0 开始的前缀"能复用</h3>
+<p>这条约束常被忽略。假设公共文本放中间：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>✅ 可复用  [公共系统提示][会话 A]
+✅ 可复用  [公共系统提示][会话 B]
+❌ 不可复用 [A 的订单号][公共系统提示]
+❌ 不可复用 [B 的订单号][公共系统提示]</code></pre></figure>
+<p>因为 RoPE 把<strong>位置偏移</strong>编进了 K/V：同一段文本在第 0 位和第 12 位算出的 KV 不同。</p>
+<p><strong>结论：稳定内容必须放最前面。</strong> 这不是编码习惯，是数学要求。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 抢占：recompute 还是 swap</h2>
+<h3>5.1 两种做法的代价</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>操作</th><th>代价公式</th></tr></thead><tbody><tr><td><strong>recompute</strong></td><td>丢掉 KV，稍后重跑 prefill</td><td><code>L ÷ 20000</code>（prefill 吞吐）</td></tr><tr><td><strong>swap</strong></td><td>搬到 CPU 内存，需要时搬回</td><td><code>2 × KV_bytes ÷ 64 GB/s</code></td></tr></tbody></table></div>
+<p>代入实际数字：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>上下文</th><th>KV 大小</th><th>recompute</th><th>swap 往返</th><th>谁赢</th></tr></thead><tbody><tr><td>2K</td><td>240 MB</td><td>0.10 s</td><td>7.5 ms</td><td>swap</td></tr><tr><td>8K</td><td>0.96 GB</td><td>0.40 s</td><td>30 ms</td><td>swap</td></tr><tr><td>32K</td><td>3.84 GB</td><td>1.60 s</td><td>120 ms</td><td>swap</td></tr></tbody></table></div>
+<p>纸面上 swap 快 <strong>13 倍</strong>，但 vLLM 默认用 <strong>recompute</strong>。三个原因：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>原因</th><th>说明</th></tr></thead><tbody><tr><td><strong>CPU 内存贵</strong></td><td>3.84 GB/请求 × 数十个被抢占请求 = 几百 GB 主机内存</td></tr><tr><td><strong>PCIe 是共享资源</strong></td><td>多个 swap 并发会互相拖慢，延迟从 30 ms 涨到数百 ms</td></tr><tr><td><strong>批处理摊薄</strong></td><td>10 个被抢占请求一起重跑 prefill，单请求代价降到 1/5 以下</td></tr></tbody></table></div>
+<h3>5.2 怎么选</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>选择</th></tr></thead><tbody><tr><td>单序列、短上下文（&lt; 8K）</td><td><strong>recompute</strong>（默认）</td></tr><tr><td>单序列、超长上下文（&gt; 32K）且主机内存充裕</td><td>swap</td></tr><tr><td>beam search / 多序列组</td><td><strong>swap</strong>（要保住多个分支的 KV）</td></tr><tr><td>抢占频繁（每秒 &gt;1 次）</td><td>先降 <code>max_num_seqs</code>，别急着改抢占策略</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 卸载：第三层存储</h2>
+<p>显存装不下但又不该丢的 KV，可以下沉：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>容量</th><th>访问延迟</th><th>代表</th></tr></thead><tbody><tr><td>GPU HBM</td><td>640 GB/实例</td><td>100 ns</td><td>默认</td></tr><tr><td>CPU 内存</td><td>1–2 TB</td><td>10 μs</td><td><code>--cpu-offload-gb</code></td></tr><tr><td>本地 NVMe</td><td>数 TB</td><td>100 μs</td><td>LMCache</td></tr><tr><td>远端 KV 池</td><td>PB 级</td><td>0.1–1 ms</td><td>Mooncake</td></tr></tbody></table></div>
+<p>SGLang 的 <strong>HiCache</strong> 就是这套：被淘汰的热前缀下沉到 CPU/SSD，下次命中先搬回——和操作系统"内存 ↔ 磁盘换页"是同一个思路。</p>
+<p><strong>收益边界</strong>：只有"重复前缀多"的场景才划算。纯随机的单轮问答，下沉等于白搬。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 多租户：朴素 LRU 会闯祸</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>租户 A 有 10 万活跃会话 → 占满前缀缓存
+→ 租户 B 的公共系统提示被挤掉
+→ B 每次都重新 prefill 2.5K token
+→ B 的 TTFT 从 600 ms 涨到 1.4 s，但 A 毫发无损</code></pre></figure>
+<p>解法是<strong>加权淘汰</strong>：给每个租户的缓存占用设上限，淘汰时优先挤超标的那家。</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def weighted_evict(candidates, quotas):
+    # 超出配额的租户，其块被淘汰的优先级更高
+    return min(candidates, key=lambda n:
+               (n.tenant in quotas.over_limit(n.tenant), n.last_access))</code></pre></figure>
+<p>配额建议：单租户不超过缓存总量的 30%。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 指标与调参</h2>
+<h3>8.1 四个必看指标</h3>
+<figure class="code code--ascii"><span class="code-lang">text</span><button class="copy" type="button">复制</button><pre><code>vllm:gpu_cache_usage_perc      KV 水位      &gt;90% 要扩或拒绝
+vllm:num_preemptions_total     抢占次数      &gt;0/min 说明 batch 太大
+prefix_cache_hit_rate          命中率        跌 5 pt 要查
+eviction_rate                  淘汰速率      高 = 缓存太小或租户太杂</code></pre></figure>
+<h3>8.2 <code>max_num_seqs</code> 怎么定</h3>
+<p>它决定"一个 batch 最多装几个请求"，直接影响会不会频繁抢占：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>max_num_seqs</th><th>单实例并发</th><th>抢占频率</th><th>吞吐</th><th>TTFT</th></tr></thead><tbody><tr><td>64</td><td>低</td><td>几乎为 0</td><td>低（-35%）</td><td>好</td></tr><tr><td><strong>128</strong></td><td>中</td><td>低</td><td>中</td><td>好</td></tr><tr><td>256</td><td>高</td><td>偶发</td><td><strong>高</strong></td><td>一般</td></tr><tr><td>512</td><td>很高</td><td><strong>频繁</strong></td><td>反而下降</td><td>差</td></tr></tbody></table></div>
+<p>我们的账：240 GB KV ÷ 0.96 GB（8K 请求）= <strong>250 个上限</strong>，所以配 256 刚好贴着天花板——峰值时必然抢占。</p>
+<p><strong>建议配 200</strong>，留 20% 余量给长请求。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>输出到一半突然重来</td><td>被抢占后 recompute</td><td><code>num_preemptions_total</code> 增长</td><td>降 <code>max_num_seqs</code></td></tr><tr><td>命中率缓慢下滑</td><td>前缀被挤掉</td><td>hit_rate 曲线</td><td>扩 KV / 加权淘汰</td></tr><tr><td>TTFT 偶发 4 s</td><td>冷启动重算 32K</td><td>trace 里 prefill 时长尖峰</td><td>长请求走独立池</td></tr><tr><td>缩容后零星 500</td><td>全局 KV 索引没下线</td><td>缩容时间点错误率</td><td>见第 33 章 §11.4</td></tr><tr><td>某租户特别慢</td><td>被大租户挤爆缓存</td><td>分租户 hit_rate</td><td>配额</td></tr><tr><td>显存 OOM</td><td>块表泄漏</td><td>块总数只增不减</td><td>查未释放路径</td></tr></tbody></table></div>
+<p>第一条最伤体验：用户眼看着字一个个出来，突然停住，然后<strong>从头开始</strong>。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>抢占率</td><td>&lt; 0.1% 的请求被抢占</td></tr><tr><td>前缀命中率</td><td>≥85%（第 1 章账本假设）</td></tr><tr><td>KV 水位</td><td>稳态 &lt;85%，峰值 &lt;95%</td></tr><tr><td>块泄漏</td><td>24 h 长稳后块总数不增长</td></tr><tr><td>租户公平</td><td>单租户缓存占用 ≤30%</td></tr><tr><td>淘汰正确性</td><td>被淘汰块无 <code>ref&gt;0</code>（断言）</td></tr><tr><td>版本切换</td><td>权重更新后旧 KV 100% 失效，无脏命中</td></tr></tbody></table></div>
+<p>最后一条最难验也最危险：<strong>旧 KV 被新权重复用</strong>，输出会莫名其妙地错，且无法复现。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 备选方案：如果不这么做会怎样</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>备选做法</th><th>代价</th><th>为什么没成主流</th></tr></thead><tbody><tr><td><strong>预分配最大长度</strong>（PagedAttention 之前）</td><td>按 32K 预留 → 实际用 2K 时浪费 94% 显存</td><td>并发上不去</td></tr><tr><td><strong>连续分配 + 搬移</strong></td><td>每次扩容要拷贝整段 KV</td><td>拷贝成本随长度平方增长</td></tr><tr><td><strong>固定块但不共享</strong></td><td>无前缀复用</td><td>命中率 0，等于没有缓存</td></tr><tr><td><strong>全量下沉 CPU</strong></td><td>每次 decode 都过 PCIe</td><td>带宽被打爆，TPOT 从 25 ms 涨到 200 ms+</td></tr><tr><td><strong>不分页 + 大页（2 MB）</strong></td><td>内部碎片</td><td>短请求浪费，长请求仍不连续</td></tr></tbody></table></div>
+<p><strong>PagedAttention 赢在"间接层"</strong>：物理可以不连续，逻辑连续由 block table 保证。这个思路和操作系统的虚拟内存完全同构——只是页大小从 4 KB 变成了 1.92 MB。</p>
+<p>替代路线里唯一有竞争力的是 <strong>vAttention</strong>（动态显存 + CUDA VMM API 直接映射），它省掉了 block table 的软件开销，但要求驱动与硬件支持，可移植性差。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 收口</h2>
+<blockquote><p>**KV 的生命周期里没有"过期"，只有"不够用"。</p><p>淘汰是容量问题，抢占是并发问题——把两者混在一起调，永远调不对。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：KV 三件事分开看——回收无感、淘汰降命中、抢占伤体验；都靠引用计数与容量压力驱动，没有 TTL。
+我算的：32K 上下文抢占，recompute 1.6 s vs swap 120 ms，差 13 倍，但默认仍选 recompute。
+我原来以为…实际…差在：以为缓存要过期，实际失效只由权重版本触发。
+还没懂：HiCache 下沉后，跨实例共享 KV 的一致性怎么保证。</code></pre></figure>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="10A-kernels.html"><span>上一章</span><b>10A · Kernel 层：算子如何变成每秒千次运算</b></a><a class="nav-next" href="11-pd-disaggregation.html"><span>下一章</span><b>11 · 调度与 PD 分离</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
