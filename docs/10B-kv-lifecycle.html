@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：每秒 58 万次块分配</a><a href="#s2"><span>02</span>. 三种回收不是一回事</a><a href="#s3"><span>03</span>. 分配器：free list + block table</a><a href="#s4"><span>04</span>. 前缀缓存淘汰：叶子 LRU + 引用计数</a><a href="#s5"><span>05</span>. 抢占：recompute 还是 swap</a><a href="#s6"><span>06</span>. 卸载：第三层存储</a><a href="#s7"><span>07</span>. 多租户：朴素 LRU 会闯祸</a><a href="#s8"><span>08</span>. 指标与调参</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：如果不这么做会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：每秒 58 万次块分配</a><a href="#s2"><span>02</span>. 三种回收不是一回事</a><a href="#s3"><span>03</span>. 分配器：free list + block table</a><a href="#s4"><span>04</span>. 前缀缓存淘汰：叶子 LRU + 引用计数</a><a href="#s5"><span>05</span>. 抢占：recompute 还是 swap</a><a href="#s6"><span>06</span>. 卸载：把 KV 搬到显存之外</a><a href="#s7"><span>07</span>. 多租户：朴素 LRU 会闯祸</a><a href="#s8"><span>08</span>. 指标与调参</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：如果不这么做会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -359,25 +359,56 @@ KV cache       →  token 序列的哈希</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>选择</th></tr></thead><tbody><tr><td>单序列、短上下文（&lt; 8K）</td><td><strong>recompute</strong>（默认）</td></tr><tr><td>单序列、超长上下文（&gt; 32K）且主机内存充裕</td><td>swap</td></tr><tr><td>beam search / 多序列组</td><td><strong>swap</strong>（要保住多个分支的 KV）</td></tr><tr><td>抢占频繁（每秒 &gt;1 次）</td><td>先降 <code>max_num_seqs</code>，别急着改抢占策略</td></tr></tbody></table></div>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 卸载：第三层存储</h2>
-<p>显存装不下但又不该丢的 KV，可以下沉：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>容量</th><th>访问延迟</th><th>代表</th></tr></thead><tbody><tr><td>GPU HBM</td><td>640 GB/实例</td><td>100 ns</td><td>默认</td></tr><tr><td>CPU 内存</td><td>1–2 TB</td><td>10 μs</td><td><code>--cpu-offload-gb</code></td></tr><tr><td>本地 NVMe</td><td>数 TB</td><td>100 μs</td><td>LMCache</td></tr><tr><td>远端 KV 池</td><td>PB 级</td><td>0.1–1 ms</td><td>Mooncake</td></tr></tbody></table></div>
-<p>SGLang 的 <strong>HiCache</strong> 就是这套：被淘汰的热前缀下沉到 CPU/SSD，下次命中先搬回——和操作系统"内存 ↔ 磁盘换页"是同一个思路。</p>
-<p><strong>收益边界</strong>：只有"重复前缀多"的场景才划算。纯随机的单轮问答，下沉等于白搬。</p>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 卸载：把 KV 搬到显存之外</h2>
+<h3>6.1 谁来做：三种组件形态</h3>
+<p>"卸载"不是一个开关，而是三种不同的部署形态，复杂度递增：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>组件</th><th>谁负责搬运</th><th>典型实现</th><th>适用</th></tr></thead><tbody><tr><td><strong>① 引擎内置</strong></td><td>block manager 自带两级池</td><td>引擎自己</td><td><code>--cpu-offload-gb</code>、vLLM swap space</td><td>单机，快速试水</td></tr><tr><td><strong>② 外挂连接器</strong></td><td>KV Connector 接口 + 外部存储客户端</td><td>引擎调接口，外部服务存</td><td>LMCache connector</td><td>希望复用已有存储</td></tr><tr><td><strong>③ 独立服务</strong></td><td>独立的 KV Store 集群</td><td>专门的传输层（RDMA）</td><td>Mooncake Store</td><td>跨机共享、全球复用</td></tr></tbody></table></div>
+<p>对应的角色分工：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>角色</th><th>职责</th></tr></thead><tbody><tr><td><strong>Scheduler</strong></td><td>决定"这个请求值不值得去远端取"（取比算快才取）</td></tr><tr><td><strong>Block manager</strong></td><td>执行 evict → 发起 offload 写、发起 fetch 读</td></tr><tr><td><strong>Connector / Store client</strong></td><td>序列化、传输、重试、校验</td></tr><tr><td><strong>KV Store 服务</strong></td><td>存块、按哈希索引、自己再做一层 LRU</td></tr><tr><td><strong>平台 SRE</strong></td><td>配容量、配租户配额、配保留策略</td></tr></tbody></table></div>
+<h3>6.2 一次卸载的完整动作序列</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>① 显存告急，block manager 选中一批可淘汰块
+② 判断：这批块值得下沉吗？（命中过 ≥2 次才值得）
+③ 值得 → 序列化 KV 页 → 写请求发往 CPU / NVMe / 远端
+      不值得 → 直接释放
+④ 写成功 → 本地块回 free list，索引表记一条 &quot;hash → 远端位置&quot;
+⑤ 新请求到达 → 查本地前缀树 miss → 查索引表
+⑥ 命中 → 发起 fetch（RDMA/PCIe）→ 等数据到 → 挂进本地页表
+⑦ 未命中 → 老老实实 prefill</code></pre></figure>
+<p><strong>第 ② 步是最容易被跳过的一步</strong>：如果不筛选就全量下沉，等于把显存压力原封不动转移成网络压力。</p>
+<h3>6.3 什么时候值得：一笔除法</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>传输路径</th><th>带宽</th><th>0.96 GB（8K 请求）耗时</th></tr></thead><tbody><tr><td>NVLink</td><td>900 GB/s</td><td>1 ms</td></tr><tr><td>PCIe 4.0 x16</td><td>64 GB/s</td><td>15 ms</td></tr><tr><td>RDMA 400 Gbps</td><td>50 GB/s</td><td>19 ms</td></tr></tbody></table></div>
+<p>对比重算：8K prefill ≈ <strong>400 ms</strong>。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>收益 = 命中率 × (400 ms − 19 ms) − 传输与存储成本</code></pre></figure>
+<p><strong>只要命中率超过 10%，下沉就是赚的。</strong> 但前提是"这些前缀真的会被再次用到"——纯随机单轮问答，命中率接近 0，下沉等于白搬。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>前缀复用率</th><th>值得吗</th></tr></thead><tbody><tr><td>Agent 多轮（同一会话反复带历史）</td><td>高</td><td>✅ 非常值得</td></tr><tr><td>客服（同一套系统提示 + 工具 schema）</td><td>很高</td><td>✅ 值得</td></tr><tr><td>一次性文档问答</td><td>低</td><td>❌ 不如重算</td></tr><tr><td>代码补全（同一文件反复改）</td><td>高</td><td>✅ 值得</td></tr></tbody></table></div>
+<h3>6.4 还有哪些手段：不一定要搬</h3>
+<p>卸载只是"扩容"的一种，同一目标还有四条路：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>做法</th><th>等效收益</th><th>代价</th></tr></thead><tbody><tr><td><strong>KV 量化</strong></td><td>FP16 → FP8/FP4</td><td>容量 ×2 或 ×4</td><td>精度掉点（第 6 章）</td></tr><tr><td><strong>稀疏注意力</strong></td><td>只保留滑动窗口内 KV</td><td>容量 ×N</td><td>依赖模型结构（第 10 章 §9）</td></tr><tr><td><strong>只下沉高频前缀</strong></td><td>按访问计数筛选</td><td>传输量 −80%</td><td>需要计数与阈值</td></tr><tr><td><strong>KV 预计算快照</strong></td><td>离线算好公共提示的 KV，启动时分发</td><td>冷启动 TTFT −60%</td><td>版本必须严格对齐</td></tr></tbody></table></div>
+<p>最后一条特别实用：把"系统提示 + 工具 schema"这 2.5K token 的 KV 离线算好，新实例启动时直接加载，<strong>冷启动的首个请求不用再 prefill</strong>。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 多租户：朴素 LRU 会闯祸</h2>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>租户 A 有 10 万活跃会话 → 占满前缀缓存
-→ 租户 B 的公共系统提示被挤掉
-→ B 每次都重新 prefill 2.5K token
-→ B 的 TTFT 从 600 ms 涨到 1.4 s，但 A 毫发无损</code></pre></figure>
-<p>解法是<strong>加权淘汰</strong>：给每个租户的缓存占用设上限，淘汰时优先挤超标的那家。</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def weighted_evict(candidates, quotas):
-    # 超出配额的租户，其块被淘汰的优先级更高
-    return min(candidates, key=lambda n:
-               (n.tenant in quotas.over_limit(n.tenant), n.last_access))</code></pre></figure>
-<p>配额建议：单租户不超过缓存总量的 30%。</p>
-<div class="orn"></div>
+<h3>7.1 不公平从哪来</h3>
+<p>前缀缓存是<strong>全局共享</strong>的（否则复用率为零），但 LRU 只看"最近访问"，不看"谁在用"：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>租户 A 有 10 万活跃会话 → 持续刷新，占满缓存
+租户 B 的系统提示 10 分钟没被访问 → 被挤出
+→ B 每个请求都重新 prefill 2.5K token
+→ B 的 TTFT 从 600 ms 变 1.4 s，A 毫发无损</code></pre></figure>
+<p><strong>这不是容量问题，是分配问题。</strong> 扩容治不了，只会让 A 占得更多。</p>
+<h3>7.2 四种解法对比</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>做法</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td><strong>硬分区</strong></td><td>每租户独立缓存，互不可见</td><td>隔离彻底、实现简单</td><td>碎片浪费，小租户吃不满</td></tr><tr><td><strong>软配额 + 加权淘汰</strong></td><td>超配额者优先被淘汰</td><td>利用率高</td><td>需要配额中心</td></tr><tr><td><strong>SLA 分级</strong></td><td>金牌租户保底池</td><td>商业上可解释</td><td>配置复杂</td></tr><tr><td><strong>租户哈希命名空间</strong></td><td>缓存键带租户盐</td><td><strong>安全</strong>（防串号）</td><td>减少跨租户复用</td></tr></tbody></table></div>
+<p>实践组合：<strong>命名空间（安全）+ 软配额（公平）+ 金牌保底（商业）</strong>。</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def weighted_evict(candidates, quota):
+    # 超出配额的租户，淘汰优先级更高；同优先级下再看 LRU
+    return min(candidates, key=lambda n: (quota.over(n.tenant), n.last_access))</code></pre></figure>
+<h3>7.3 安全性：跨租户命中 = 数据泄露</h3>
+<p>这一条比公平性更严重。如果两个租户的提示词<strong>恰好相同</strong>，哈希就会碰撞到同一个缓存条目——用户在响应里可能看到别人的上下文。</p>
+<p><strong>必须给缓存键加租户盐</strong>：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>key = hash(tenant_id_salt + block_tokens)   # 而不是 hash(block_tokens)</code></pre></figure>
+<p>代价是跨租户零复用。对 ToB 平台这是必须付的成本；对 ToC（单一租户）可以省掉。</p>
+<h3>7.4 谁负责配置，谁负责执行</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>动作</th><th>角色</th><th>频率</th></tr></thead><tbody><tr><td>定配额（单租户 ≤30%）</td><td>平台 SRE</td><td>季度</td></tr><tr><td>下发配额</td><td>配额中心（第 2 章 §6.2）</td><td>变更时</td></tr><tr><td>执行加权淘汰</td><td>block manager</td><td>每次淘汰</td></tr><tr><td>监控分租户命中率</td><td>可观测平台</td><td>实时</td></tr></tbody></table></div>
+<p><strong>分租户命中率是必看指标</strong>：全局 85% 但某租户只有 20%，说明它正在被挤。</p>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 指标与调参</h2>
 <h3>8.1 四个必看指标</h3>
