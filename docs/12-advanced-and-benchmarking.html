@@ -242,7 +242,8 @@ blockquote p{margin:.4em 0}
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 投机解码：什么时候是赚的</h2>
 <h3>3.1 三个符号，先定义清楚</h3>
 <p>投机解码的做法是：小模型先"猜"几个 token，大模型<strong>一次前向</strong>把它们全验一遍。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>符号</th><th>含义</th><th>怎么得到</th><th>典型值</th></tr></thead><tbody><tr><td><strong>k</strong></td><td>每步草稿模型猜几个 token</td><td>你配的参数（如 <code>USE_NEXTN_DECODE=5</code>）</td><td>2–8</td></tr><tr><td><strong>α</strong></td><td><strong>单个</strong>草稿 token 被接受的概率</td><td>实测：接受数 ÷ 草稿总数</td><td>0.4–0.9</td></tr><tr><td><strong>c</strong></td><td>每多验一个草稿，成本涨多少（相对一次普通 step）</td><td>实测：step 耗时增量 ÷ 基准 step 耗时</td><td>0.05–1.0</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>符号</th><th>含义</th><th>怎么得到</th><th>典型值</th></tr></thead><tbody><tr><td><strong>k</strong></td><td>每步草稿模型猜几个 token</td><td>你配的参数（如 <code>USE_NEXTN_DECODE=5</code>）</td><td>2–8</td></tr><tr><td><strong>α</strong></td><td><strong>单个</strong>草稿 token 被接受的概率</td><td>实测：接受数 ÷ 草稿总数</td><td>0.4–0.9</td></tr><tr><td><strong>c</strong></td><td>每多验一个草稿，耗时涨多少（<strong>无量纲</strong>，相对一次普通 step）</td><td>实测：step 耗时增量 ÷ 基准 step 耗时</td><td>0.05–1.0</td></tr></tbody></table></div>
+<blockquote><p><strong>c 的单位是"没有单位"</strong>——它是两个时间的比：</p><p>```</p><p>c = 每多一个草稿 token 增加的耗时（ms/token） ÷ 基准 step 耗时（ms）</p><p>  = 1.25 ms/token ÷ 25 ms = 0.05 /token</p><p>```</p><p>所以 <code>1 + k·c</code> 算出来的是<strong>耗时倍数</strong>（1.2 倍），<strong>不是钱</strong>。</p><p>要换成钱，还得乘一步的成本——那是第 14、17 章的事。</p></blockquote>
 <p><strong>α 是最关键的未知数</strong>，它取决于草稿模型和主模型有多像。同一个草稿模型，在"续写代码"上 α 可能 0.85，在"复杂推理"上只有 0.35。</p>
 <h3>3.2 一条时间轴看懂在干什么</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>不带投机：每个 step 出 1 个 token
@@ -267,7 +268,9 @@ blockquote p{margin:.4em 0}
 <h3>3.4 c 为什么是 0.05 而不是 1</h3>
 <p>直觉上"验 5 个位置应该贵 5 倍"，但 decode 阶段不是这样算的：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一步的耗时 ≈ 读一遍权重（固定） + 读 KV（随 batch） + 算（随 token 数）</code></pre></figure>
-<ul><li><strong>低并发</strong>：权重读取占 90% 以上，多算 4 个位置几乎不增加时间 → c ≈ 0.05；</li><li><strong>高并发</strong>：batch 已经塞满，多 4 个位置就是实打实的算力 → c 会一路涨到接近 1。</li></ul>
+<ul><li><strong>低并发</strong>：权重读取占 90% 以上，多算 4 个位置几乎不增加时间 → c ≈ 0.05</li></ul>
+<p>  （一步 25 ms，多一个草稿只多 1.25 ms）；</p>
+<ul><li><strong>高并发</strong>：batch 已经塞满，多 4 个位置就是实打实的算力 → c 会一路涨到接近 1。</li></ul>
 <p><strong>c 不是常数，它是"GPU 有多忙"的度量。</strong> 这一点决定了下一节。</p>
 <h3>3.5 合起来：S = E / (1 + k·c)</h3>
 <p>α = 0.8、k = 4、c = 0.05：</p>
