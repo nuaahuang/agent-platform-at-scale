@@ -298,13 +298,19 @@ Go：    7,000 ÷ 60,000 × 2 = 1 台，配 6 台覆盖多 AZ</code></pre></figu
 <div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>规模</th><th>建设（AI 辅助）</th><th>运行（值班 + 变更）</th><th>合计</th></tr></thead><tbody><tr><td>0→1 原型</td><td>1 万 DAU / 16 卡</td><td>2</td><td>0（自己兼）</td><td><strong>2</strong></td></tr><tr><td>1→10 产品化</td><td>100 万 DAU / 128 卡</td><td>3</td><td>1</td><td><strong>4</strong></td></tr><tr><td>10→100 规模化</td><td>1,000 万 DAU / 1,024 卡</td><td>5</td><td>3</td><td><strong>8</strong></td></tr><tr><td>亿级</td><td>2,000 万 DAU / 2,512 卡</td><td>7</td><td>4</td><td><strong>11</strong></td></tr></tbody></table></div>
 <p>对照上一版：亿级平台<strong>从 100 人降到 11 人</strong>，差 9 倍。</p>
 <p>但 11 人里 <strong>4 个是值班</strong>，不是写代码——这个比例很说明问题。</p>
-<h3>7.4 新的瓶颈是 review，不是写</h3>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>AI 产出      500 行/小时
-人能 review  150 行/小时</code></pre></figure>
-<p><strong>每写 3 行，就有 1 行卡在 review 上。</strong> 团队规模现在由"能审多少人"决定，不再由"能写多少"决定。</p>
-<p>推论：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>结果</th></tr></thead><tbody><tr><td>加人写代码</td><td>无收益，review 队列更长</td></tr><tr><td><strong>加人 review</strong></td><td>有收益</td></tr><tr><td><strong>提高单测覆盖率</strong></td><td>有收益，把 review 压力转给机器</td></tr><tr><td>降低变更粒度（小 PR）</td><td>有收益，review 更快</td></tr></tbody></table></div>
-<h3>7.5 语言数量的结论也要改</h3>
+<h3>7.4 真正的瓶颈：两端没动，中间塌了</h3>
+<p>把交付拆成五段，AI 只压缩了中间：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>需求理解 ──▶ 设计 ──▶ 实现 ──▶ 代码 review ──▶ 目标验证
+   ↑慢                ↑快         ↑中            ↑慢</code></pre></figure>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>AI 加速</th><th>为什么它仍是瓶颈</th></tr></thead><tbody><tr><td><strong>需求理解</strong></td><td>1.5×</td><td>AI 能帮你整理需求，但<strong>判断"用户到底要什么"必须是人</strong></td></tr><tr><td><strong>设计</strong></td><td>1.5×</td><td>AI 给得出五个方案，<strong>拍板与担责只能是人</strong></td></tr><tr><td><strong>实现</strong></td><td><strong>10×</strong></td><td>已经不是瓶颈</td></tr><tr><td>代码 review</td><td>1.2×</td><td>部分可自动化（测试、lint、AI 初审）</td></tr><tr><td><strong>目标验证</strong></td><td>1.2×</td><td><strong>"跑通了" ≠ "对了"</strong></td></tr></tbody></table></div>
+<p>第 5 段是全章最容易被低估的：<strong>代码能跑、测试全绿、指标正常，但结果不是你要的。</strong></p>
+<p>LLM 平台尤其如此——输出没有绝对正确，只有"符合预期"。所以要靠：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>回答什么</th></tr></thead><tbody><tr><td>黄金用例集（50 条）</td><td>该对的是不是还对</td></tr><tr><td>影子对拍</td><td>新旧版本差异在哪</td></tr><tr><td>人工抽检</td><td>机器判不了的"感觉对不对"</td></tr><tr><td>灰度指标</td><td>真实用户是否买账</td></tr></tbody></table></div>
+<h3>7.5 一个人的产能上限</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>工作</th><th>一周能做多少</th><th>为什么不能更多</th></tr></thead><tbody><tr><td>设计决策（有取舍、有推翻条件、有验收）</td><td><strong>2–3 个</strong></td><td>每个都要想清楚约束与代价</td></tr><tr><td>目标验证（定义判据 + 跑 + 判断）</td><td><strong>3–5 个</strong></td><td>每个都要对照目标而不是对照代码</td></tr><tr><td>写代码</td><td>数千行</td><td>已经不是限制</td></tr></tbody></table></div>
+<p><strong>推论：团队规模 = 能同时推进的设计决策数，不是能写多少代码。</strong></p>
+<p>这就是为什么本书每章都强制有"验收"一节——<strong>验收就是"目标验证"的载体</strong>，把它写进文档，才不会退化成"测试跑过了就算完"。</p>
+<h3>7.6 语言数量的结论也要改</h3>
 <p>旧结论是"语言数量 ≤ 团队能维护的边界数量，5 个人 3 种语言会半吊子"。</p>
 <p>现在这个约束松了：AI 能让一个人写出合格的 Go 和 Python，<strong>但松不了的是"出故障时谁能定位"</strong>。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>旧约束</th><th>新约束</th></tr></thead><tbody><tr><td>每种语言要有专家</td><td>每种语言要有<strong>能半夜看日志的人</strong></td></tr><tr><td>语言数 ≤ 团队容量</td><td>语言数 ≤ <strong>值班人数</strong></td></tr></tbody></table></div>
