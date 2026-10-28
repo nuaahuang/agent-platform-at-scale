@@ -248,7 +248,7 @@ blockquote p{margin:.4em 0}
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>月总请求 = 7000 QPS × 2,592,000 s = 1.81e10 次
 允许失败 = 1.81e10 × 0.1%            = 1,810 万次
 允许不可用 = 30 天 × 24 h × 0.1%     = 43.2 分钟</code></pre></figure>
-<p><strong>错误预算的用法是"刹车"，不是"额度"</strong>：本月烧掉 60%，就该冻结非必要发布，而不是"还剩 40% 可以继续激进"。这一点决定了第 34 章发布策略的节奏。</p>
+<p><strong>错误预算的用法是"刹车"，不是"额度"</strong>：本月烧掉 60%，就该冻结非必要发布，而不是"还剩 40% 可以继续激进"。这一点决定了第 36 章灰度发布的节奏。</p>
 <p>常用可用性换算，背下来比查表快：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>SLO</th><th>每月不可用</th><th>每年不可用</th></tr></thead><tbody><tr><td>99%</td><td>7.2 小时</td><td>3.65 天</td></tr><tr><td>99.9%</td><td>43.2 分钟</td><td>8.76 小时</td></tr><tr><td>99.95%</td><td>21.6 分钟</td><td>4.38 小时</td></tr><tr><td>99.99%</td><td>4.32 分钟</td><td>52.6 分钟</td></tr></tbody></table></div>
 <h3>2.2 为什么是 800ms / 50ms / 9s</h3>

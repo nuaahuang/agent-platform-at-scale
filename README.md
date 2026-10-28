@@ -45,7 +45,7 @@
 | **P11 可观测与运营** | 37–38 | 指标字典 · on-call 与复盘 |
 | **P12 综合** | 39–40 | 端到端走查 · 答辩手册 |
 
-完整 40 章目录与每章交付物：[book/OUTLINE.md](book/OUTLINE.md)
+完整 44 章目录与每章交付物：[book/OUTLINE.md](book/OUTLINE.md)
 
 ---
 
@@ -111,7 +111,7 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 |---|---|
 | 目录定稿（40 章） | ✅ |
 | 写作标准 + 自动检查 | ✅ `book/STYLE.md` + `make style` |
-| 正文 | ✅ 6/40（第 1、8–12 章）+ 10A + 附录 A |
+| 正文 | ✅ 6/44（第 1、8–12 章）+ 10A + 附录 A |
 | labs | ✅ 6 个可运行 |
 | platform skeleton | ✅ 网关 + mock 引擎 |
 | deploy / benchmarks | ⏳ |

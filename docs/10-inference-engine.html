@@ -413,7 +413,7 @@ SWA：    [ 丢弃 ][ 只重算最后 140 token ]</code></pre></figure>
 <p><strong>这就是"模型结构决定引擎优化空间"的最好例子</strong>：同样的 prefill 问题，稠密全注意力只能切片，滑动窗口可以直接截断。第 06 章讲压缩时会再回到这一点。</p>
 <h3>9.3 它没开源的三块，恰好是本书的三章</h3>
 <p>DeepInfer 的 README 明确写了"完整服务还需要、但本次未包含"：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>缺的部分</th><th>对应本书</th><th>为什么不开源</th></tr></thead><tbody><tr><td>KV cache 系统</td><td>第 26 章 存储选型</td><td>与内部基础设施强耦合</td></tr><tr><td>VE/Prefill/Decode 分离</td><td>第 11 章 PD 分离</td><td>需要跨机传输与调度配合</td></tr><tr><td>DP 副本间的负载均衡</td><td>第 33 章 过载保护</td><td>依赖全局视图</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>缺的部分</th><th>对应本书</th><th>为什么不开源</th></tr></thead><tbody><tr><td>KV cache 系统</td><td>第 27 章 存储选型</td><td>与内部基础设施强耦合</td></tr><tr><td>VE/Prefill/Decode 分离</td><td>第 11 章 PD 分离</td><td>需要跨机传输与调度配合</td></tr><tr><td>DP 副本间的负载均衡</td><td>第 25 章 准入控制</td><td>依赖全局视图</td></tr></tbody></table></div>
 <p><strong>这恰好说明一件事：引擎（engine）不等于服务（service）。</strong>引擎解决"一次前向怎么算得快"，服务解决"一万个请求怎么排队、放哪、坏了怎么办"。本书把后者拆成 Part VII–IX，就是这个原因。</p>
 <p>它的最小高效部署是 <strong>64 GPU prefill + 64 GPU decode</strong>，P:D ≈ 1:1——和我们第 11 章算出来的 909:700 ≈ 1.3:1 同一个量级，这是相互印证的。</p>
 <h3>9.4 边界：哪些数字不能抄</h3>
