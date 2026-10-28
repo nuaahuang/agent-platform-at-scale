@@ -515,7 +515,70 @@ DeepInfer 的 README 明确写了"完整服务还需要、但本次未包含"：
 关键事实：**上面四层决定"能不能用"，最下面一层决定"贵不贵"**。
 同一台 H800，attention kernel 写得好不好，能差 2–3 倍吞吐。
 
-### 10.2 kernel 到底是什么
+### 10.2 层、算子、kernel、指令：四个概念别混
+
+| 概念 | 是什么 | 例子 | 谁定义 |
+|---|---|---|---|
+| **层（layer）** | 一组算子的组合 | 一个 Transformer block | 模型结构 |
+| **算子（operator）** | 数学语义上的一个操作 | `matmul`、`softmax`、`rmsnorm`、`topk` | 框架（ATen 等） |
+| **kernel** | 算子在某硬件上的**具体实现** | `cuBLAS gemm`、`flash_mla_with_kvcache` | kernel 作者 |
+| **指令** | GPU 线程执行的机器指令 | `HMMA`、`LDGSTS` | 编译器 |
+
+关键区别：**算子是不变的语义，kernel 是可变的实现。**
+
+同一个 `matmul` 算子，背后可能是：
+
+```
+torch.matmul
+   ├─ 小矩阵      → cuBLAS 的某个 kernel
+   ├─ FP8 大矩阵  → DeepGEMM 的 fp8_gemm_nt
+   └─ MoE 分组    → grouped GEMM kernel
+```
+
+调用链完整长这样：
+
+```
+model.forward()          ← 层
+  └─ F.linear(x, w)      ← 层内的一步
+      └─ aten::matmul    ← 算子（语义，与硬件无关）
+          └─ cuBLAS / DeepGEMM  ← kernel（实现，与硬件强相关）
+              └─ HMMA 指令       ← 指令
+```
+
+**"融合"就发生在这条链的第三层**：把 5 个算子映射成 1 个 kernel，
+省掉 4 次启动和 4 次中间结果的 HBM 往返。
+
+### 10.3 kernel 住在哪里：六种形态
+
+答案是：**kernel 通常是一个独立发布的库，不是引擎的一个文件夹。**
+
+| 形态 | 例子 | 与引擎的关系 | 升级影响 |
+|---|---|---|---|
+| 引擎内 `csrc/` | vLLM 的 `csrc/attention/`、`cache_kernels.cu` | 同仓库编译 | 跟引擎一起升 |
+| **独立仓库 + wheel** | FlashMLA、DeepGEMM、DeepEP | pip 依赖，各自版本 | **可单独升级/废弃** |
+| 引擎内 DSL 源码 | DeepInfer 的 `model_executor/layers/tilelang_ops` | 随引擎发 | 跟引擎一起升 |
+| 运行时 JIT | DeepGEMM 的 DeepJIT | 安装时不编译，首次调用才编译 | 首次延迟 |
+| 厂商库 | cuBLAS、cuDNN、NCCL | 系统级依赖 | 驱动兼容 |
+| 编译器生成 | torch.compile、Triton | 运行时生成 | 不可预期 |
+
+以 DeepInfer 为例的依赖图：
+
+```
+DeepInfer（引擎）
+ ├─ deep_gemm      GEMM kernel 库      ← 独立版本、独立 CI
+ ├─ flash_mla      attention kernel 库 ← 独立版本、独立支持矩阵
+ ├─ deep_ep        通信 kernel 库      ← 独立版本
+ └─ tilelang_ops   引擎内 DSL 算子    ← 随引擎
+        └─ CUDA runtime / CANN（昇腾）
+```
+
+**这解释了一件很重要的事**：为什么 FlashMLA 可以单方面宣布"2026.09 起不再支持 Hopper"，
+而引擎只能被动跟随——因为 kernel 库和引擎是两个独立的发布物。
+
+也解释了"换个引擎为什么这么难"：换的不是调度器，是**一整套 kernel 契约**——
+KV 的字节布局、权重的排列方式、支持的 SM 架构，全都绑在一起。
+
+### 10.4 kernel 长什么样
 
 一句话：**在 GPU 上并行执行的一个函数**。它接收 tensor 和元数据，返回 tensor。
 
@@ -541,7 +604,7 @@ o_i, lse_i = flash_mla_with_kvcache(
 
 **绝大多数团队不该写 kernel**，但必须知道它在哪、瓶颈在哪，否则调优会一直在错误的层打转。
 
-### 10.3 一次 decode step 有多少个 kernel
+### 10.5 一次 decode step 有多少个 kernel
 
 以 60 层模型、每层 12 个算子估算：
 
@@ -565,7 +628,7 @@ o_i, lse_i = flash_mla_with_kvcache(
 启动开销趋近于 0。代价是**形状必须固定**——所以变长 batch 要用 padding 或 masked 方案
 （DeepGEMM 的 masked grouped GEMM 就是为此而生）。
 
-### 10.4 融合：把 5 个 kernel 变 1 个
+### 10.6 融合：把 5 个 kernel 变 1 个
 
 FlashMLA 有个很能说明问题的设计——把 Q-norm、Q-RoPE、attention、O-RoPE、转 FP8
 **五个操作融进一个 kernel**。
@@ -583,7 +646,7 @@ out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)
 > 这是全书反复出现的一个模式：**性能优化会把"数据布局"变成契约**。
 > 你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。
 
-### 10.5 Mega MoE：把通信塞进 kernel 里
+### 10.7 Mega MoE：把通信塞进 kernel 里
 
 MoE 的传统流程是四步、四次 kernel、两次跨卡：
 
@@ -600,7 +663,7 @@ DeepGEMM 的 Mega MoE 把它**合成一个 kernel**：dispatch、linear1、linea
 `deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)` —— 一行调用背后是一次
 通信-计算流水线编排。
 
-### 10.6 数字：kernel 峰值 vs 模型 MFU
+### 10.8 数字：kernel 峰值 vs 模型 MFU
 
 | 指标 | 数值 | 说明 |
 |---|---|---|
@@ -615,7 +678,7 @@ DeepGEMM 的 Mega MoE 把它**合成一个 kernel**：dispatch、linear1、linea
 这解释了为什么"优化 kernel"和"优化吞吐"是两件事：
 前者是少数人的活，后者是平台团队的活。
 
-### 10.7 边界：kernel 与硬件强绑定
+### 10.9 边界：kernel 与硬件强绑定
 
 FlashMLA 在 2026.09.30 的版本里**移除了 Hopper 支持**（只留 SM100/SM103），
 同时改了 FP8/FP4 的 KV 格式，与旧版本不兼容；DeepInfer 也只支持 SM100 与昇腾 950。
@@ -629,7 +692,7 @@ FlashMLA 在 2026.09.30 的版本里**移除了 Hopper 支持**（只留 SM100/S
 **选硬件时，先看 kernel 支持矩阵，再看纸面算力。**
 一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。
 
-### 10.8 一句话
+### 10.10 一句话
 
 > **调度器决定"谁先算"，kernel 决定"算得多快"。
 > 前者是你能改的，后者通常要等生态——所以架构设计要把 kernel 的可获得性算进选型。**
