@@ -381,6 +381,11 @@ async def main(rate, duration, url):
 <p>把 L1 测到的<strong>服务时间分布</strong>（不是均值）作为输入，用离散事件仿真跑 2512 卡的排队。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>能回答</th><th>不能回答</th></tr></thead><tbody><tr><td>P:D 比例取多少最省</td><td>网络拥塞</td></tr><tr><td>路由策略 A/B 谁更好</td><td>硬件故障</td></tr><tr><td>峰值时排队多长</td><td>缓存命中率</td></tr></tbody></table></div>
 <p>工具不复杂：SimPy 或自己写 200 行事件循环。<strong>仿真不能替代压测，但能把"试错成本"从 2512 卡降到 0 卡。</strong></p>
+<h3>9.7 仿真器的三个要素与一条可信判据</h3>
+<p>它跑得快的真正原因不是"算得省"，是<strong>时间可以快进</strong>：不执行模型，只按事件推进时钟。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>要素</th><th>建模什么</th><th>数据从哪来</th></tr></thead><tbody><tr><td>到达过程</td><td>请求何时来</td><td>生产日志（Poisson 或实测轨迹）</td></tr><tr><td>服务时间</td><td>prefill / 一个 decode step 多久</td><td>L1 实测的<strong>分布</strong>，不是均值</td></tr><tr><td>调度规则</td><td>batching、抢占、KV 上限</td><td>引擎源码里的真实逻辑</td></tr></tbody></table></div>
+<p>开源参考：<a href="https://github.com/microsoft/vidur">Vidur</a>（MIT，微软）——LLM 推理仿真器，支持连续批处理与多种并行策略，可作为自研的对照基线。</p>
+<p><strong>可信判据</strong>：拿 L2 小集群的一次真实实验做回放，仿真出的 p95 误差 <strong>&lt; 15%</strong> 才敢用于决策。达不到，就只是漂亮的数字。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收：怎么证明压测是可信的</h2>
