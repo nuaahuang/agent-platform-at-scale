@@ -268,9 +268,10 @@ def parse_meta(path):
     lines = text.split("\n")
     title = next((l for l in lines if l.startswith("# ")), "# 未命名")
     title = title[2:].strip()
-    m = re.match(r"^第\s*(\d+)\s*章\s*[·:：]\s*(.+)$", title)
+    m = re.match(r"^第\s*(\d+[A-Z]?)\s*章\s*[·:：]\s*(.+)$", title)
     if m:
-        num, name = f"{int(m.group(1)):02d}", m.group(2)
+        raw_num, name = m.group(1), m.group(2)
+        num = raw_num if raw_num[-1].isalpha() else f"{int(raw_num):02d}"
     else:
         m = re.match(r"^附录\s*([A-Z])\s*[·:：]\s*(.+)$", title)
         if m:
@@ -321,7 +322,7 @@ def page(meta, body, toc, prev=None, next_=None):
 
     if meta["num"] == "G":
         crumb = "参考 · 术语表"
-    elif meta["num"].isdigit():
+    elif re.match(r"^\d+[A-Z]?$", meta["num"]):
         crumb = f'{meta["part"]} · 第 {meta["num"]} 章'
     else:
         crumb = f'{meta["part"]} {meta["num"]}'
@@ -367,7 +368,15 @@ def main():
         meta["file"] = f"{f.stem}.html"
         metas.append(meta)
 
-    metas.sort(key=lambda m: (0, int(m["num"])) if m["num"].isdigit() else (1, m["num"]))
+    def _key(m):
+        n = m["num"]
+        if n.isdigit():
+            return (0, int(n), "")
+        if re.match(r"^\d+[A-Z]$", n):
+            return (0, int(n[:-1]), n[-1])
+        return (1, 0, n)
+
+    metas.sort(key=_key)
     for idx, m in enumerate(metas):
         prev = (f'{metas[idx-1]["num"]} · {metas[idx-1]["title"]}', metas[idx-1]["file"]) if idx > 0 else None
         nxt = (f'{metas[idx+1]["num"]} · {metas[idx+1]["title"]}', metas[idx+1]["file"]) if idx + 1 < len(metas) else None

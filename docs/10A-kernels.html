@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kernel 层：算子如何变成每秒千次运算 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">推理工程 · 第 10A 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：同一张 H800，吞吐能差 3 倍</a><a href="#s2"><span>02</span>. 四个概念：层、算子、kernel、指令</a><a href="#s3"><span>03</span>. 一次 decode step 有多少个 kernel</a><a href="#s4"><span>04</span>. 一个 kernel 的内部结构</a><a href="#s5"><span>05</span>. 用什么写：五种技术栈</a><a href="#s6"><span>06</span>. 融合的收益与代价</a><a href="#s7"><span>07</span>. 通信也是算子</a><a href="#s8"><span>08</span>. 硬件绑定：为什么换卡要重写</a><a href="#s9"><span>09</span>. 开源地图：谁在维护什么</a><a href="#s10"><span>10</span>. 怎么学：四级路径</a><a href="#s11"><span>11</span>. 失败模式：kernel 最常见的六个坑</a><a href="#s12"><span>12</span>. 验收：用 ncu 看五个指标</a><a href="#s13"><span>13</span>. 收口</a><a href="#s14"><span>14</span>. 复盘卡</a></nav>
+      <div class="rail-foot">推理工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">10A</div><div class="ch-kicker">推理工程</div><h1>Kernel 层：算子如何变成每秒千次运算</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>kernel 到底是什么，和"算子"差在哪一层？</li><li>用什么写？有哪些开源件可以直接用？</li><li>为什么换一张卡就可能要重写？</li><li>自己的团队该不该写 kernel？</li></ol></aside>
+<blockquote><p><strong>本章是第 10 章的展开，不是必读</strong>。主线读法可以跳过，</p><p>但只要你需要回答"为什么同样的卡我们只有别人 1/3 吞吐"，就必须读。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：同一张 H800，吞吐能差 3 倍</h2>
+<p>第 10 章讲了引擎的四种机制：连续批处理、PagedAttention、chunked prefill、前缀缓存。但机制只决定"谁先算"，不决定"算得多快"。</p>
+<p>同样 8 张 H800、同样 200B MoE、同样 batch，attention 与 GEMM 的 kernel 写得好不好，端到端吞吐能差 <strong>2–3 倍</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>写法</th><th>H800 上的 attention 吞吐</th><th>相对</th></tr></thead><tbody><tr><td>朴素 PyTorch（eager，逐头循环）</td><td>约 12% 峰值</td><td>1×</td></tr><tr><td>通用 SDPA（cuDNN/flash 后端）</td><td>约 45% 峰值</td><td>3.7×</td></tr><tr><td>针对性 kernel（FlashMLA 级别）</td><td>约 78% 峰值</td><td>6.5×</td></tr></tbody></table></div>
+<p><strong>这不是调参能补上的差距</strong>，是"谁来写这个循环"的差距。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四个概念：层、算子、kernel、指令</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>概念</th><th>是什么</th><th>例子</th><th>谁定义</th></tr></thead><tbody><tr><td><strong>层（layer）</strong></td><td>一组算子的组合</td><td>一个 Transformer block</td><td>模型结构</td></tr><tr><td><strong>算子（operator）</strong></td><td>数学语义上的一个操作</td><td><code>matmul</code>、<code>softmax</code>、<code>rmsnorm</code>、<code>topk</code></td><td>框架（ATen 等）</td></tr><tr><td><strong>kernel</strong></td><td>算子在某硬件上的<strong>具体实现</strong></td><td><code>cuBLAS gemm</code>、<code>flash_mla_with_kvcache</code></td><td>kernel 作者</td></tr><tr><td><strong>指令</strong></td><td>GPU 线程执行的机器指令</td><td><code>HMMA</code>、<code>LDGSTS</code>、<code>TMA</code></td><td>编译器/架构</td></tr></tbody></table></div>
+<p>关键区别：<strong>算子是不变的语义，kernel 是可变的实现。</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>model.forward()            ← 层
+  └─ F.linear(x, w)        ← 层内一步
+      └─ aten::matmul      ← 算子（语义，与硬件无关）
+          └─ cuBLAS / DeepGEMM   ← kernel（实现，与硬件强相关）
+              └─ HMMA 指令        ← 指令</code></pre></figure>
+<p>同一个 <code>matmul</code> 算子，背后可能是三套完全不同的 kernel：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>torch.matmul
+   ├─ 小矩阵      → cuBLAS 的某个 kernel
+   ├─ FP8 大矩阵  → DeepGEMM 的 fp8_gemm_nt
+   └─ MoE 分组    → grouped GEMM kernel</code></pre></figure>
+<p><strong>"融合"就发生在第三层</strong>：把 5 个算子映射成 1 个 kernel，省掉 4 次启动和 4 次中间结果的 HBM 往返。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 一次 decode step 有多少个 kernel</h2>
+<p>以 60 层模型、每层 12 个算子估算：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>每层 kernel 数</th></tr></thead><tbody><tr><td>RMSNorm、RoPE</td><td>2</td></tr><tr><td>QKV / O 投影</td><td>3</td></tr><tr><td>Attention</td><td>1</td></tr><tr><td>MoE gate + topk</td><td>2</td></tr><tr><td>dispatch / grouped GEMM ×2 / SwiGLU / combine</td><td>4–5</td></tr><tr><td><strong>每层合计</strong></td><td><strong>约 12–13</strong></td></tr></tbody></table></div>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>单 token step ≈ 60 层 × 12.5 ≈ 750 次 kernel 启动
+750 × 4 μs ≈ 3 ms</code></pre></figure>
+<p>而 TPOT 预算是 25 ms——<strong>光下发就吃掉 12%</strong>，还没开始算。</p>
+<p>这就是 <strong>CUDA Graph</strong> 存在的理由：把整条 kernel 序列录成一张图，一次提交，重复下发归零。代价是<strong>形状必须固定</strong>，所以变长 batch 要用 padding 或 masked 方案（DeepGEMM 的 masked grouped GEMM 就是为此而生）。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一个 kernel 的内部结构</h2>
+<p>GPU 的执行层次：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>Grid
+└── CTA（block）        一个 CTA 跑在一个 SM 上
+    └── Warp            32 个线程，同一条指令
+        └── Thread      一个 lane</code></pre></figure>
+<p>写 kernel 就是在回答四个问题：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>典型答案（paged attention）</th></tr></thead><tbody><tr><td>怎么切 grid？</td><td>每个 <code>(请求, 头)</code> 一个 CTA</td></tr><tr><td>每个 CTA 搬什么进 shared memory？</td><td>一个 KV block（16 token × 576 维）</td></tr><tr><td>怎么并行？</td><td>warp 内按 16×16 分块做 QK^T</td></tr><tr><td>怎么处理长序列？</td><td><strong>online softmax</strong>：边算边更新 running max/sum</td></tr></tbody></table></div>
+<p><strong>shared memory 是稀缺资源</strong>：H800/H100 每个 SM 只有 228 KB。一个 CTA 要 200 KB，那这个 SM 同时只能跑一个 CTA——占用率直接掉到下限。</p>
+<p><strong>访存合并</strong>是第二个坎：一个 warp 的 32 个线程如果读地址连续，一次事务搞定；如果散着读，就变成 32 次。PagedAttention 之所以用 16 token 一块，部分原因就是让这个 16×576 的块在内存里连续。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 用什么写：五种技术栈</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>技术栈</th><th>代表</th><th>门槛</th><th>能达到的峰值</th><th>可移植性</th></tr></thead><tbody><tr><td><strong>CUDA C++</strong></td><td>大多数生产 kernel</td><td>极高</td><td>90%+</td><td>只 NVIDIA</td></tr><tr><td><strong>CUTLASS / CuTe</strong></td><td>DeepGEMM 起点、cuBLAS 同源</td><td>高</td><td>90%+</td><td>只 NVIDIA，按架构模板化</td></tr><tr><td><strong>PTX / SASS 手写</strong></td><td>少量极致优化</td><td>极高</td><td>接近 100%</td><td>绑死具体架构</td></tr><tr><td><strong>DSL：Triton</strong></td><td>PyTorch 生态、FlashInfer</td><td>中</td><td>70%–90%</td><td>NVIDIA/AMD</td></tr><tr><td><strong>DSL：TileLang</strong></td><td>DeepInfer、昇腾适配</td><td>中</td><td>70%–95%</td><td>CUDA 与昇腾双后端</td></tr><tr><td><strong>Ascend C</strong></td><td>昇腾原生算子</td><td>中高</td><td>依算子</td><td>只昇腾</td></tr></tbody></table></div>
+<p><strong>趋势是</strong>：新项目用 DSL 起步，遇到热点再下沉到 CUDA/CUTLASS。DeepInfer 就是这个组合——<code>tilelang_ops</code> 写通用部分，FlashMLA/DeepGEMM 写极致部分。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 融合的收益与代价</h2>
+<p>FlashMLA 把 <strong>Q-norm、Q-RoPE、attention、O-RoPE、转 FP8</strong> 五个算子融成一个 kernel：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)</code></pre></figure>
+<p>收益不只是省 4 次启动，更重要的是<strong>省掉中间结果的 HBM 往返</strong>：每层少写读 2 次 <code>[batch, heads, 512]</code> 的 bf16 tensor——在 decode 这种带宽受限场景下就是净赚。</p>
+<p>代价很硬：<strong>权重要提前重排</strong>。README 要求先调 <code>permute_q_b_proj</code>、<code>permute_wv_proj</code>把权重和 scale 改成 kernel 要求的布局。一旦换了 kernel，权重格式就得跟着变。</p>
+<blockquote><p>这是全书反复出现的模式：<strong>性能优化会把"数据布局"变成契约</strong>。</p><p>你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 通信也是算子</h2>
+<p>MoE 的传统流程是四步、四次 kernel、两次跨卡：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>dispatch(EP) → GEMM1 → SwiGLU → GEMM2 → combine(EP)</code></pre></figure>
+<p>DeepGEMM 的 <strong>Mega MoE</strong> 把它合成一个 kernel：dispatch、linear1、linear2、SwiGLU、combine全部融进去，用对称内存（symmetric memory）让 <strong>NVLink 通信与 tensor core 计算重叠</strong>。</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>y = deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)</code></pre></figure>
+<p>意义在于：MoE 推理的瓶颈本来不是算力，是 all-to-all 的等待。把通信藏进 kernel，等于把"等"变成"顺便做"。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 硬件绑定：为什么换卡要重写</h2>
+<p>kernel 是按 <strong>SM 架构</strong>编译的，架构一换，指令集、tensor core 形状、shared memory 大小都可能变。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>事实</th><th>时间</th><th>含义</th></tr></thead><tbody><tr><td>FlashMLA 移除 Hopper 支持</td><td>2026.09.30</td><td>只留 SM100/SM103，KV 格式也变了</td></tr><tr><td>DeepInfer 只支持 SM100 与昇腾 950</td><td>2026.10</td><td>Hopper 不在列表</td></tr><tr><td>昇腾 950 稀疏注意力</td><td>2026.09.30</td><td>prefill 410 TFLOPS（峰值 95%）、decode 360（83%）</td></tr></tbody></table></div>
+<p><strong>选硬件时先看 kernel 支持矩阵，再看纸面算力。</strong>一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 开源地图：谁在维护什么</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>项目</th><th>许可证</th><th>定位</th><th>适合谁</th><th>学习价值</th></tr></thead><tbody><tr><td><a href="https://github.com/deepseek-ai/FlashMLA">FlashMLA</a></td><td>MIT</td><td>MLA / 稀疏注意力 kernel</td><td>用 MLA 类模型</td><td>★★★★★ 读 attention 优化</td></tr><tr><td><a href="https://github.com/deepseek-ai/DeepGEMM">DeepGEMM</a></td><td>MIT</td><td>FP8/FP4 GEMM、Mega MoE</td><td>需要 FP8 推理</td><td>★★★★★ 代码极简，注释讲原理</td></tr><tr><td><a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a></td><td>MIT</td><td>EP 通信 kernel</td><td>MoE 大规模部署</td><td>★★★★ 通信-计算重叠</td></tr><tr><td><a href="https://github.com/Dao-AILab/flash-attention">flash-attention</a></td><td>BSD-3</td><td>通用注意力</td><td>所有人</td><td>★★★★★ 入门必读</td></tr><tr><td><a href="https://github.com/flashinfer-ai/flashinfer">FlashInfer</a></td><td>Apache-2.0</td><td>推理算子集合</td><td>自建推理服务</td><td>★★★★ 覆盖面广</td></tr><tr><td><a href="https://github.com/NVIDIA/cutlass">CUTLASS</a></td><td>BSD-3</td><td>GEMM 模板库</td><td>写 GEMM 的人</td><td>★★★★ 门槛高但正统</td></tr><tr><td><a href="https://github.com/triton-lang/triton">Triton</a></td><td>MIT</td><td>GPU DSL</td><td>想快速试验</td><td>★★★★★ 上手最快</td></tr><tr><td><a href="https://github.com/tile-ai/tilelang">TileLang</a></td><td>见仓库</td><td>tile 级 DSL</td><td>多后端（含昇腾）</td><td>★★★★ 新范式</td></tr><tr><td><a href="https://github.com/vllm-project/vllm/tree/main/csrc">vLLM <code>csrc/</code></a></td><td>Apache-2.0</td><td>引擎内 kernel</td><td>已在用 vLLM</td><td>★★★★ 工程完整度</td></tr><tr><td><a href="https://github.com/NVIDIA/nccl">NCCL</a></td><td>见仓库</td><td>集合通信</td><td>所有人</td><td>★★★ 底层实现</td></tr></tbody></table></div>
+<p><strong>怎么挑</strong>：先用 Triton/FlashInfer 把功能跑通，热点再用 CUTLASS/FlashMLA 级别的库，最后才考虑自己写。<strong>顺序反了会浪费半年。</strong></p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 怎么学：四级路径</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>做什么</th><th>时间</th><th>验收</th></tr></thead><tbody><tr><td>1</td><td>用 Triton 写一个 softmax kernel</td><td>2 小时</td><td>与 PyTorch 结果一致</td></tr><tr><td>2</td><td>读 FlashAttention 前向，手推 online softmax</td><td>1 天</td><td>能讲清为什么省 HBM</td></tr><tr><td>3</td><td>跑 CUTLASS <code>examples/00_basic_gemm</code></td><td>2 天</td><td>能改 tile 大小看性能变化</td></tr><tr><td>4</td><td>用 ncu 把一个小 kernel 从 40% 优化到 70%</td><td>1 周</td><td>能说出每一步改动的理由</td></tr></tbody></table></div>
+<p>第 4 阶段才是真正的分水岭：<strong>能看指标定位瓶颈</strong>，而不是靠猜。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 失败模式：kernel 最常见的六个坑</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>正确但比预期慢 2 倍</td><td>访存未合并 / bank conflict</td><td>ncu 看 DRAM 吞吐 &lt;60%</td><td>调整 tile 布局，shared memory 加 padding</td></tr><tr><td>跑到一半崩或变慢</td><td>register spill</td><td>ncu 看 local memory 读写量</td><td>减 tile、加 <code>__launch_bounds__</code></td></tr><tr><td>结果偶发错误</td><td>mask / 尾块边界错</td><td>与参考实现对拍</td><td>补 tail 分支</td></tr><tr><td>换 batch 组合结果就变</td><td>浮点归约顺序不同</td><td>固定 seed 仍复现</td><td>用 batch-invariant kernel</td></tr><tr><td>首 token 卡 5 秒</td><td>JIT 首次编译</td><td>日志时间戳</td><td>预热或 AOT 编译</td></tr><tr><td>升级驱动后变慢</td><td>新架构 SASS 变了</td><td>版本对比</td><td>锁 toolchain 版本</td></tr></tbody></table></div>
+<p>第二条最隐蔽：寄存器溢出不会报错，只在某些 shape 下慢 30%，很容易被当成"正常波动"。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收：用 ncu 看五个指标</h2>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>期望</th><th>说明</th></tr></thead><tbody><tr><td><code>sm__throughput</code></td><td>&gt;60%</td><td>SM 整体是否忙</td></tr><tr><td><code>gpu__dram_throughput</code></td><td>按 roofline 判断</td><td>是否撞带宽墙</td></tr><tr><td><code>sm__pipe_tensor_cycles_active</code></td><td>&gt;50%</td><td>tensor core 是否真在用</td></tr><tr><td><code>launch__registers_per_thread</code></td><td>&lt;128</td><td>过高会掉占用率</td></tr><tr><td><code>l1tex__data_bank_conflicts</code></td><td>接近 0</td><td>shared memory 冲突</td></tr></tbody></table></div>
+<p><strong>判据</strong>：一个 kernel 优化完，这五个数里至少有两项改善超过 10 个百分点，且端到端吞吐提升可测。只看 kernel 时间不看端到端，容易优化了 5% 的算子、丢了 20% 的收益。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 收口</h2>
+<blockquote><p>**调度器决定"谁先算"，kernel 决定"算得多快"。</p><p>前者是你能改的，后者通常要等生态——所以选型时要把 kernel 的可获得性算进去。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：kernel 是算子在硬件上的实现，融合省的是启动和 HBM 往返，代价是布局变成契约。
+我算的：750 次启动 × 4 μs = 3 ms，占 TPOT 25 ms 的 12%。
+我原来以为…实际…差在：以为 kernel 只是性能优化，实际它决定了权重格式和硬件选型。
+还没懂：online softmax 在稀疏注意力下的数值稳定性怎么保证。</code></pre></figure>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="10-inference-engine.html"><span>上一章</span><b>10 · 推理引擎：PagedAttention 与连续批处理</b></a><a class="nav-next" href="11-pd-disaggregation.html"><span>下一章</span><b>11 · 调度与 PD 分离</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
