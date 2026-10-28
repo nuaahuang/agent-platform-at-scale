@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：一套 Python 打天下，网关先崩</a><a href="#s2"><span>02</span>. 判据：按延迟预算与并发形态分工</a><a href="#s3"><span>03</span>. 三套语言的边界：只走协议，不共享内存</a><a href="#s4"><span>04</span>. 为什么模型服务只能是 Python</a><a href="#s5"><span>05</span>. 中间件选型矩阵</a><a href="#s6"><span>06</span>. 自研还是用现成</a><a href="#s7"><span>07</span>. 团队技能映射：10 个人怎么裁</a><a href="#s8"><span>08</span>. 代码：一份 proto 定义三个语言</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：全用一套语言会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：一套 Python 打天下，网关先崩</a><a href="#s2"><span>02</span>. 判据：按延迟预算与并发形态分工</a><a href="#s3"><span>03</span>. 三套语言的边界：只走协议，不共享内存</a><a href="#s4"><span>04</span>. 为什么模型服务只能是 Python</a><a href="#s5"><span>05</span>. 中间件选型矩阵</a><a href="#s6"><span>06</span>. 自研还是用现成</a><a href="#s7"><span>07</span>. 团队规模：AI 之后要重算</a><a href="#s8"><span>08</span>. 代码：一份 proto 定义三个语言</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案：全用一套语言会怎样</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
       <div class="rail-foot">技术栈</div>
     </div>
   </aside>
@@ -286,10 +286,29 @@ Go：    7,000 ÷ 60,000 × 2 = 1 台，配 6 台覆盖多 AZ</code></pre></figu
 <p><strong>否掉 Pulsar 的理由不是性能，是"多一套 BookKeeper 要三个人维护"。</strong>选型的胜负手经常不在技术指标，在运维成本。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 团队技能映射：10 个人怎么裁</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>人数</th><th>语言栈</th><th>砍掉什么</th></tr></thead><tbody><tr><td><strong>0→1</strong></td><td>5</td><td>全 Python（FastAPI + 单机引擎）</td><td>不上 Go，不上 K8s，一台机器跑通</td></tr><tr><td><strong>1→10</strong></td><td>10</td><td>+1 个 Go 写网关；Python 做 Harness</td><td>砍掉 Java，计费先写 Python 脚本</td></tr><tr><td><strong>10→100</strong></td><td>30</td><td>Go（网关/工具）+ Python（模型/Harness）+ Java（计费）</td><td>保留三种，砍掉 Scala</td></tr><tr><td><strong>100+</strong></td><td>100+</td><td>全栈分工，每段独立团队</td><td>—</td></tr></tbody></table></div>
-<p><strong>关键原则：语言数量 ≤ 团队能维护的边界数量。</strong>5 个人维护 3 种语言，结果是三种都半吊子。</p>
-<div class="orn"></div>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 团队规模：AI 之后要重算</h2>
+<h3>7.1 旧模型错在哪</h3>
+<p>上一版这张表是按"每个中间件一个 owner、每种语言一个专家"算的：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>旧假设</th><th>后果</th></tr></thead><tbody><tr><td>8 个中间件 → 8 个 owner</td><td>直接把人数抬到 20+</td></tr><tr><td>3 种语言 → 3 组专家</td><td>再翻一倍</td></tr><tr><td>7×24 值班 → 每班 2 人</td><td>至少 10 人</td></tr></tbody></table></div>
+<p>这套算法在 AI 辅助编程之前是对的，现在<strong>前两条已经不成立</strong>：中间件的部署、升级、排障样板代码，AI 几分钟就能生成；跨语言也不再需要"专家"，需要的是"能 review 的人"。</p>
+<h3>7.2 什么被压缩了，什么没有</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>工作</th><th>AI 压缩倍数</th><th>说明</th></tr></thead><tbody><tr><td>写新代码</td><td><strong>5–10×</strong></td><td>样板、CRUD、配置、测试</td></tr><tr><td>读陌生代码</td><td><strong>3–5×</strong></td><td>快速定位与解释</td></tr><tr><td>写文档</td><td><strong>5×</strong></td><td>从代码反推</td></tr><tr><td><strong>Code review</strong></td><td><strong>1.2×</strong></td><td>人必须真的看懂</td></tr><tr><td><strong>On-call 值班</strong></td><td><strong>1×</strong></td><td>半夜叫醒的是人</td></tr><tr><td><strong>决策与定责</strong></td><td><strong>1×</strong></td><td>选型错了谁签字</td></tr><tr><td><strong>跨部门协调</strong></td><td><strong>1×</strong></td><td>安全、合规、采购</td></tr></tbody></table></div>
+<p><strong>结论：建设期人力断崖式下降，运行期几乎不变。</strong></p>
+<h3>7.3 修正后的人数</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>规模</th><th>建设（AI 辅助）</th><th>运行（值班 + 变更）</th><th>合计</th></tr></thead><tbody><tr><td>0→1 原型</td><td>1 万 DAU / 16 卡</td><td>2</td><td>0（自己兼）</td><td><strong>2</strong></td></tr><tr><td>1→10 产品化</td><td>100 万 DAU / 128 卡</td><td>3</td><td>1</td><td><strong>4</strong></td></tr><tr><td>10→100 规模化</td><td>1,000 万 DAU / 1,024 卡</td><td>5</td><td>3</td><td><strong>8</strong></td></tr><tr><td>亿级</td><td>2,000 万 DAU / 2,512 卡</td><td>7</td><td>4</td><td><strong>11</strong></td></tr></tbody></table></div>
+<p>对照上一版：亿级平台<strong>从 100 人降到 11 人</strong>，差 9 倍。</p>
+<p>但 11 人里 <strong>4 个是值班</strong>，不是写代码——这个比例很说明问题。</p>
+<h3>7.4 新的瓶颈是 review，不是写</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>AI 产出      500 行/小时
+人能 review  150 行/小时</code></pre></figure>
+<p><strong>每写 3 行，就有 1 行卡在 review 上。</strong> 团队规模现在由"能审多少人"决定，不再由"能写多少"决定。</p>
+<p>推论：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>结果</th></tr></thead><tbody><tr><td>加人写代码</td><td>无收益，review 队列更长</td></tr><tr><td><strong>加人 review</strong></td><td>有收益</td></tr><tr><td><strong>提高单测覆盖率</strong></td><td>有收益，把 review 压力转给机器</td></tr><tr><td>降低变更粒度（小 PR）</td><td>有收益，review 更快</td></tr></tbody></table></div>
+<h3>7.5 语言数量的结论也要改</h3>
+<p>旧结论是"语言数量 ≤ 团队能维护的边界数量，5 个人 3 种语言会半吊子"。</p>
+<p>现在这个约束松了：AI 能让一个人写出合格的 Go 和 Python，<strong>但松不了的是"出故障时谁能定位"</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>旧约束</th><th>新约束</th></tr></thead><tbody><tr><td>每种语言要有专家</td><td>每种语言要有<strong>能半夜看日志的人</strong></td></tr><tr><td>语言数 ≤ 团队容量</td><td>语言数 ≤ <strong>值班人数</strong></td></tr></tbody></table></div>
+<p>所以 5 人团队上 3 种语言仍然危险——不是因为写不出来，是因为<strong>凌晨 3 点没人看得懂</strong>。</p>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 代码：一份 proto 定义三个语言</h2>
 <figure class="code code--lang"><span class="code-lang">proto</span><button class="copy" type="button">复制</button><pre><code>syntax = &quot;proto3&quot;;
@@ -327,8 +346,8 @@ message Usage {
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>网关语言</td><td>非 Python（Go 或 Envoy）</td></tr><tr><td>跨语言调用</td><td>流式按批（≥10 token/次），非逐 token</td></tr><tr><td>proto 兼容</td><td>CI 里有 breaking change 检查</td></tr><tr><td>中间件数量</td><td>≤8 个，每个有 owner</td></tr><tr><td>选型文档</td><td>每个都写了"否了什么 + 推翻条件"</td></tr><tr><td>语言数量</td><td>≤3 种</td></tr></tbody></table></div>
-<p>最后一条是给技术负责人的：<strong>每多一种语言，就多一套招聘、CI、监控、on-call。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>网关语言</td><td>非 Python（Go 或 Envoy）</td></tr><tr><td>跨语言调用</td><td>流式按批（≥10 token/次），非逐 token</td></tr><tr><td>proto 兼容</td><td>CI 里有 breaking change 检查</td></tr><tr><td>中间件数量</td><td>≤8 个，每个有 owner（AI 可代劳部署，责任不能代劳）</td></tr><tr><td>选型文档</td><td>每个都写了"否了什么 + 推翻条件"</td></tr><tr><td>语言数量</td><td>≤3 种，且每种语言有 ≥2 人能值班定位</td></tr></tbody></table></div>
+<p>最后一条是给技术负责人的：<strong>每多一种语言，就多一套 CI、监控、on-call——AI 能帮你写，但替不了你凌晨三点看日志。</strong></p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 备选方案：全用一套语言会怎样</h2>
@@ -344,7 +363,7 @@ message Usage {
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：按延迟预算分工——网关 Go（&lt;5ms）、Harness Python（10-100ms）、计费 Java（事务）。
 我算的：Python 网关单机 8K QPS，Go 60K，峰值 7000 QPS 差 7.5 倍机器数。
 我原来以为…实际…差在：以为一套语言能打天下，实际每种语言的&quot;预算适配&quot;不同。
-还没懂：Go 写 Harness 的可行性——生态差距到底值不值那 5ms。</code></pre></figure>
+还没懂：AI 辅助下 11 人跑亿级平台，值班那条线到底能不能再压到 3 人。</code></pre></figure>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="02-legacy-to-ai.html"><span>上一章</span><b>02 · 传统互联网架构在 AI 服务中的复用、变形与失效</b></a><a class="nav-next" href="08-request-journey.html"><span>下一章</span><b>08 · 一次请求的完整旅程</b></a></nav>
     <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
