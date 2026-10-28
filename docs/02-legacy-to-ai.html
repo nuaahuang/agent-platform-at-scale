@@ -280,6 +280,81 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>纪律</th><th>内容</th><th>违反的后果</th></tr></thead><tbody><tr><td><strong>先观察两周</strong></td><td>人工盯两周，确认规则不误报，再开自动执行</td><td>规则一上线就震荡</td></tr><tr><td><strong>每个动作可回滚</strong></td><td>扩容可缩、降级可撤、切流可切回</td><td>出了错只能重启</td></tr><tr><td><strong>动作预算</strong></td><td>每小时 ≤6 次，防震荡</td><td>扩了缩、缩了扩，抖动放大</td></tr></tbody></table></div>
 <p><strong>震荡是最常见的失败</strong>：扩容阈值 80%、缩容阈值 79%，系统会整夜开开关关。解法是滞回——扩容 80%、缩容 40%，中间 40 个点不动。</p>
 <div class="orn"></div>
+<h3>5.6 每层用什么组件，什么时候必须自研</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>现成能力</th><th>开源/商业组件</th><th>什么时候必须自研</th></tr></thead><tbody><tr><td>L0 采集</td><td>指标 SDK、抓取</td><td>OpenTelemetry、vLLM/SGLang 的 <code>/metrics</code>、eBPF（Pixie）</td><td>需要引擎内部细粒度（每层 KV、每 block 命中）</td></tr><tr><td>L1 汇聚</td><td>时序库、规则聚合</td><td>Prometheus + Thanos/Mimir、VictoriaMetrics、ClickHouse</td><td>高基数（按 session 维度）或跨年留存</td></tr><tr><td>L2 判定</td><td>SLO 规则生成</td><td>Sloth、Pyrra、Alertmanager</td><td>多租户差异化 SLO、复合条件</td></tr><tr><td>L3 决策</td><td>简单伸缩</td><td>HPA（custom metrics）、KEDA、Karpenter</td><td>需要"先判类型再选动作"——<strong>必须自研</strong></td></tr><tr><td>L4 执行</td><td>扩容/灰度/切流</td><td>K8s Operator、Argo Rollouts、Flagger、Envoy xDS</td><td>预热池、权重分发</td></tr><tr><td>L5 审计</td><td>日志</td><td>ClickHouse / Loki</td><td>与变更系统联动</td></tr></tbody></table></div>
+<p><strong>结论</strong>：L0–L2 能买就买，L3 必须自研，L4 半自研。原因在下面三段代码里。</p>
+<h3>5.7 L0/L1：采集什么、怎么打点</h3>
+<p>引擎侧现成的（vLLM 为例，Prometheus 格式）：</p>
+<figure class="code code--ascii"><span class="code-lang">text</span><button class="copy" type="button">复制</button><pre><code>vllm:num_requests_running            正在跑的请求数
+vllm:num_requests_waiting            排队数          ← 扩容的第一前导指标
+vllm:gpu_cache_usage_perc            KV 水位          ← 拒绝的第一前导指标
+vllm:time_to_first_token_seconds_bucket
+vllm:prefix_cache_hits_total / queries_total</code></pre></figure>
+<p>网关侧自己打（OpenTelemetry，Python）：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>from opentelemetry import metrics
+meter = metrics.get_meter(&quot;gateway&quot;)
+
+ttft = meter.create_histogram(&quot;llm_ttft_ms&quot;, unit=&quot;ms&quot;)
+affinity = meter.create_counter(&quot;llm_affinity_total&quot;)
+
+def on_first_token(req, elapsed_ms, hit_route):
+    # 标签只放低基数维度：tenant / model / cell / route_result
+    labels = {&quot;tenant&quot;: req.tenant, &quot;model&quot;: req.model, &quot;cell&quot;: req.cell}
+    ttft.record(elapsed_ms, labels)
+    affinity.add(1, {**labels, &quot;result&quot;: &quot;hit&quot; if hit_route else &quot;miss&quot;,
+                     &quot;reason&quot;: req.fallback_reason or &quot;none&quot;})</code></pre></figure>
+<p><strong>标签规范</strong>（这一条决定系统能不能扩展）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>允许</th><th>禁止</th></tr></thead><tbody><tr><td>tenant_id、model、cell、version、status</td><td>session_id、request_id、user_id（基数爆炸）</td></tr><tr><td>枚举值 ≤50 个</td><td>自由文本、URL 路径</td></tr></tbody></table></div>
+<p>基数失控的典型症状：Prometheus 内存一路涨到 OOM。<strong>一条规则：标签值的集合必须能枚举完。</strong></p>
+<h3>5.8 L2/L3：判定与决策</h3>
+<p><strong>判定</strong>用多窗口燃烧率（Google SRE Workbook 的标准做法）：</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code># 日均 SLO 99.9% → 错误预算 0.1%
+- record: slo:ttft_p95_pass:1h
+  expr: sum(rate(llm_ttft_ms_bucket{le=&quot;800&quot;}[1h])) / sum(rate(llm_ttft_ms_count[1h]))
+
+- alert: TTFT_FastBurn
+  expr: (1 - slo:ttft_p95_pass:1h) / 0.001 &gt; 14.4   # 1 小时烧掉 2% 月预算
+  for: 2m
+
+- alert: TTFT_SlowBurn
+  expr: (1 - slo:ttft_p95_pass:6h) / 0.001 &gt; 6      # 6 小时烧掉 5%
+  for: 15m</code></pre></figure>
+<p><strong>决策</strong>必须自研，因为它是"先分类、再选动作"：</p>
+<figure class="code code--lang"><span class="code-lang">go</span><button class="copy" type="button">复制</button><pre><code>func (r *Reconciler) Reconcile(ctx context.Context, key string) error {
+    m := r.observe(key)                       // 拉指标快照
+    class := classify(m)                      // 容量 / 正确性 / 成本 / 依赖
+    act, ok := decide(class, m)               // 返回动作；不满足预算则 ok=false
+    if !ok { return nil }                     // 不动，也是决策
+    if err := r.actuate(act); err != nil {    // 执行
+        r.audit(key, act, err); return err
+    }
+    r.audit(key, act, nil)
+    r.verifyAfter(60*time.Second, key)        // 60 秒后复测，未恢复则升级动作
+    return nil
+}
+
+func classify(m Snapshot) Class {
+    if m.TokensPerSec &gt; m.Quota*1.2 { return ClassQuota }   // 配额型
+    if m.KVUsage &gt; 0.85 &amp;&amp; m.Waiting &gt; 0 { return ClassCapacity }
+    if m.AffinityHit &lt; 0.9 { return ClassCorrectness }      // 命中率掉 → 不扩容
+    return ClassHealthy
+}</code></pre></figure>
+<p><strong>动作预算</strong>用令牌桶实现（每小时 6 次）：</p>
+<figure class="code code--lang"><span class="code-lang">go</span><button class="copy" type="button">复制</button><pre><code>if !r.actionBucket.Allow() {           // 超预算就不动，等人
+    r.log(&quot;action budget exhausted, escalate to human&quot;)
+    return nil
+}</code></pre></figure>
+<h3>5.9 L4：执行层怎么落地</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>动作</th><th>现成组件</th><th>配置要点</th></tr></thead><tbody><tr><td><strong>扩缩容</strong></td><td>KEDA <code>ScaledObject</code> 拉 Prometheus 指标；Karpenter 补节点</td><td>冷却期 ≥5 min，防抖</td></tr><tr><td><strong>限流</strong></td><td>Envoy global rate limit / Redis 令牌桶 Lua</td><td>三维配额，见 §6.2</td></tr><tr><td><strong>降级</strong></td><td>配置中心（Apollo/Nacos）+ 热加载</td><td>开关可回滚，带 TTL</td></tr><tr><td><strong>灰度</strong></td><td>Argo Rollouts / Flagger</td><td>按 release set 整体切，不单切一项</td></tr><tr><td><strong>回滚</strong></td><td>Argo Rollouts <code>undo</code> / 蓝绿</td><td>一键，≤1 min</td></tr></tbody></table></div>
+<p>KEDA 的关键配置（把"排队数"而不是 CPU 当指标）：</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code>triggers:
+- type: prometheus
+  metadata:
+    query: sum(vllm:num_requests_waiting{pool=&quot;decode&quot;})
+    threshold: &quot;64&quot;          # 排队超过 64 就扩
+    activationThreshold: &quot;8&quot;</code></pre></figure>
+<p><strong>为什么不是 CPU</strong>：GPU 利用率到 100% 时已经晚了；排队数在饱和前 30 秒就会抬头。</p>
+<div class="orn"></div>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 三个必须自建的组件</h2>
 <h3>6.1 路由层（Affinity Router）</h3>

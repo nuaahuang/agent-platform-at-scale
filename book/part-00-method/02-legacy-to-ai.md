@@ -185,6 +185,133 @@
 
 ---
 
+### 5.6 每层用什么组件，什么时候必须自研
+
+| 层 | 现成能力 | 开源/商业组件 | 什么时候必须自研 |
+|---|---|---|---|
+| L0 采集 | 指标 SDK、抓取 | OpenTelemetry、vLLM/SGLang 的 `/metrics`、eBPF（Pixie） | 需要引擎内部细粒度（每层 KV、每 block 命中） |
+| L1 汇聚 | 时序库、规则聚合 | Prometheus + Thanos/Mimir、VictoriaMetrics、ClickHouse | 高基数（按 session 维度）或跨年留存 |
+| L2 判定 | SLO 规则生成 | Sloth、Pyrra、Alertmanager | 多租户差异化 SLO、复合条件 |
+| L3 决策 | 简单伸缩 | HPA（custom metrics）、KEDA、Karpenter | 需要"先判类型再选动作"——**必须自研** |
+| L4 执行 | 扩容/灰度/切流 | K8s Operator、Argo Rollouts、Flagger、Envoy xDS | 预热池、权重分发 |
+| L5 审计 | 日志 | ClickHouse / Loki | 与变更系统联动 |
+
+**结论**：L0–L2 能买就买，L3 必须自研，L4 半自研。原因在下面三段代码里。
+
+### 5.7 L0/L1：采集什么、怎么打点
+
+引擎侧现成的（vLLM 为例，Prometheus 格式）：
+
+```text
+vllm:num_requests_running            正在跑的请求数
+vllm:num_requests_waiting            排队数          ← 扩容的第一前导指标
+vllm:gpu_cache_usage_perc            KV 水位          ← 拒绝的第一前导指标
+vllm:time_to_first_token_seconds_bucket
+vllm:prefix_cache_hits_total / queries_total
+```
+
+网关侧自己打（OpenTelemetry，Python）：
+
+```python
+from opentelemetry import metrics
+meter = metrics.get_meter("gateway")
+
+ttft = meter.create_histogram("llm_ttft_ms", unit="ms")
+affinity = meter.create_counter("llm_affinity_total")
+
+def on_first_token(req, elapsed_ms, hit_route):
+    # 标签只放低基数维度：tenant / model / cell / route_result
+    labels = {"tenant": req.tenant, "model": req.model, "cell": req.cell}
+    ttft.record(elapsed_ms, labels)
+    affinity.add(1, {**labels, "result": "hit" if hit_route else "miss",
+                     "reason": req.fallback_reason or "none"})
+```
+
+**标签规范**（这一条决定系统能不能扩展）：
+
+| 允许 | 禁止 |
+|---|---|
+| tenant_id、model、cell、version、status | session_id、request_id、user_id（基数爆炸） |
+| 枚举值 ≤50 个 | 自由文本、URL 路径 |
+
+基数失控的典型症状：Prometheus 内存一路涨到 OOM。**一条规则：标签值的集合必须能枚举完。**
+
+### 5.8 L2/L3：判定与决策
+
+**判定**用多窗口燃烧率（Google SRE Workbook 的标准做法）：
+
+```yaml
+# 日均 SLO 99.9% → 错误预算 0.1%
+- record: slo:ttft_p95_pass:1h
+  expr: sum(rate(llm_ttft_ms_bucket{le="800"}[1h])) / sum(rate(llm_ttft_ms_count[1h]))
+
+- alert: TTFT_FastBurn
+  expr: (1 - slo:ttft_p95_pass:1h) / 0.001 > 14.4   # 1 小时烧掉 2% 月预算
+  for: 2m
+
+- alert: TTFT_SlowBurn
+  expr: (1 - slo:ttft_p95_pass:6h) / 0.001 > 6      # 6 小时烧掉 5%
+  for: 15m
+```
+
+**决策**必须自研，因为它是"先分类、再选动作"：
+
+```go
+func (r *Reconciler) Reconcile(ctx context.Context, key string) error {
+    m := r.observe(key)                       // 拉指标快照
+    class := classify(m)                      // 容量 / 正确性 / 成本 / 依赖
+    act, ok := decide(class, m)               // 返回动作；不满足预算则 ok=false
+    if !ok { return nil }                     // 不动，也是决策
+    if err := r.actuate(act); err != nil {    // 执行
+        r.audit(key, act, err); return err
+    }
+    r.audit(key, act, nil)
+    r.verifyAfter(60*time.Second, key)        // 60 秒后复测，未恢复则升级动作
+    return nil
+}
+
+func classify(m Snapshot) Class {
+    if m.TokensPerSec > m.Quota*1.2 { return ClassQuota }   // 配额型
+    if m.KVUsage > 0.85 && m.Waiting > 0 { return ClassCapacity }
+    if m.AffinityHit < 0.9 { return ClassCorrectness }      // 命中率掉 → 不扩容
+    return ClassHealthy
+}
+```
+
+**动作预算**用令牌桶实现（每小时 6 次）：
+
+```go
+if !r.actionBucket.Allow() {           // 超预算就不动，等人
+    r.log("action budget exhausted, escalate to human")
+    return nil
+}
+```
+
+### 5.9 L4：执行层怎么落地
+
+| 动作 | 现成组件 | 配置要点 |
+|---|---|---|
+| **扩缩容** | KEDA `ScaledObject` 拉 Prometheus 指标；Karpenter 补节点 | 冷却期 ≥5 min，防抖 |
+| **限流** | Envoy global rate limit / Redis 令牌桶 Lua | 三维配额，见 §6.2 |
+| **降级** | 配置中心（Apollo/Nacos）+ 热加载 | 开关可回滚，带 TTL |
+| **灰度** | Argo Rollouts / Flagger | 按 release set 整体切，不单切一项 |
+| **回滚** | Argo Rollouts `undo` / 蓝绿 | 一键，≤1 min |
+
+KEDA 的关键配置（把"排队数"而不是 CPU 当指标）：
+
+```yaml
+triggers:
+- type: prometheus
+  metadata:
+    query: sum(vllm:num_requests_waiting{pool="decode"})
+    threshold: "64"          # 排队超过 64 就扩
+    activationThreshold: "8"
+```
+
+**为什么不是 CPU**：GPU 利用率到 100% 时已经晚了；排队数在饱和前 30 秒就会抬头。
+
+---
+
 ## 6. 三个必须自建的组件
 
 ### 6.1 路由层（Affinity Router）
