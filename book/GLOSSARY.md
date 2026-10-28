@@ -34,6 +34,7 @@
 |---|---|---|---|---|
 | **Prefill** | Prefill / Prompt Processing | 一次性算完所有输入 token | 5,000 token / 450 ms | 以为它按 token 逐个算 |
 | **Decode** | Decoding / Autoregressive Generation | 逐 token 生成，每步重读权重 | 25 ms/token | 以为它算力受限（其实是带宽） |
+| **混沌工程** | Chaos Engineering | 主动注入故障，验证系统真实行为 | 从单节点、1% 流量起步 | 与压测混为一谈 |
 | **端到端时延** | End-to-End Latency | 用户发出请求到收到最后一个 token | p95 ≤ 9 s | 只测引擎内，漏掉网关与排队 |
 | **TTFT** | Time To First Token | 首 token 延迟 = 排队 + prefill + 网络 | ≤ 800 ms | 只算 prefill，漏掉排队 |
 | **TPOT** | Time Per Output Token | 相邻 token 间隔 | ≤ 50 ms | 与"端到端 ÷ 字数"混用 |
