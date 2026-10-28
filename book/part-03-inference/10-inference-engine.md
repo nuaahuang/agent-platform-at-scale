@@ -477,7 +477,166 @@ DeepInfer 的 README 明确写了"完整服务还需要、但本次未包含"：
 
 ---
 
-## 10. 练习（20 分钟）
+## 10. 引擎的解剖：kernel 在哪一层，各层各自提供什么
+
+前面九节讲的都是"策略"——怎么组批、怎么分块、怎么缓存。
+但策略最终要落到 GPU 上执行，中间隔着一层**没人讲清楚的东西：kernel**。
+
+### 10.1 六层解剖
+
+```
+┌──────────────────────────────────────────────────────┐
+│ ① 接口层   OpenAI 兼容 API、SSE 流式、token 计量       │
+├──────────────────────────────────────────────────────┤
+│ ② 调度层   batching、chunked prefill、抢占、优先级      │
+├──────────────────────────────────────────────────────┤
+│ ③ 内存层   block table、前缀哈希、swap、KV 量化         │
+├──────────────────────────────────────────────────────┤
+│ ④ 执行层   逐层 forward：norm → gemm → attn → moe      │
+├──────────────────────────────────────────────────────┤
+│ ⑤ Kernel 层  attention / gemm / 通信 / 采样            │  ← 本节
+├──────────────────────────────────────────────────────┤
+│ ⑥ 硬件     SM90 / SM100 / Ascend + HBM + NVLink        │
+└──────────────────────────────────────────────────────┘
+```
+
+**kernel 是第 ⑤ 层，属于引擎的一部分**，但通常**不在引擎仓库里**——它被拆成独立库
+（FlashMLA、DeepGEMM、DeepEP），引擎在编译期或运行期链接进来。
+
+| 层 | 谁写 | 对外提供的能力 | 这层坏了会怎样 |
+|---|---|---|---|
+| ① 接口 | 平台团队 | 协议兼容、流式、计量 | 客户端接不上 |
+| ② 调度 | 引擎团队 | 吞吐、公平、TTFT/TPOT 折中 | 长尾、饥饿 |
+| ③ 内存 | 引擎团队 | 并发数上限、前缀复用 | OOM、碎片 |
+| ④ 执行 | 引擎团队 | 正确的 forward、并行切分 | 结果错、跑不动 |
+| ⑤ Kernel | 少数人 | **峰值算力利用率** | 只有峰值的 30% |
+| ⑥ 硬件 | 厂商 | 算力、带宽、互联 | — |
+
+关键事实：**上面四层决定"能不能用"，最下面一层决定"贵不贵"**。
+同一台 H800，attention kernel 写得好不好，能差 2–3 倍吞吐。
+
+### 10.2 kernel 到底是什么
+
+一句话：**在 GPU 上并行执行的一个函数**。它接收 tensor 和元数据，返回 tensor。
+
+以 DeepSeek 开源的 FlashMLA 为例，解码时每层就一行：
+
+```python
+o_i, lse_i = flash_mla_with_kvcache(
+    q_i, kvcache_i, block_table, cache_seqlens, dv,
+    tile_scheduler_metadata, num_splits, indices=indices,
+)
+```
+
+看起来像普通 Python 调用，实际上是：启动 N 个 block、每 block M 个线程，
+把 Q 分块搬进 shared memory、算分块 softmax、累加输出——全部手写在 CUDA/CUTLASS 里。
+
+三种写法，越往下越难、越赚：
+
+| 形态 | 代表 | 门槛 | 典型收益 |
+|---|---|---|---|
+| 手写 CUDA / CUTLASS | DeepGEMM、FlashMLA | 极高 | 接近硬件峰值 |
+| DSL（TileLang / Triton） | DeepInfer 的 `tilelang_ops` | 中 | 峰值的 70%–90% |
+| 直接调库 | vLLM 内置 kernel | 低 | 够用 |
+
+**绝大多数团队不该写 kernel**，但必须知道它在哪、瓶颈在哪，否则调优会一直在错误的层打转。
+
+### 10.3 一次 decode step 有多少个 kernel
+
+以 60 层模型、每层 12 个算子估算：
+
+| 阶段 | 每层 kernel 数 |
+|---|---|
+| RMSNorm、RoPE | 2 |
+| QKV / O 投影 | 3 |
+| Attention | 1 |
+| MoE gate + topk | 2 |
+| dispatch / grouped GEMM ×2 / SwiGLU / combine | 4–5 |
+| **每层合计** | **约 12–13** |
+
+```
+单 token step ≈ 60 层 × 12.5 ≈ 750 次 kernel 启动
+```
+
+单次启动开销 3–5 μs（CPU 侧下发 + GPU 侧调度），**750 × 4 μs ≈ 3 ms**。
+而我们的 TPOT 预算是 25 ms——**光启动就吃掉 12%**，还没开始算。
+
+这就是 **CUDA Graph** 存在的原因：把整条 kernel 序列录制成一张图，一次提交、零重复下发，
+启动开销趋近于 0。代价是**形状必须固定**——所以变长 batch 要用 padding 或 masked 方案
+（DeepGEMM 的 masked grouped GEMM 就是为此而生）。
+
+### 10.4 融合：把 5 个 kernel 变 1 个
+
+FlashMLA 有个很能说明问题的设计——把 Q-norm、Q-RoPE、attention、O-RoPE、转 FP8
+**五个操作融进一个 kernel**。
+
+```python
+out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)
+```
+
+收益不只是省 4 次启动，更重要的是**省掉中间结果的 HBM 往返**：
+每层少写读 2 次 `[batch, heads, 512]` 的 bf16 tensor，在 decode 这种带宽受限的场景下就是净赚。
+
+代价很硬：**权重要提前重排**。README 里要调 `permute_q_b_proj`、`permute_wv_proj`
+把权重和 scale 改成 kernel 要求的布局——一旦换了 kernel，权重格式就得跟着变。
+
+> 这是全书反复出现的一个模式：**性能优化会把"数据布局"变成契约**。
+> 你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。
+
+### 10.5 Mega MoE：把通信塞进 kernel 里
+
+MoE 的传统流程是四步、四次 kernel、两次跨卡：
+
+```
+dispatch(EP) → GEMM1 → SwiGLU → GEMM2 → combine(EP)
+```
+
+DeepGEMM 的 Mega MoE 把它**合成一个 kernel**：dispatch、linear1、linear2、SwiGLU、combine
+全部融进去，用对称内存（symmetric memory）让 **NVLink 通信与 tensor core 计算重叠**。
+
+意义在于：MoE 推理的瓶颈本来不是算力，是 all-to-all 的等待。
+把通信藏进 kernel 里，等于把"等"变成了"顺便做"。
+
+`deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)` —— 一行调用背后是一次
+通信-计算流水线编排。
+
+### 10.6 数字：kernel 峰值 vs 模型 MFU
+
+| 指标 | 数值 | 说明 |
+|---|---|---|
+| H800 FP8 理论峰值 | 1,979 TFLOPS | 硬件 |
+| DeepGEMM 实测（H800） | **1,550 TFLOPS** | kernel 级，占峰值 78% |
+| 我们模型级有效算力 | 693 TFLOPS | 第 8 章的 35% MFU |
+| 差距 | **43 个百分点** | 访存、attention、通信、气泡 |
+
+**kernel 做到 78% 很了不起，但模型级只有 35%**——中间那 43 个点不在 kernel 里，
+在调度、在 batch 形状、在通信、在长尾。
+
+这解释了为什么"优化 kernel"和"优化吞吐"是两件事：
+前者是少数人的活，后者是平台团队的活。
+
+### 10.7 边界：kernel 与硬件强绑定
+
+FlashMLA 在 2026.09.30 的版本里**移除了 Hopper 支持**（只留 SM100/SM103），
+同时改了 FP8/FP4 的 KV 格式，与旧版本不兼容；DeepInfer 也只支持 SM100 与昇腾 950。
+
+| 事实 | 含义 |
+|---|---|
+| kernel 按 SM 架构编译 | 换卡就要重编，甚至重写 |
+| KV 格式随 kernel 版本变 | 升级引擎要让旧缓存失效 |
+| 昇腾 950 已能到峰值 95% | 国产卡在特定算子上不再落后 |
+
+**选硬件时，先看 kernel 支持矩阵，再看纸面算力。**
+一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。
+
+### 10.8 一句话
+
+> **调度器决定"谁先算"，kernel 决定"算得多快"。
+> 前者是你能改的，后者通常要等生态——所以架构设计要把 kernel 的可获得性算进选型。**
+
+---
+
+## 11. 练习（20 分钟）
 
 **1. 跑实验**：
 
@@ -499,7 +658,7 @@ cd lab && python3 paging_lab.py
 
 ---
 
-## 11. 复盘卡
+## 12. 复盘卡
 
 ```markdown
 ## 第 03 章复盘
@@ -515,7 +674,7 @@ cd lab && python3 paging_lab.py
 
 ---
 
-## 12. 验收：怎么证明引擎配置是对的
+## 13. 验收：怎么证明引擎配置是对的
 
 | 指标 | 期望 | 怎么测 | 脚本 |
 |---|---|---|---|
@@ -528,7 +687,7 @@ cd lab && python3 paging_lab.py
 **判据**：先用两个实验拿到理论值，再压测真实引擎。
 两者差超过 20% 时，先查口径（token 算不算 chat template、block 是不是 16），再怀疑引擎。
 
-## 13. 延伸
+## 14. 延伸
 
 - PagedAttention 论文（OSDI'23）：重点读 §3 Memory Management 和 §5 Sharing
 - vLLM 文档：Prefix Caching、Chunked Prefill、Scheduler Metrics

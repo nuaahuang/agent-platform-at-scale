@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：没有引擎会怎样</a><a href="#s2"><span>02</span>. 连续批处理（Continuous Batching）</a><a href="#s3"><span>03</span>. KV 怎么分配：先看实验</a><a href="#s4"><span>04</span>. PagedAttention：给 KV 也装一套虚拟内存</a><a href="#s5"><span>05</span>. Chunked Prefill：让两种负载共乘一班车</a><a href="#s6"><span>06</span>. 前缀缓存：block 哈希</a><a href="#s7"><span>07</span>. 一个 step 里，调度器在决策什么</a><a href="#s8"><span>08</span>. 三个误区</a><a href="#s9"><span>09</span>. 业界对照：DeepInfer 如何解同一组问题</a><a href="#s10"><span>10</span>. 练习（20 分钟）</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 验收：怎么证明引擎配置是对的</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：没有引擎会怎样</a><a href="#s2"><span>02</span>. 连续批处理（Continuous Batching）</a><a href="#s3"><span>03</span>. KV 怎么分配：先看实验</a><a href="#s4"><span>04</span>. PagedAttention：给 KV 也装一套虚拟内存</a><a href="#s5"><span>05</span>. Chunked Prefill：让两种负载共乘一班车</a><a href="#s6"><span>06</span>. 前缀缓存：block 哈希</a><a href="#s7"><span>07</span>. 一个 step 里，调度器在决策什么</a><a href="#s8"><span>08</span>. 三个误区</a><a href="#s9"><span>09</span>. 业界对照：DeepInfer 如何解同一组问题</a><a href="#s10"><span>10</span>. 引擎的解剖：kernel 在哪一层，各层各自提供什么</a><a href="#s11"><span>11</span>. 练习（20 分钟）</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 验收：怎么证明引擎配置是对的</a><a href="#s14"><span>14</span>. 延伸</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -423,7 +423,67 @@ SWA：    [ 丢弃 ][ 只重算最后 140 token ]</code></pre></figure>
 <blockquote><p>同一个问题（prefill 太贵、decode 太慢、batch 不可复现），</p><p>DeepSeek 的答案是"改模型结构 + 自研 kernel + 只在自家硬件上极致优化"；</p><p>本书的答案是"通用硬件 + 标准协议 + 可替换组件"。</p><p><strong>两条路都对，取决于你有多少卡、多少人和多少时间。</strong></p></blockquote>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 练习（20 分钟）</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 引擎的解剖：kernel 在哪一层，各层各自提供什么</h2>
+<p>前面九节讲的都是"策略"——怎么组批、怎么分块、怎么缓存。但策略最终要落到 GPU 上执行，中间隔着一层<strong>没人讲清楚的东西：kernel</strong>。</p>
+<h3>10.1 六层解剖</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>┌──────────────────────────────────────────────────────┐
+│ ① 接口层   OpenAI 兼容 API、SSE 流式、token 计量       │
+├──────────────────────────────────────────────────────┤
+│ ② 调度层   batching、chunked prefill、抢占、优先级      │
+├──────────────────────────────────────────────────────┤
+│ ③ 内存层   block table、前缀哈希、swap、KV 量化         │
+├──────────────────────────────────────────────────────┤
+│ ④ 执行层   逐层 forward：norm → gemm → attn → moe      │
+├──────────────────────────────────────────────────────┤
+│ ⑤ Kernel 层  attention / gemm / 通信 / 采样            │  ← 本节
+├──────────────────────────────────────────────────────┤
+│ ⑥ 硬件     SM90 / SM100 / Ascend + HBM + NVLink        │
+└──────────────────────────────────────────────────────┘</code></pre></figure>
+<p><strong>kernel 是第 ⑤ 层，属于引擎的一部分</strong>，但通常<strong>不在引擎仓库里</strong>——它被拆成独立库（FlashMLA、DeepGEMM、DeepEP），引擎在编译期或运行期链接进来。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>谁写</th><th>对外提供的能力</th><th>这层坏了会怎样</th></tr></thead><tbody><tr><td>① 接口</td><td>平台团队</td><td>协议兼容、流式、计量</td><td>客户端接不上</td></tr><tr><td>② 调度</td><td>引擎团队</td><td>吞吐、公平、TTFT/TPOT 折中</td><td>长尾、饥饿</td></tr><tr><td>③ 内存</td><td>引擎团队</td><td>并发数上限、前缀复用</td><td>OOM、碎片</td></tr><tr><td>④ 执行</td><td>引擎团队</td><td>正确的 forward、并行切分</td><td>结果错、跑不动</td></tr><tr><td>⑤ Kernel</td><td>少数人</td><td><strong>峰值算力利用率</strong></td><td>只有峰值的 30%</td></tr><tr><td>⑥ 硬件</td><td>厂商</td><td>算力、带宽、互联</td><td>—</td></tr></tbody></table></div>
+<p>关键事实：<strong>上面四层决定"能不能用"，最下面一层决定"贵不贵"</strong>。同一台 H800，attention kernel 写得好不好，能差 2–3 倍吞吐。</p>
+<h3>10.2 kernel 到底是什么</h3>
+<p>一句话：<strong>在 GPU 上并行执行的一个函数</strong>。它接收 tensor 和元数据，返回 tensor。</p>
+<p>以 DeepSeek 开源的 FlashMLA 为例，解码时每层就一行：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>o_i, lse_i = flash_mla_with_kvcache(
+    q_i, kvcache_i, block_table, cache_seqlens, dv,
+    tile_scheduler_metadata, num_splits, indices=indices,
+)</code></pre></figure>
+<p>看起来像普通 Python 调用，实际上是：启动 N 个 block、每 block M 个线程，把 Q 分块搬进 shared memory、算分块 softmax、累加输出——全部手写在 CUDA/CUTLASS 里。</p>
+<p>三种写法，越往下越难、越赚：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>代表</th><th>门槛</th><th>典型收益</th></tr></thead><tbody><tr><td>手写 CUDA / CUTLASS</td><td>DeepGEMM、FlashMLA</td><td>极高</td><td>接近硬件峰值</td></tr><tr><td>DSL（TileLang / Triton）</td><td>DeepInfer 的 <code>tilelang_ops</code></td><td>中</td><td>峰值的 70%–90%</td></tr><tr><td>直接调库</td><td>vLLM 内置 kernel</td><td>低</td><td>够用</td></tr></tbody></table></div>
+<p><strong>绝大多数团队不该写 kernel</strong>，但必须知道它在哪、瓶颈在哪，否则调优会一直在错误的层打转。</p>
+<h3>10.3 一次 decode step 有多少个 kernel</h3>
+<p>以 60 层模型、每层 12 个算子估算：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>每层 kernel 数</th></tr></thead><tbody><tr><td>RMSNorm、RoPE</td><td>2</td></tr><tr><td>QKV / O 投影</td><td>3</td></tr><tr><td>Attention</td><td>1</td></tr><tr><td>MoE gate + topk</td><td>2</td></tr><tr><td>dispatch / grouped GEMM ×2 / SwiGLU / combine</td><td>4–5</td></tr><tr><td><strong>每层合计</strong></td><td><strong>约 12–13</strong></td></tr></tbody></table></div>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>单 token step ≈ 60 层 × 12.5 ≈ 750 次 kernel 启动</code></pre></figure>
+<p>单次启动开销 3–5 μs（CPU 侧下发 + GPU 侧调度），<strong>750 × 4 μs ≈ 3 ms</strong>。而我们的 TPOT 预算是 25 ms——<strong>光启动就吃掉 12%</strong>，还没开始算。</p>
+<p>这就是 <strong>CUDA Graph</strong> 存在的原因：把整条 kernel 序列录制成一张图，一次提交、零重复下发，启动开销趋近于 0。代价是<strong>形状必须固定</strong>——所以变长 batch 要用 padding 或 masked 方案（DeepGEMM 的 masked grouped GEMM 就是为此而生）。</p>
+<h3>10.4 融合：把 5 个 kernel 变 1 个</h3>
+<p>FlashMLA 有个很能说明问题的设计——把 Q-norm、Q-RoPE、attention、O-RoPE、转 FP8<strong>五个操作融进一个 kernel</strong>。</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)</code></pre></figure>
+<p>收益不只是省 4 次启动，更重要的是<strong>省掉中间结果的 HBM 往返</strong>：每层少写读 2 次 <code>[batch, heads, 512]</code> 的 bf16 tensor，在 decode 这种带宽受限的场景下就是净赚。</p>
+<p>代价很硬：<strong>权重要提前重排</strong>。README 里要调 <code>permute_q_b_proj</code>、<code>permute_wv_proj</code>把权重和 scale 改成 kernel 要求的布局——一旦换了 kernel，权重格式就得跟着变。</p>
+<blockquote><p>这是全书反复出现的一个模式：<strong>性能优化会把"数据布局"变成契约</strong>。</p><p>你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。</p></blockquote>
+<h3>10.5 Mega MoE：把通信塞进 kernel 里</h3>
+<p>MoE 的传统流程是四步、四次 kernel、两次跨卡：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>dispatch(EP) → GEMM1 → SwiGLU → GEMM2 → combine(EP)</code></pre></figure>
+<p>DeepGEMM 的 Mega MoE 把它<strong>合成一个 kernel</strong>：dispatch、linear1、linear2、SwiGLU、combine全部融进去，用对称内存（symmetric memory）让 <strong>NVLink 通信与 tensor core 计算重叠</strong>。</p>
+<p>意义在于：MoE 推理的瓶颈本来不是算力，是 all-to-all 的等待。把通信藏进 kernel 里，等于把"等"变成了"顺便做"。</p>
+<p><code>deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)</code> —— 一行调用背后是一次通信-计算流水线编排。</p>
+<h3>10.6 数字：kernel 峰值 vs 模型 MFU</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>数值</th><th>说明</th></tr></thead><tbody><tr><td>H800 FP8 理论峰值</td><td>1,979 TFLOPS</td><td>硬件</td></tr><tr><td>DeepGEMM 实测（H800）</td><td><strong>1,550 TFLOPS</strong></td><td>kernel 级，占峰值 78%</td></tr><tr><td>我们模型级有效算力</td><td>693 TFLOPS</td><td>第 8 章的 35% MFU</td></tr><tr><td>差距</td><td><strong>43 个百分点</strong></td><td>访存、attention、通信、气泡</td></tr></tbody></table></div>
+<p><strong>kernel 做到 78% 很了不起，但模型级只有 35%</strong>——中间那 43 个点不在 kernel 里，在调度、在 batch 形状、在通信、在长尾。</p>
+<p>这解释了为什么"优化 kernel"和"优化吞吐"是两件事：前者是少数人的活，后者是平台团队的活。</p>
+<h3>10.7 边界：kernel 与硬件强绑定</h3>
+<p>FlashMLA 在 2026.09.30 的版本里<strong>移除了 Hopper 支持</strong>（只留 SM100/SM103），同时改了 FP8/FP4 的 KV 格式，与旧版本不兼容；DeepInfer 也只支持 SM100 与昇腾 950。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>事实</th><th>含义</th></tr></thead><tbody><tr><td>kernel 按 SM 架构编译</td><td>换卡就要重编，甚至重写</td></tr><tr><td>KV 格式随 kernel 版本变</td><td>升级引擎要让旧缓存失效</td></tr><tr><td>昇腾 950 已能到峰值 95%</td><td>国产卡在特定算子上不再落后</td></tr></tbody></table></div>
+<p><strong>选硬件时，先看 kernel 支持矩阵，再看纸面算力。</strong>一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。</p>
+<h3>10.8 一句话</h3>
+<blockquote><p>**调度器决定"谁先算"，kernel 决定"算得多快"。</p><p>前者是你能改的，后者通常要等生态——所以架构设计要把 kernel 的可获得性算进选型。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 练习（20 分钟）</h2>
 <p><strong>1. 跑实验</strong>：</p>
 <figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code>cd lab &amp;&amp; python3 paging_lab.py</code></pre></figure>
 <p>改三个参数再跑，记录结果：</p>
@@ -432,7 +492,7 @@ SWA：    [ 丢弃 ][ 只重算最后 140 token ]</code></pre></figure>
 <p><strong>3. 读源码（选做）</strong>：<code>mock_llm.py</code> 里用一个 set 模拟前缀缓存——对比本章的 block 哈希，说出它为什么只能做"全有或全无"的命中。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 复盘卡</h2>
 <figure class="code code--lang"><span class="code-lang">markdown</span><button class="copy" type="button">复制</button><pre><code>## 第 03 章复盘
 
 **一句话**：……
@@ -444,11 +504,11 @@ SWA：    [ 丢弃 ][ 只重算最后 140 token ]</code></pre></figure>
 **还没懂**：……</code></pre></figure>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收：怎么证明引擎配置是对的</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 验收：怎么证明引擎配置是对的</h2>
 <div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>期望</th><th>怎么测</th><th>脚本</th></tr></thead><tbody><tr><td>单实例并发会话</td><td>与 §6.4 公式误差 &lt;20%</td><td>压到 KV 打满</td><td><code>labs/paging_lab.py</code></td></tr><tr><td>块内碎片</td><td>&lt;2%</td><td>统计 block 利用率</td><td><code>labs/paging_lab.py</code></td></tr><tr><td>前缀命中率</td><td>与 radix 实验差 &lt;10 pt</td><td>引擎 metrics</td><td><code>labs/radix_lab.py</code></td></tr><tr><td>chunked 下 TTFT p95</td><td>≤ 800 ms</td><td>压测</td><td>—</td></tr><tr><td>调度器空转</td><td>&lt;1% step</td><td>引擎日志</td><td>—</td></tr></tbody></table></div>
 <p><strong>判据</strong>：先用两个实验拿到理论值，再压测真实引擎。两者差超过 20% 时，先查口径（token 算不算 chat template、block 是不是 16），再怀疑引擎。</p>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 延伸</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 延伸</h2>
 <ul><li>PagedAttention 论文（OSDI'23）：重点读 §3 Memory Management 和 §5 Sharing</li><li>vLLM 文档：Prefix Caching、Chunked Prefill、Scheduler Metrics</li><li>下一章：<a href="ch04-pd-disaggregation.md">第 04 章 · 调度与 PD 分离</a></li></ul>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="09-parallelism.html"><span>上一章</span><b>09 · 并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all）</b></a><a class="nav-next" href="11-pd-disaggregation.html"><span>下一章</span><b>11 · 调度与 PD 分离</b></a></nav>
