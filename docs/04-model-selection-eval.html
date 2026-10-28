@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>选型与能力评测 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">模型工程 · 第 04 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：最贵的那个反而最便宜</a><a href="#s2"><span>02</span>. 三个维度，不能只看一个</a><a href="#s3"><span>03</span>. 为什么是 200B MoE / 30B 激活</a><a href="#s4"><span>04</span>. 评测集：50 道题怎么出</a><a href="#s5"><span>05</span>. 通过标准：不是"准确率 90%"</a><a href="#s6"><span>06</span>. 三个陷阱</a><a href="#s7"><span>07</span>. 代码：一个能跑的评测脚本</a><a href="#s8"><span>08</span>. 最终选型矩阵</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 备选方案</a><a href="#s12"><span>12</span>. 收口</a><a href="#s13"><span>13</span>. 复盘卡</a></nav>
+      <div class="rail-foot">模型工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">04</div><div class="ch-kicker">模型工程</div><h1>选型与能力评测</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>为什么是 200B MoE / 30B 激活，而不是 30B 稠密或 70B？</li><li>50 道评测题怎么出、怎么判、判到什么程度算通过？</li><li>评测集会不会过拟合？三个陷阱怎么防？</li><li>上线后发现能力不够，先改哪里？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：最贵的那个反而最便宜</h2>
+<p>售后 Agent 上线前，团队把四个候选都跑了一遍：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>激活参数</th><th>推理成本</th><th>50 题通过率</th><th>结论</th></tr></thead><tbody><tr><td>8B 稠密</td><td>8B</td><td>0.078 分/轮</td><td>62%</td><td>❌ 工具调用经常错参</td></tr><tr><td>30B 稠密</td><td>30B</td><td>0.294 分/轮</td><td>74%</td><td>❌ 多步任务掉链子</td></tr><tr><td>70B 稠密</td><td>70B</td><td><strong>0.686 分/轮</strong></td><td>78%</td><td>❌ 贵且不够好</td></tr><tr><td><strong>200B MoE（30B 激活）</strong></td><td>30B</td><td><strong>0.294 分/轮</strong></td><td><strong>91%</strong></td><td>✅</td></tr></tbody></table></div>
+<p><strong>最反直觉的一行是最后一行</strong>：200B 的总参数是 70B 的 2.9 倍，但成本只有它的 <strong>43%</strong>。</p>
+<p>因为推理成本由<strong>激活参数</strong>决定，不由总参数决定。</p>
+<blockquote><p>这一条是本章的全部前提：<strong>能力看总参数，成本看激活参数。</strong></p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三个维度，不能只看一个</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>怎么量</th><th>我们的一票否决线</th></tr></thead><tbody><tr><td><strong>能力</strong></td><td>50 题通过率</td><td>&lt;85%</td></tr><tr><td><strong>成本</strong></td><td>分/轮（推理算力）</td><td>&gt;0.8 分/轮</td></tr><tr><td><strong>延迟</strong></td><td>TTFT p95 / TPOT p95</td><td>TTFT &gt;1,000 ms</td></tr></tbody></table></div>
+<p>三者是乘性关系，不是加性：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>能不能用 = 能力达标 × 成本可承受 × 延迟可接受</code></pre></figure>
+<p>任何一项为 0，整体为 0。所以<strong>先做一票否决，再比总分</strong>——不要用加权平均掩盖硬伤。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 为什么是 200B MoE / 30B 激活</h2>
+<h3>3.1 一条经验规律</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>能力 ≈ f(log 总参数)
+成本 ∝ 激活参数</code></pre></figure>
+<p>把这两条画在一起，MoE 的价值就出来了：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>总参数</th><th>激活</th><th>相对算力</th><th>能力（通过率）</th></tr></thead><tbody><tr><td>30B 稠密</td><td>30B</td><td>30B</td><td>1.0×</td><td>74%</td></tr><tr><td>70B 稠密</td><td>70B</td><td>70B</td><td>2.33×</td><td>78%</td></tr><tr><td><strong>200B MoE</strong></td><td>200B</td><td>30B</td><td><strong>1.0×</strong></td><td><strong>91%</strong></td></tr></tbody></table></div>
+<p>同样算力下，MoE 用 6.7 倍的参数换来了 17 个点的通过率。</p>
+<h3>3.2 MoE 的代价必须说清</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>代价</th><th>数值</th><th>影响</th></tr></thead><tbody><tr><td><strong>显存</strong></td><td>权重 200 GB（FP8），TP8 每卡 25 GB</td><td>单卡装不下，必须 8 卡起</td></tr><tr><td><strong>通信</strong></td><td>专家并行 all-to-all</td><td>跨机走 IB 50 GB/s，是瓶颈（第 9 章）</td></tr><tr><td><strong>负载不均</strong></td><td>热门专家排队</td><td>需要 EPLB 均衡（第 10A 章）</td></tr><tr><td><strong>显存换 KV</strong></td><td>640 GB 里 200 GB 给权重，KV 只剩 400 GB</td><td>并发上限被压缩</td></tr></tbody></table></div>
+<p><strong>推翻条件</strong>：如果目标硬件只有 40 GB 显存（如部分国产卡），200 GB 权重装不进 8 卡，MoE 方案直接不成立——这时只能退到 30B 稠密或更激进的量化。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 评测集：50 道题怎么出</h2>
+<h3>4.1 分布必须等于生产分布</h3>
+<p>评测集最容易犯的错不是"题太少"，而是<strong>题和生产不像</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>数量</th><th>考什么</th><th>判分方式</th></tr></thead><tbody><tr><td>单轮意图识别</td><td>10</td><td>分类准不准</td><td>精确匹配</td></tr><tr><td><strong>多步工具调用</strong></td><td>15</td><td>参数对不对、步数对不对</td><td>调用序列比对</td></tr><tr><td>长上下文检索</td><td>8</td><td>32K 里的事实召回</td><td>关键字段匹配</td></tr><tr><td>拒答与安全</td><td>7</td><td>该拒的拒、不该拒的不拒</td><td>规则 + 人工</td></tr><tr><td>结构化输出</td><td>10</td><td>JSON 合法率</td><td>schema 校验</td></tr></tbody></table></div>
+<p>五类加起来 50 道。<strong>权重不是平均的</strong>——多步工具调用占 30%，因为它是售后 Agent 的主路径。</p>
+<h3>4.2 题目从哪来</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>来源</th><th>占比</th><th>说明</th></tr></thead><tbody><tr><td>生产日志采样</td><td>60%</td><td>脱敏后取真实分布</td></tr><tr><td>人工构造</td><td>25%</td><td>覆盖长尾与边界</td></tr><tr><td>对抗样本</td><td>15%</td><td>提示注入、错别字、方言</td></tr></tbody></table></div>
+<p><strong>对抗样本是唯一能提前发现安全事故的类别</strong>，不要省。</p>
+<h3>4.3 判分：三种手段，按可靠性排序</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>适用</th><th>可靠性</th></tr></thead><tbody><tr><td><strong>规则/精确匹配</strong></td><td>分类、JSON、字段</td><td>最高（无歧义）</td></tr><tr><td><strong>调用序列比对</strong></td><td>工具调用</td><td>高（可精确到参数）</td></tr><tr><td><strong>LLM-as-judge</strong></td><td>开放式回答</td><td>中（需校准）</td></tr></tbody></table></div>
+<p>用 judge 有前提：<strong>与人工标注的一致率 Kappa ≥0.8</strong> 才能用，否则就是自欺欺人。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 通过标准：不是"准确率 90%"</h2>
+<p>绝对阈值没有意义——模型会升级，题目会变难。正确做法是<strong>对标现网基线</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>现网基线</th><th>通过线</th><th>一票否决</th></tr></thead><tbody><tr><td>总通过率</td><td>91%</td><td>≥89%（−2 pt）</td><td>&lt;85%</td></tr><tr><td>工具调用参数正确率</td><td>94%</td><td>≥92%</td><td>&lt;88%</td></tr><tr><td>安全拒答率</td><td>97%</td><td>≥95%</td><td>&lt;90%</td></tr><tr><td>JSON 合法率</td><td>99.5%</td><td>≥99%</td><td>&lt;97%</td></tr><tr><td>TTFT p95</td><td>610 ms</td><td>≤800 ms</td><td>&gt;1,000 ms</td></tr></tbody></table></div>
+<p>三条规则：</p>
+<ol><li><strong>总分允许 −2 pt</strong>，因为新版本常在边缘题上波动；</li><li><strong>任何单项跌破一票否决线，整体不通过</strong>——85% 总分里工具调用 0 分也是废的；</li><li><strong>安全项只许升不许降</strong>，没有"−2 pt"的余地。</li></ol>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 三个陷阱</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>陷阱</th><th>表现</th><th>防法</th></tr></thead><tbody><tr><td><strong>过拟合评测集</strong></td><td>每次调 Prompt 都涨分，上线不涨</td><td>留出 20% 从不参与调优的"盲测集"，每月换题</td></tr><tr><td><strong>Judge 偏见</strong></td><td>偏爱长回答、偏爱第一个选项</td><td>交换 A/B 顺序、双 judge 交叉</td></tr><tr><td><strong>分布漂移</strong></td><td>评测集是三个月前的，生产已经变了</td><td>每月按生产日志重采样</td></tr></tbody></table></div>
+<p>第一条最隐蔽：团队反复在 50 题上调 Prompt，分数从 78% 刷到 93%，上线后真实通过率只有 79%——<strong>刷的是题，不是能力</strong>。</p>
+<h3>6.1 多久跑一次</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>触发</th><th>跑什么</th><th>耗时</th></tr></thead><tbody><tr><td>模型版本上线</td><td>全量 50 题 + 盲测 20 题</td><td>25 s</td></tr><tr><td>Prompt 变更</td><td>全量 50 题</td><td>20 s</td></tr><tr><td>工具 schema 变更</td><td>工具类 15 题</td><td>8 s</td></tr><tr><td>每日巡检</td><td>盲测 20 题</td><td>10 s</td></tr><tr><td>每月</td><td>按生产日志重采样换题</td><td>半天</td></tr></tbody></table></div>
+<p><strong>每次变更都跑，但只在"晋级"时跑盲测集</strong>——盲测集见得多就失效了。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 代码：一个能跑的评测脚本</h2>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>import asyncio, json, statistics
+from collections import Counter
+
+async def run_case(client, case):
+    resp = await client.chat(case[&quot;messages&quot;], max_tokens=case.get(&quot;max_tokens&quot;, 512),
+                             tools=case.get(&quot;tools&quot;), temperature=0)
+    return judge(case, resp)          # 返回 (passed: bool, detail: dict)
+
+def judge(case, resp):
+    t = case[&quot;type&quot;]
+    if t == &quot;intent&quot;:
+        return resp.intent == case[&quot;expect&quot;], {&quot;got&quot;: resp.intent}
+    if t == &quot;tool&quot;:
+        got = [(c.name, c.args) for c in resp.tool_calls]
+        return got == case[&quot;expect_calls&quot;], {&quot;got&quot;: got}
+    if t == &quot;json&quot;:
+        try: json.loads(resp.text); return True, {}
+        except Exception: return False, {&quot;raw&quot;: resp.text[:80]}
+    if t == &quot;refusal&quot;:
+        return case[&quot;should_refuse&quot;] == resp.refused, {}
+    if t == &quot;recall&quot;:
+        return case[&quot;needle&quot;] in resp.text, {}
+    raise ValueError(t)
+
+async def main():
+    cases = json.load(open(&quot;eval/cases_50.json&quot;))
+    client = make_client(model=&quot;200b-moe&quot;)
+    results = await asyncio.gather(*[run_case(client, c) for c in cases])
+    by_type = Counter()
+    for c, (ok, _) in zip(cases, results):
+        by_type[(c[&quot;type&quot;], ok)] += 1
+    total = sum(ok for ok, _ in results) / len(results)
+    print(f&quot;总通过率 {total:.1%}&quot;)
+    for t in {c[&quot;type&quot;] for c in cases}:
+        n = by_type[(t, True)] + by_type[(t, False)]
+        print(f&quot;  {t:8s} {by_type[(t, True)]}/{n}&quot;)</code></pre></figure>
+<p>三个要点：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>要点</th><th>原因</th></tr></thead><tbody><tr><td><code>temperature=0</code></td><td>否则同一题两次结果不同，无法回归</td></tr><tr><td>按类型分组报</td><td>总分掩盖单类崩</td></tr><tr><td>并发跑</td><td>50 题串行要 5 分钟，并发 20 秒</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 最终选型矩阵</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>候选</th><th>通过率</th><th>成本</th><th>TTFT p95</th><th>结论</th></tr></thead><tbody><tr><td>8B</td><td>62%</td><td>0.078 分</td><td>300 ms</td><td>只做意图分类的子任务</td></tr><tr><td>30B 稠密</td><td>74%</td><td>0.294 分</td><td>450 ms</td><td>❌ 主路径不够</td></tr><tr><td>70B 稠密</td><td>78%</td><td>0.686 分</td><td>700 ms</td><td>❌ 贵且不够</td></tr><tr><td><strong>200B MoE</strong></td><td><strong>91%</strong></td><td><strong>0.294 分</strong></td><td>610 ms</td><td>✅ <strong>主路径</strong></td></tr><tr><td>外部 API</td><td>93%</td><td>3.5 分</td><td>900 ms</td><td>只做兜底与冷启动</td></tr></tbody></table></div>
+<p><strong>混合部署</strong>才是最终答案：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>8B   → 意图分类、简单问答（占流量 40%，成本 1/4）
+200B → 复杂售后（占流量 55%）
+API  → 兜底与疑难（占流量 5%）</code></pre></figure>
+<p>按这个比例，加权成本 ≈ 0.4×0.078 + 0.55×0.294 + 0.05×3.5 = <strong>0.37 分/轮</strong>，比全用 200B（0.294）贵一点，但比全用 API 便宜 9 倍。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>评测 93%，上线 79%</td><td>刷题过拟合</td><td>盲测集分数低</td><td>换题 + 盲测</td></tr><tr><td>总分 89% 但工具调用 0 分</td><td>平均掩盖单类</td><td>分组报告</td><td>一票否决</td></tr><tr><td>上线后"感觉变笨"</td><td>分布漂移</td><td>生产抽样通过率</td><td>每月重采样</td></tr><tr><td>Judge 分数虚高</td><td>长度偏好</td><td>A/B 交换后不一致</td><td>双 judge</td></tr><tr><td>换模型后成本翻倍</td><td>只看通过率不看 token</td><td>统计 output_tokens</td><td>加成本维度</td></tr><tr><td>安全测试全过但线上被绕过</td><td>缺对抗样本</td><td>—</td><td>补注入类用例</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>题量与覆盖</td><td>≥50 题，5 类齐全，工具调用占比 ≥25%</td></tr><tr><td>分布一致</td><td>与生产分布 KL 散度 &lt;0.1</td></tr><tr><td>盲测集</td><td>存在且从不参与调优，20 题以上</td></tr><tr><td>Judge 校准</td><td>与人工 Kappa ≥0.8</td></tr><tr><td>一票否决</td><td>安全/JSON/延迟三项独立判定</td></tr><tr><td>分组报告</td><td>每类单独出分，不只有总分</td></tr><tr><td>可复现</td><td>固定 temperature=0、固定评测集版本</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 备选方案</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>何时选</th><th>代价</th></tr></thead><tbody><tr><td>全用外部 API</td><td>日调用 &lt;10 万</td><td>成本 12×，数据出境</td></tr><tr><td>只用 8B + 规则</td><td>任务高度确定</td><td>复杂售后走不通</td></tr><tr><td>蒸馏 200B → 30B</td><td>已有 6 个月以上真实轨迹</td><td>需要 3–6 个月，效果天花板低于教师</td></tr><tr><td>微调 30B</td><td>领域非常窄</td><td>泛化差，版本管理复杂（第 5 章）</td></tr></tbody></table></div>
+<p><strong>顺序建议</strong>：先用 MoE 大模型跑通业务，收集 6 个月真实轨迹，再考虑蒸馏小模型降本。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 收口</h2>
+<blockquote><p>**选型不是选最强，是选"在成本与延迟约束下，能力刚好够用"的那个。</p><p>MoE 之所以成为默认答案，是因为它把"更大"和"更便宜"从对立变成了同向。**</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：能力看总参数、成本看激活参数；200B MoE 用 30B 的算力拿到 91% 通过率。
+我算的：70B 稠密 0.686 分/轮 vs 200B MoE 0.294 分/轮，后者便宜 57% 还强 13 个点。
+我原来以为…实际…差在：以为参数大就贵，实际贵不贵取决于激活多少。
+还没懂：混合部署里 8B 与 200B 的路由准确率怎么保证——分错一次就白省。</code></pre></figure>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="03-language-and-stack.html"><span>上一章</span><b>03 · 语言栈与技术栈总表</b></a><a class="nav-next" href="08-request-journey.html"><span>下一章</span><b>08 · 一次请求的完整旅程</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
