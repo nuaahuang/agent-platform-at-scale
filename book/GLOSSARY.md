@@ -22,6 +22,9 @@
 | **突发系数** | Burst Factor | 峰值小时内再放大的倍数 | 1.4 | 与峰值系数重复计算 |
 | **冗余系数（headroom）** | Headroom / Capacity Buffer | 为故障与突发预留的余量 | ×1.3（业务）+ ×1.2（双 AZ） | 只乘一次，漏掉 AZ |
 | **可用区（AZ）** | Availability Zone（AZ） | 独立供电与网络的机房单元 | 2 AZ | 当成"异地多活" |
+| **SLI** | Service Level Indicator | 实际测量到的那个数 | TTFT p95、成功率、TPOT p95 | 与 SLO 混为一谈 |
+| **SLO** | Service Level Objective | 对内承诺的目标值 | TTFT p95 ≤ 800 ms | 当成对外合同 |
+| **SLA** | Service Level Agreement | 对外合同，违约要赔 | 通常比 SLO 宽松（如 99.5%） | 与 SLO 混用 |
 | **错误预算** | Error Budget | 1 − SLO，允许失败的额度 | 99.9% → 43.2 分钟/月 | 当成"可以随便花" |
 | **单元化（cell）** | Cell-based Architecture | 把用户切片到独立小集群 | 单 cell ≤ 50 万 DAU | 与"多活"混为一谈 |
 
