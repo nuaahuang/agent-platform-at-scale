@@ -278,6 +278,34 @@ KV 可用    240 GB
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>排队时间 ≈ 队列长度 ÷ 每实例吞吐</code></pre></figure>
 <p>按我们的账（单实例 2.8 QPS）：队列 64 个 → 平均等 <strong>23 秒</strong>。这就是第 33 章把 <code>num_requests_waiting &gt; 64</code> 当扩容阈值的原因。</p>
 <p><strong>最危险的默认值是"队列无上限"</strong>：流量翻倍时队列长到 5,000，TTFT 变成 30 分钟，所有请求都在等一个永远不会释放的块——成功率 100%，体验归零。</p>
+<h3>3.2 队列会不会满：上限怎么定，满了怎么办</h3>
+<p>先分清三种"放不下"，它们的行为完全不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>默认上限</th><th>满了的表现</th></tr></thead><tbody><tr><td>网关熔断器</td><td>1,024</td><td>503，<strong>快速返回</strong></td></tr><tr><td><strong>引擎 waiting 队列</strong></td><td><strong>无上限</strong></td><td><strong>不报错，延迟无限涨</strong></td></tr><tr><td>KV 块池</td><td>125,000 块</td><td>请求卡在 waiting</td></tr></tbody></table></div>
+<p><strong>关键：引擎队列不会"满"，它只会一直涨。</strong></p>
+<p>涨到进程 OOM 被 kill，所有在飞请求一起丢——这比"满了直接拒绝"糟糕一个量级。</p>
+<p>所以队列必须由我们自己设上限。定法是一条除法：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>队列上限 = 目标等待时间 × 单实例吞吐
+        = 30 s × 2.8 QPS ≈ 84</code></pre></figure>
+<p>配 5,000 的队列，等于向用户承诺"最多等 30 分钟"。</p>
+<h3>3.3 满了之后：四种策略</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>策略</th><th>做法</th><th>评价</th></tr></thead><tbody><tr><td><strong>拒绝新请求</strong></td><td>429 + <code>Retry-After: 5</code></td><td><strong>默认选择</strong>，保护已接受的</td></tr><tr><td><strong>丢最老的</strong></td><td>踢掉队头</td><td><strong>绝对不要</strong>——它最接近完成，丢掉最亏</td></tr><tr><td><strong>降级</strong></td><td>切小模型 / 缩短 max_tokens</td><td>体验降级，但保住可用性</td></tr><tr><td><strong>带超时排队</strong></td><td>等 30 s 仍未开始就 503</td><td>推荐，与拒绝组合</td></tr></tbody></table></div>
+<p>实现位置有四种，选一种或叠加：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>LIMIT = 84                     # 目标等待 30 s × 2.8 QPS
+inflight = {}
+
+def admit(instance_id):
+    if inflight.get(instance_id, 0) &gt;= LIMIT:
+        return False           # → 429 + Retry-After
+    inflight[instance_id] = inflight.get(instance_id, 0) + 1
+    return True</code></pre></figure>
+<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>手段</th><th>优点</th></tr></thead><tbody><tr><td>应用侧</td><td>有界 Semaphore / 计数器</td><td>精确到实例，最可控</td></tr><tr><td>网关</td><td>Envoy <code>max_pending_requests: 84</code></td><td>挡在最外层，省资源</td></tr><tr><td>令牌桶</td><td>按 QPS 与 token 双维度限速</td><td>防长请求偷额度</td></tr><tr><td>引擎</td><td>调小 <code>max_num_seqs</code></td><td>间接减少排队，不精确</td></tr></tbody></table></div>
+<p><strong>拒绝必须满足三个条件</strong>，否则会把过载放大成雪崩：</p>
+<ol><li><strong>快</strong>：&lt;50 ms 返回，不要先排队再超时；</li><li><strong>可重试</strong>：429 + <code>Retry-After</code>，明确告诉客户端多久后再来；</li><li><strong>有预算</strong>：客户端重试要有上限——1.2 倍过载能被无脑重试放大成 2.4 倍（第 2 章 §8.2）。</li></ol>
+<h3>3.4 三个必须观测的数</h3>
+<figure class="code code--ascii"><span class="code-lang">text</span><button class="copy" type="button">复制</button><pre><code>queue_depth            队列深度（&gt;84 说明准入没生效）
+admission_rejected     拒绝率（持续 &gt;20% 说明容量不足）
+queue_wait_ms          排队时长 p95（这才是用户感知的那段）</code></pre></figure>
+<p><strong>排队时长比队列深度更重要</strong>：队列 200 但每秒消化 300，用户等 0.7 秒；队列 50 但每秒只消化 5，用户等 10 秒。</p>
 <p>背压与准入的完整设计见第 25 章。</p>
 <p><strong>关键：<code>block table</code> 是间接层</strong>，所以物理块可以不连续——这正是 PagedAttention 的全部意义（第 10 章 §4）。</p>
 <div class="orn"></div>
