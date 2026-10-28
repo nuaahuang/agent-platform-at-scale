@@ -58,6 +58,8 @@
 | **SASS** | Shader Assembly | GPU 实际执行的机器码 | 每个架构一套 | 以为可移植 |
 | **TMA** | Tensor Memory Accelerator | 异步张量搬运单元 | Hopper 起引入 | 与 LDGSTS 混 |
 | **ncu** | Nsight Compute | NVIDIA 的 kernel 性能分析器 | 看 SM/DRAM/TC 五类指标 | 与 nsys 混 |
+| **反应式扩容** | Reactive Scaling | 看当前指标偏离再调整，天然滞后 | 滞后 9–20 min | 以为能应对尖峰 |
+| **预测式扩容** | Predictive Scaling | 按未来需求预判，提前调整 | 提前 30–60 min | 以为一定准（会错 ±15%） |
 | **KEDA** | Kubernetes Event-driven Autoscaling | 事件驱动的 K8s 扩缩容器，HPA 的补充 | 60+ 触发器，可缩到 0 | 以为能替代 HPA（它靠 HPA 执行） |
 | **HPA** | Horizontal Pod Autoscaler | K8s 原生副本伸缩 | 只认 CPU/内存/自定义指标 | 以为能直接读队列长度 |
 | **Kernel** | GPU Kernel | 在 GPU 上并行执行的一个函数 | 单 step 约 750 次启动 | 以为它是"库"（它是一个函数） |
