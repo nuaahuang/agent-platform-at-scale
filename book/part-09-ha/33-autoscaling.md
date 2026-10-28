@@ -416,7 +416,100 @@ kubectl annotate scaledobject decode-pool autoscaling.keda.sh/paused-
 ⑦ 释放 GPU，回池
 ```
 
-### 10.2 三个关键配置
+### 10.2 摘流量：三条路径
+
+"摘流量"不是一条命令，而是三条路径，按你的栈选，通常两两组合：
+
+| 路径 | 机制 | 生效时间 | 适用 | 局限 |
+|---|---|---|---|---|
+| **K8s Endpoint** | readiness 变红 → EndpointSlice 摘除 | 1–5 s | 通用兜底 | **不断长连接**，旧连接继续复用 |
+| **网关 / Envoy** | xDS 把权重设 0，或 health 置为 UNHEALTHY | <1 s | 有独立网关 | 只管经过网关的流量 |
+| **协议层** | HTTP/2 发 `GOAWAY` | 立即 | gRPC 直连 | 需要客户端配合不新建流 |
+
+**第一个局限是致命点**：把 Pod 从 Endpoints 摘了，已经建立的 HTTP/1.1 keep-alive
+或 gRPC 长连接**不会断**，新请求照样从旧连接打进来。所以必须配 preStop 兜底。
+
+三种做法的命令：
+
+```bash
+# 路径一：K8s Endpoint（改 readiness）
+kubectl exec decode-xxx -- touch /tmp/drain
+kubectl get endpointslice -l kubernetes.io/service-name=decode -w
+# 看到该 Pod IP 消失即生效
+
+# 路径二：Envoy 管理接口（本地 sidecar）
+curl -s -X POST localhost:9901/healthcheck/fail     # 让健康检查失败 → 摘除
+curl -s -X POST "localhost:9901/drain_listeners?graceful"  # 优雅关闭监听
+
+# 路径三：gRPC 服务端主动 GOAWAY（应用内实现）
+server.graceful_stop(grace=20)   # 停止接收新流，等在飞流结束
+```
+
+**推荐组合：路径二（快）+ 路径一（兜底）+ preStop（等连接自然关闭）。**
+
+### 10.3 等在飞清零：观测什么、怎么等
+
+**"在飞"不等于"连接数"**——一个长连接可能 0 个在飞，也可能 3 个在飞。要看的是引擎的运行请求数：
+
+```bash
+# 引擎侧（vLLM）
+curl -s localhost:8000/metrics | grep '^vllm:num_requests_running'
+```
+
+preStop 里跑一个带超时的轮询（**必须有超时**，否则引擎卡住就永远等下去）：
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - |
+          touch /tmp/drain                      # 先摘流
+          sleep 3                               # 等 Endpoint 生效
+          for i in $(seq 1 25); do
+            n=$(curl -s localhost:8000/metrics \
+                | awk '/^vllm:num_requests_running/{print int($2)}')
+            [ "$n" = "0" ] && break
+            sleep 2
+          done
+terminationGracePeriodSeconds: 60
+```
+
+25 × 2 s = 50 s，加上前面的 3 s，正好卡在 60 s 的 grace 内。
+
+三个坑：
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| 流式请求还在吐 token | `running=0` 但 SSE 连接未关 | 连接层也要等，别只看指标 |
+| 长尾请求 30 s+ | 等不满 50 s 就超时 | 接受 0.00x% 失败，或提前拒绝新长任务 |
+| 引擎 hang 住 | 指标不再更新，循环空转 | 超时后强制退出，别无限等 |
+
+### 10.4 丢弃 KV：到底在丢什么
+
+这是最容易误解的一步。**KV 不在磁盘上，"丢弃"不是删文件。**
+
+| 场景 | 要做什么 | 为什么 |
+|---|---|---|
+| **纯本地引擎**（默认） | 什么都不用做 | 进程退出 → CUDA context 销毁 → 显存自动回收 |
+| **前缀缓存索引在全局**（Redis / LMCache / 自研 KV 池） | **必须显式下线实例**，把它的 block 目录摘掉 | 否则新请求命中"指向已死实例"的条目 → 500 |
+| **PD 分离** | 中止该实例上未完成的 KV 传输会话 | 否则 decode 侧等一个永远不来的 block |
+
+代码上就是下线时的三个动作：
+
+```python
+def on_shutdown(instance_id):
+    transfer.abort_all(instance_id)        # 1) 中止在传的 KV
+    kv_index.remove_instance(instance_id)  # 2) 从全局目录摘除
+    # 3) 显存交给进程退出自然回收，不需要手动 memset
+```
+
+**反例**：只做了 1、2 忘了 3 之外的东西没关系；真正的错误是**只关了进程，没清索引**——
+运维看到的现象是"缩容后零星 500，重启才好"。
+
+### 10.5 三个关键配置
 
 **① 可被主动触发的 readiness 探针**
 
@@ -463,7 +556,7 @@ spec:
 
 PDB 只管"自愿驱逐"（节点维护、缩容），不管崩溃。它是缩容时的最后一道闸。
 
-### 10.3 一次性缩多少
+### 10.6 一次性缩多少
 
 ```
 每分钟最多缩 5%，且缩完等 10 分钟再看
@@ -473,7 +566,7 @@ PDB 只管"自愿驱逐"（节点维护、缩容），不管崩溃。它是缩�
 一次缩 15 个 = 瞬间少 42 卡 ≈ 117 QPS 的处理能力，这个台阶还能接受；
 一次缩 50 个，就是自由落体。
 
-### 10.4 一个真实 bug：没配 preStop
+### 10.7 一个真实 bug：没配 preStop
 
 某次发版滚动更新，每次滚动都有 **0.3% 的 500 错误**。
 
