@@ -263,6 +263,22 @@ KV 可用    240 GB
         return allocate(seq, n_blocks)
     victim = scheduler.pick_victim()                     # ③
     return preempt(victim) and allocate(seq, n_blocks)</code></pre></figure>
+<h3>3.1 拿不到块的请求去哪了：waiting 队列</h3>
+<p>上一节那个 <code>allocate()</code> 返回 <code>False</code> 之后，请求并没有消失——它进了<strong>引擎的等待队列</strong>。</p>
+<p><strong>排队不在网关，在 KV 分配器的门口。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>队列在哪</th><th>默认容量</th><th>满了怎么样</th></tr></thead><tbody><tr><td>客户端</td><td>并发池 / 连接池</td><td>自定</td><td>本地等待</td></tr><tr><td>网关</td><td>Envoy 熔断器 <code>max_pending_requests</code></td><td>1,024</td><td><strong>直接 503</strong></td></tr><tr><td><strong>引擎</strong></td><td><code>Scheduler.waiting</code>（deque）</td><td><strong>无上限</strong>（vLLM 默认）</td><td><strong>无限排队</strong></td></tr></tbody></table></div>
+<p>引擎里每个 step 做一遍这件事：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>for req in waiting:            # 从队头开始
+    if block_manager.can_allocate(req):
+        waiting.remove(req)
+        running.append(req)    # 进入本 step 的 batch
+    else:
+        break                  # KV 不够，队头都进不去，后面更进不去</code></pre></figure>
+<p>于是有两个数决定了用户的等待：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>排队时间 ≈ 队列长度 ÷ 每实例吞吐</code></pre></figure>
+<p>按我们的账（单实例 2.8 QPS）：队列 64 个 → 平均等 <strong>23 秒</strong>。这就是第 33 章把 <code>num_requests_waiting &gt; 64</code> 当扩容阈值的原因。</p>
+<p><strong>最危险的默认值是"队列无上限"</strong>：流量翻倍时队列长到 5,000，TTFT 变成 30 分钟，所有请求都在等一个永远不会释放的块——成功率 100%，体验归零。</p>
+<p>背压与准入的完整设计见第 25 章。</p>
 <p><strong>关键：<code>block table</code> 是间接层</strong>，所以物理块可以不连续——这正是 PagedAttention 的全部意义（第 10 章 §4）。</p>
 <div class="orn"></div>
 </section>

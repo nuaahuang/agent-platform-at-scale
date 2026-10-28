@@ -77,6 +77,43 @@ def allocate(seq, n_blocks):
     return preempt(victim) and allocate(seq, n_blocks)
 ```
 
+### 3.1 拿不到块的请求去哪了：waiting 队列
+
+上一节那个 `allocate()` 返回 `False` 之后，请求并没有消失——它进了**引擎的等待队列**。
+
+**排队不在网关，在 KV 分配器的门口。**
+
+| 层 | 队列在哪 | 默认容量 | 满了怎么样 |
+|---|---|---|---|
+| 客户端 | 并发池 / 连接池 | 自定 | 本地等待 |
+| 网关 | Envoy 熔断器 `max_pending_requests` | 1,024 | **直接 503** |
+| **引擎** | `Scheduler.waiting`（deque） | **无上限**（vLLM 默认） | **无限排队** |
+
+引擎里每个 step 做一遍这件事：
+
+```
+for req in waiting:            # 从队头开始
+    if block_manager.can_allocate(req):
+        waiting.remove(req)
+        running.append(req)    # 进入本 step 的 batch
+    else:
+        break                  # KV 不够，队头都进不去，后面更进不去
+```
+
+于是有两个数决定了用户的等待：
+
+```
+排队时间 ≈ 队列长度 ÷ 每实例吞吐
+```
+
+按我们的账（单实例 2.8 QPS）：队列 64 个 → 平均等 **23 秒**。
+这就是第 33 章把 `num_requests_waiting > 64` 当扩容阈值的原因。
+
+**最危险的默认值是"队列无上限"**：流量翻倍时队列长到 5,000，
+TTFT 变成 30 分钟，所有请求都在等一个永远不会释放的块——成功率 100%，体验归零。
+
+背压与准入的完整设计见第 25 章。
+
 **关键：`block table` 是间接层**，所以物理块可以不连续——这正是 PagedAttention 的全部意义（第 10 章 §4）。
 
 ---
