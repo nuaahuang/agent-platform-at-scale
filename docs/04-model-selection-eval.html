@@ -365,6 +365,7 @@ histogram_quantile(0.5, sum by (le) (rate(llm_request_temperature_bucket{env=&qu
 <h3>4.7 选型流程：从"想换模型"到"全量上线"</h3>
 <p>七步，每步写清输入、执行人、产出和门禁。门禁不过就停在这一步，不许带着问题上台阶。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>做什么</th><th>谁做</th><th>产出</th><th>耗时</th><th>门禁</th></tr></thead><tbody><tr><td>1</td><td>定能力清单与硬约束</td><td>PM + 算法</td><td>能力项、延迟/成本/合规红线</td><td>0.5 天</td><td>每条约束可量化</td></tr><tr><td>2</td><td>收集候选</td><td>算法</td><td>3–5 个候选及部署规格</td><td>1 天</td><td>每个候选有可跑形态</td></tr><tr><td>3</td><td>能力探针（初筛）</td><td>算法</td><td>20 题探针结果</td><td>0.5 天</td><td>通过率 ≥ 基线 −5pt</td></tr><tr><td>4</td><td>全量评测</td><td>QA + 算法</td><td>50 题 + 盲测 20 题报告</td><td>1 天</td><td>见 §5，含单项否决</td></tr><tr><td>5</td><td>成本与延迟实测</td><td>SRE</td><td>分/轮、TTFT/TPOT p95</td><td>1 天</td><td>成本 ≤ +20%，TTFT ≤ 800 ms</td></tr><tr><td>6</td><td>灰度</td><td>SRE + 算法</td><td>5% 流量 3 天数据</td><td>3 天</td><td>错误率不升、goodput 不降</td></tr><tr><td>7</td><td>放量与归档</td><td>平台</td><td>release manifest + 评测归档</td><td>0.5 天</td><td>回滚演练通过</td></tr></tbody></table></div>
+<p>表中的 SRE 指 Site Reliability Engineer（站点可靠性工程师），负责容量测算、灰度推进、告警配置和回滚演练。和传统运维的区别在考核方式：SRE 用 SLO 和错误预算衡量，不是用"有没有出事"衡量。</p>
 <p>一周左右能走完一轮。真正拖时间的是第 6 步，三天不能压——一天的灰度量不足以覆盖工作日和周末两种流量形态。</p>
 <p>第 3 步的"探针"是这套流程省时间的关键。20 道题按区分度选出来（正负样本各半，覆盖五类），30 分钟内能跑完 5 个候选，用来快速淘汰差 10 个点以上的模型，避免每个候选都跑全量。</p>
 <p>门禁不过时的处理方式，比门禁本身更重要：</p>
