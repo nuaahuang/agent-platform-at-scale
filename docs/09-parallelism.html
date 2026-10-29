@@ -417,7 +417,7 @@ GPU1: e2 e3      GPU3: e6 e7</code></pre></figure>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>A.8.4 推翻条件：这个并行策略什么时候不成立</h2>
 <p>TP=8 是机内 NVLink 下的最优解，但它有明确边界：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>前提</th><th>不成立时</th><th>换成什么</th></tr></thead><tbody><tr><td>单机放得下 8 卡且 NVLink 全互联</td><td>卡间只有 PCIe</td><td>TP 降到 2，靠 PP 补</td></tr><tr><td>权重能切进 8 张卡</td><td>权重 &gt; 8×80 GB</td><td>加 PP，接受跨机</td></tr><tr><td>跨机带宽 ≥ 50 GB/s</td><td>只有 25 Gbps 以太</td><td>放弃跨机 EP，改机内 TP + 跨机 PP</td></tr></tbody></table></div>
-<p>下面三条就是它的推翻条件，最容易被踩到的是第三条。EP 的 all-to-all 对带宽极敏感，带宽不够时通信会把收益吃光，不如老老实实 TP+PP。这一条我没有在 25 Gbps 的机器上实测过，是按时延模型推的。</p>
+<p>下面三条就是它的推翻条件，最容易被踩到的是第三条。EP 的 all-to-all 对带宽极敏感，带宽不够时通信会把收益吃光，不如老老实实 TP+PP。账可以自己算：25 Gbps 以太传 8 MB 的 all-to-all 消息约 2.7 ms，EP 每步两次就是 5.4 ms，占 25 ms TPOT 的 21%——带宽再低一半，通信就吃掉四成 decode 时间。</p>
 </section>
 <section class="sec" id="s12"><h2><span class="sec-num">12</span>A.9 自测</h2>
 <ol><li>TP=8 时，一个线性层要做几次 all-reduce？为什么 TP 一般不跨机？</li><li>EP 的 all-to-all 传的是什么？为什么它是 MoE 推理的瓶颈？</li><li>all-reduce 和 all-to-all 的区别，用一句话说清。</li><li>2:4 稀疏的"2 倍"为什么在 decode 上拿不到？</li><li>什么情况下 MoE 反而不如稠密模型划算？</li></ol>

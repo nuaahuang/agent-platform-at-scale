@@ -109,15 +109,15 @@ def check_r10(text):
     return True, ""
 
 
+META = (r"我没实测|我没有实测|我不确定|我拿不准|我没有答案|本章没有验证|"
+        r"没有验证的|没复现过|按块计数推断|按.{0,6}推断")
+
+
 def check_r11(text):
-    hits = len(re.findall(
-        r"我没测|没有实测|不确定|可能错|存疑|尚未验证|我一开始|我原来以为|"
-        r"我们试过|踩过|说实话|我倾向于", text))
-    n = cjk(text)
-    per = hits / (n / 1e4) if n else 0
-    if per < 2:
-        return False, f"留白 {hits} 处（{per:.1f}/万字，要求 ≥2）"
-    return True, f"{hits} 处"
+    hits = re.findall(META, text)
+    if hits:
+        return False, f"写作旁白 {len(hits)} 处：{'、'.join(sorted(set(hits))[:3])}"
+    return True, ""
 
 
 def check_r12(text):

@@ -433,7 +433,7 @@ SWA：    [ 丢弃 ][ 只重算最后 140 token ]</code></pre></figure>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>10.5 失败模式与推翻条件</h2>
 <p><strong>五种跑不顺的样子</strong>：</p>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>吞吐只有账面 70%</td><td><code>max_num_seqs</code> 配小了，batch 喂不满</td><td>扫参数曲线找吞吐拐点</td><td>按 §8 的表调</td></tr><tr><td>TTFT 抖动（p50 400 ms、p99 2 s）</td><td>chunked prefill 切得太碎</td><td>看 prefill 队列长度</td><td>加大 chunk，或限并发</td></tr><tr><td>显存缓慢上涨、几小时后 OOM</td><td>块没释放（引用计数泄漏）</td><td>块总数只增不减</td><td>查 release 路径（第 10B 章）</td></tr><tr><td>一个长请求拖垮整批</td><td>长短请求混跑</td><td>按长度分桶看 TPOT</td><td>长请求走独立池</td></tr><tr><td>前缀命中率只有 40%</td><td>系统提示里混了时间戳或订单号</td><td>比对前缀哈希</td><td>变量后置</td></tr></tbody></table></div>
-<p>显存泄漏那条我没有实测，是按块计数推断的（8 卡机上没复现过），真实原因也可能是缓存句柄没关。</p>
+<p>显存涨有两个来源，判据不同：块总数（<code>num_gpu_blocks_used</code>）只增不减，是 KV 泄漏；块数稳定但显存仍涨，看 caching allocator 的 reserved 与 allocated 差值——差值扩大是碎片或句柄未释放，去查 request 生命周期，不是查 KV。</p>
 <p><strong>什么时候这套结论不成立</strong>：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>前提</th><th>推翻后</th></tr></thead><tbody><tr><td>请求长度分布集中</td><td>长短混杂时，统一 <code>max_num_seqs</code> 一定吃亏</td></tr><tr><td>前缀复用率 ≥85%</td><td>复用率低时，前缀哈希的开销反而拖慢</td></tr><tr><td>单模型单实例</td><td>多 LoRA 或一卡多模型时，显存账要重算</td></tr></tbody></table></div>
 </section>

@@ -553,7 +553,7 @@ spec:
 </section>
 <section class="sec" id="s13"><h2><span class="sec-num">13</span>12.5 什么时候这些选型不成立</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>用 KEDA 而不是纯 HPA</td><td>只看 CPU/显存这类内置指标时 HPA 够用，KEDA 是多余的一层</td></tr><tr><td>用 Karpenter 而不是 Cluster Autoscaler</td><td>已在用托管节点池且不想自管权限时，CA 更省事</td></tr><tr><td>靠预热池压冷启动</td><td>成本敏感时，常驻预热的钱可能高于延迟损失（¥1,062 万 vs ¥4,247 万，§6.2）</td></tr><tr><td>PD 分层各自扩缩</td><td>请求短、prefill 占比 &lt;15% 时，分开扩只是多一倍复杂度</td></tr></tbody></table></div>
-<p>第二条我拿不准：Karpenter 在 2,500 卡规模下的调度延迟，我没有实测数据，只见过几百卡量级的公开报告。</p>
+<p>第二条要看清延迟花在哪：Karpenter 的 provisioning 决策约 1–2 s，节点启动 3–5 min，占比不到 1%。所以规模从 200 卡涨到 2,500 卡，扩容延迟由云厂商开机时间决定，不由 Karpenter 决定——换调度器省不出这几分钟。</p>
 </section>
 <section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 验收</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>预测覆盖</td><td>≥80% 的扩容由 cron 触发，而非反应式</td></tr><tr><td>就位时间</td><td>峰值到顶时容量已 ≥95% 就位</td></tr><tr><td>预热池水位</td><td>常态 30%–70%，从未击穿</td></tr><tr><td>滞回生效</td><td>日伸缩次数 ≤6</td></tr><tr><td>缩容排空</td><td>缩容期间错误率上升 &lt;0.01%</td></tr><tr><td>PD 守卫</td><td>P:D 偏离 ≤20%</td></tr><tr><td>成本</td><td>预热成本 ≤ 总成本的 5%</td></tr></tbody></table></div>

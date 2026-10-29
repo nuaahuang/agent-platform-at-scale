@@ -13,7 +13,7 @@ import pathlib
 
 # 每万字的目标区间（下限, 上限），None 表示只限一侧
 LIMITS = {
-    "作者位置": (2.0, None),      # 承认不确定/记录试错
+    "元评论": (None, 0.0),       # "我没实测/我不确定" 这类旁白
     "收口": (None, 6.0),          # 一句话/这就是/这才是
     "表行": (None, 400.0),        # 表格行数
     "必须": (None, 18.0),         # 命令式语气
@@ -21,7 +21,7 @@ LIMITS = {
 }
 
 PATTERNS = {
-    "作者位置": r"我没测|没有实测|不确定|可能错|存疑|尚未验证|我一开始|我原来以为|我们试过|踩过|说实话|我倾向于",
+    "元评论": r"我没实测|我没有实测|我不确定|我拿不准|我没有答案|本章没有验证|没有验证的|没复现过",
     "收口": r"一句话[:：]|这就是|这才是",
     "假对比": r"不是[^。\n]{0,25}而是",
     "必须": r"必须",
@@ -63,21 +63,21 @@ def report(m: dict) -> list:
 def main(argv):
     files = argv[1:] or sorted(
         f for f in glob.glob("book/**/*.md", recursive=True)
-        if not any(x in f for x in ("README", "OUTLINE", "GLOSSARY", "STYLE"))
+        if not any(x in f for x in ("README", "OUTLINE", "GLOSSARY", "STYLE", "WRITING-CONTRACT"))
     )
-    print(f"{'章节':<40}{'字':>6}{'作者位':>7}{'收口':>6}{'表行':>6}{'必须':>6}{'假对比':>7}{'CV':>7}{'表占比':>8}")
+    print(f"{'章节':<40}{'字':>6}{'元评论':>7}{'收口':>6}{'表行':>6}{'必须':>6}{'假对比':>7}{'CV':>7}{'表占比':>8}")
     print("-" * 108)
     bad = []
     for f in files:
         m = analyze(pathlib.Path(f).read_text(encoding="utf-8"))
         name = f.split("/")[-1]
         marks = "".join(r[3] for r in report(m))
-        print(f"{name:<40}{m['汉字']:>6}{m['作者位置']:>7}{m['收口']:>6}{m['表行']:>6}"
+        print(f"{name:<40}{m['汉字']:>6}{m['元评论']:>7}{m['收口']:>6}{m['表行']:>6}"
               f"{m['必须']:>6}{m['假对比']:>7}{m['段长CV']:>7.2f}{m['表占比']:>6.0f}%  {marks}")
         if marks:
             bad.append(name)
     print("-" * 108)
-    print("↓ 缺作者位置   ↑ 模板化超标   T 表格占比>45%")
+    print("↓ 缺元评论为0   ↑ 模板化超标   T 表格占比>45%")
     print(f"{len(bad)}/{len(files)} 个文件需要人工看一遍：{', '.join(bad[:6])}")
 
 
