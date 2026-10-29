@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：扩容要 10 分钟，流量爬坡只要 20 分钟</a><a href="#s2"><span>02</span>. 三个物理约束：为什么快不了</a><a href="#s3"><span>03</span>. 为什么 HPA 必然失效</a><a href="#s4"><span>04</span>. 先分清：反应式与预测式</a><a href="#s5"><span>05</span>. 三种预测信号：在需要之前动手</a><a href="#s6"><span>06</span>. 预热池：备多少，花多少钱</a><a href="#s7"><span>07</span>. 缩容：比扩容更危险</a><a href="#s8"><span>08</span>. PD 分离后怎么分别扩</a><a href="#s9"><span>09</span>. 实现：三层配置</a><a href="#s10"><span>10</span>. 实操：扩容的八个步骤</a><a href="#s11"><span>11</span>. 实操：缩容的七个步骤</a><a href="#s12"><span>12</span>. 失败模式</a><a href="#s13"><span>13</span>. 验收</a><a href="#s14"><span>14</span>. 收口</a><a href="#s15"><span>15</span>. 复盘卡</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：扩容要 10 分钟，流量爬坡只要 20 分钟</a><a href="#s2"><span>02</span>. 三个物理约束：为什么快不了</a><a href="#s3"><span>03</span>. 为什么 HPA 必然失效</a><a href="#s4"><span>04</span>. 先分清：反应式与预测式</a><a href="#s5"><span>05</span>. 三种预测信号：在需要之前动手</a><a href="#s6"><span>06</span>. 预热池：备多少，花多少钱</a><a href="#s7"><span>07</span>. 缩容：比扩容更危险</a><a href="#s8"><span>08</span>. PD 分离后怎么分别扩</a><a href="#s9"><span>09</span>. 实现：三层配置</a><a href="#s10"><span>10</span>. 实操：扩容的八个步骤</a><a href="#s11"><span>11</span>. 实操：缩容的七个步骤</a><a href="#s12"><span>12</span>. 失败模式</a><a href="#s13"><span>13</span>什么时候这些选型不成立</a><a href="#s14"><span>14</span>. 验收</a><a href="#s15"><span>15</span>. 收口</a><a href="#s16"><span>16</span>. 复盘卡</a></nav>
       <div class="rail-foot">高可用</div>
     </div>
   </aside>
@@ -551,16 +551,20 @@ spec:
 <p>第三条最隐蔽：KEDA 显示"已扩到 120 副本"，但全都 Pending，实际算力一张没加。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 验收</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12.5 什么时候这些选型不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>用 KEDA 而不是纯 HPA</td><td>只看 CPU/显存这类内置指标时 HPA 够用，KEDA 是多余的一层</td></tr><tr><td>用 Karpenter 而不是 Cluster Autoscaler</td><td>已在用托管节点池且不想自管权限时，CA 更省事</td></tr><tr><td>靠预热池压冷启动</td><td>成本敏感时，常驻预热的钱可能高于延迟损失（¥1,062 万 vs ¥4,247 万，§6.2）</td></tr><tr><td>PD 分层各自扩缩</td><td>请求短、prefill 占比 &lt;15% 时，分开扩只是多一倍复杂度</td></tr></tbody></table></div>
+<p>第二条我拿不准：Karpenter 在 2,500 卡规模下的调度延迟，我没有实测数据，只见过几百卡量级的公开报告。</p>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 验收</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>通过标准</th></tr></thead><tbody><tr><td>预测覆盖</td><td>≥80% 的扩容由 cron 触发，而非反应式</td></tr><tr><td>就位时间</td><td>峰值到顶时容量已 ≥95% 就位</td></tr><tr><td>预热池水位</td><td>常态 30%–70%，从未击穿</td></tr><tr><td>滞回生效</td><td>日伸缩次数 ≤6</td></tr><tr><td>缩容排空</td><td>缩容期间错误率上升 &lt;0.01%</td></tr><tr><td>PD 守卫</td><td>P:D 偏离 ≤20%</td></tr><tr><td>成本</td><td>预热成本 ≤ 总成本的 5%</td></tr></tbody></table></div>
 <p>最后一条是关键：<strong>弹性不是免费的</strong>。377 卡短时预热 = ¥1,062 万/年，占 ¥2.83 亿的 3.8%——这笔钱要能说清楚换回了什么。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 收口</h2>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>14. 收口</h2>
 <blockquote><p>**HPA 假设"扩得快"，GPU 的物理假设"扩要 10 分钟"。</p><p>假设冲突时，赢的永远是物理——所以弹性只能靠预测，不能靠反应。**</p></blockquote>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s15"><h2><span class="sec-num">15</span>15. 复盘卡</h2>
+<section class="sec" id="s16"><h2><span class="sec-num">16</span>15. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：扩容有物理下限（3-4 分钟），所以弹性必须前置，靠 cron + 预热池而不是 HPA。
 我算的：预热池 = 2512 × 15% = 377 卡；短时 6 h/天 = ¥1,062 万/年。
 我原来以为…实际…差在：以为伸缩是&quot;扩得快&quot;，实际是&quot;提前判断 + 提前加载&quot;。

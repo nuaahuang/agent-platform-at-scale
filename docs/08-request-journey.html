@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：为什么先看"一条请求"</a><a href="#s2"><span>02</span>. 机制：12 跳</a><a href="#s3"><span>03</span>. 数量级：并发到底是多少</a><a href="#s4"><span>04</span>. 钱花在哪一跳</a><a href="#s5"><span>05</span>. 设计含义：链路图怎么变成架构决策</a><a href="#s6"><span>06</span>. 验收：五个数字必须能被复算</a><a href="#s7"><span>07</span>. 三个误区</a><a href="#s8"><span>08</span>. 练习（15 分钟）</a><a href="#s9"><span>09</span>. 复盘卡（写完发我）</a><a href="#s10"><span>10</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：为什么先看"一条请求"</a><a href="#s2"><span>02</span>. 机制：12 跳</a><a href="#s3"><span>03</span>. 数量级：并发到底是多少</a><a href="#s4"><span>04</span>. 钱花在哪一跳</a><a href="#s5"><span>05</span>. 设计含义：链路图怎么变成架构决策</a><a href="#s6"><span>06</span>失败模式：旅程断在哪一段</a><a href="#s7"><span>07</span>. 验收：五个数字必须能被复算</a><a href="#s8"><span>08</span>. 三个误区</a><a href="#s9"><span>09</span>. 练习（15 分钟）</a><a href="#s10"><span>10</span>. 复盘卡（写完发我）</a><a href="#s11"><span>11</span>. 延伸</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -324,17 +324,21 @@ L = 347 × 600 = 20.8 万               （同时在场数）</code></pre></figu
 <p><strong>（3）容量按什么定</strong></p>
 <p>按 QPS 定算力（prefill），按在飞请求定显存（KV），按并发定连接数。三个口径对应三种资源，混着算就会像 §3 那样差出 10 倍。</p>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 验收：五个数字必须能被复算</h2>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>5.5 失败模式：旅程断在哪一段</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>TTFT 比各段之和多出几百 ms</td><td>漏了引擎的等待队列</td><td>trace 里网关与引擎之间有一段空白</td><td>在 <code>add_request</code> 处打点（第 10B 章 §3.1）</td></tr><tr><td>同一会话两次走了不同实例</td><td>路由亲和没生效</td><td>比对两次的 <code>instance_id</code></td><td>检查会话哈希的 key 是否含 tenant</td></tr><tr><td>端到端 9 s，各段加起来只有 5 s</td><td>客户端渲染与网络没计入</td><td>客户端埋点与服务端时钟对齐</td><td>加客户端首帧打点</td></tr><tr><td>首 token 很快、整体很慢</td><td>输出被网关缓冲或下游限流</td><td>看 TPOT 分布是否被拉长</td><td>查网关 flush 策略</td></tr><tr><td>偶发 3–5 s 尖峰</td><td>连接池耗尽或 TCP 重传</td><td>连接数曲线 + 抓包</td><td>调 keepalive、扩连接池</td></tr></tbody></table></div>
+<p>第二条最难查：它不报错，只是让前缀缓存命中率悄悄掉 20 个点，然后 TTFT 整体上移。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>6. 验收：五个数字必须能被复算</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>数字</th><th>复算方式</th><th>误差容忍</th></tr></thead><tbody><tr><td>峰值 QPS</td><td><code>labs/calc.py</code></td><td>±10%</td></tr><tr><td>在飞请求</td><td><code>labs/littles_law.py</code>：W = L / λ</td><td>±15%</td></tr><tr><td>TTFT p95</td><td>压测</td><td>与各跳之和差 &lt;15%</td></tr><tr><td>TPOT p95</td><td>压测</td><td>±5 ms</td></tr><tr><td>端到端 p50</td><td>TTFT + 349×TPOT + 工具</td><td>±10%</td></tr></tbody></table></div>
 <p><strong>判据</strong>：链路图每一跳耗时加起来，应落在端到端 p50 的 ±15% 内。差得远时，不是图错了，就是有一跳没测到——通常是<strong>排队</strong>。</p>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 三个误区</h2>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 三个误区</h2>
 <p><strong>误区 1：TTFT 达标 = 体验达标。</strong>错。TTFT 800ms 但 decode 慢，用户看到字一个个蹦，照样骂。</p>
 <p><strong>误区 2：QPS 就是并发。</strong>错。7,000 QPS 可能对应 2.5 万在飞请求，也可能对应 6 万。<strong>容量按在飞请求算，不按 QPS 算。</strong></p>
 <p><strong>误区 3：SSE 连接数 = 请求数。</strong>错。62 万连接里大部分在"看历史"，不占 GPU。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 练习（15 分钟）</h2>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 练习（15 分钟）</h2>
 <figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code>cd lab
 python3 mock_llm.py --port 8010 --slots 8    # 终端 A
 python3 mini_harness.py &quot;我最近体重涨了，帮我看看怎么办&quot;   # 终端 B</code></pre></figure>
@@ -343,7 +347,7 @@ python3 mini_harness.py &quot;我最近体重涨了，帮我看看怎么办&quot
 <blockquote><p>这题不需要写代码，用 <code>python3 -c</code> 或 Excel 都行。<strong>算不出来说明第 2 节没读透。</strong></p></blockquote>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 复盘卡（写完发我）</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 复盘卡（写完发我）</h2>
 <figure class="code code--lang"><span class="code-lang">markdown</span><button class="copy" type="button">复制</button><pre><code>## 第 01 章复盘
 
 **一句话**：……
@@ -355,7 +359,7 @@ python3 mini_harness.py &quot;我最近体重涨了，帮我看看怎么办&quot
 **还没懂**：……</code></pre></figure>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 延伸</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 延伸</h2>
 <ul><li>想更细的延迟拆解：<code>../theory.md</code> 第二部分</li><li>想看真实数字怎么推出来的：<code>../../model/capacity_model.py</code></li><li>下一章：<a href="ch02-model-physics.md">ch02-model-physics.md</a>（为什么 decode 由带宽决定）</li></ul>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="04-model-selection-eval.html"><span>上一章</span><b>04 · 选型与能力评测</b></a><a class="nav-next" href="09-parallelism.html"><span>下一章</span><b>09 · 并行策略与集合通信（读懂 TP/EP 与 all-reduce/all-to-all）</b></a></nav>

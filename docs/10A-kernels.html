@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：同一张 H800，吞吐能差 3 倍</a><a href="#s2"><span>02</span>. 四个概念：层、算子、kernel、指令</a><a href="#s3"><span>03</span>. 一次 decode step 有多少个 kernel</a><a href="#s4"><span>04</span>. 一个 kernel 的内部结构</a><a href="#s5"><span>05</span>. 用什么写：五种技术栈</a><a href="#s6"><span>06</span>. 融合的收益与代价</a><a href="#s7"><span>07</span>. 通信也是算子</a><a href="#s8"><span>08</span>. 硬件绑定：为什么换卡要重写</a><a href="#s9"><span>09</span>. 开源地图：谁在维护什么</a><a href="#s10"><span>10</span>. 怎么学：四级路径</a><a href="#s11"><span>11</span>. 失败模式：kernel 最常见的六个坑</a><a href="#s12"><span>12</span>. 验收：用 ncu（Nsight Compute）看五个指标</a><a href="#s13"><span>13</span>. 收口</a><a href="#s14"><span>14</span>. 复盘卡</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：同一张 H800，吞吐能差 3 倍</a><a href="#s2"><span>02</span>. 四个概念：层、算子、kernel、指令</a><a href="#s3"><span>03</span>. 一次 decode step 有多少个 kernel</a><a href="#s4"><span>04</span>. 一个 kernel 的内部结构</a><a href="#s5"><span>05</span>. 用什么写：五种技术栈</a><a href="#s6"><span>06</span>. 融合的收益与代价</a><a href="#s7"><span>07</span>. 通信也是算子</a><a href="#s8"><span>08</span>. 硬件绑定：为什么换卡要重写</a><a href="#s9"><span>09</span>. 开源地图：谁在维护什么</a><a href="#s10"><span>10</span>. 怎么学：四级路径</a><a href="#s11"><span>11</span>. 失败模式：kernel 最常见的六个坑</a><a href="#s12"><span>12</span>这些 kernel 什么时候不值得</a><a href="#s13"><span>13</span>. 验收：用 ncu（Nsight Compute）看五个指标</a><a href="#s14"><span>14</span>. 收口</a><a href="#s15"><span>15</span>. 复盘卡</a></nav>
       <div class="rail-foot">推理工程</div>
     </div>
   </aside>
@@ -317,16 +317,20 @@ blockquote p{margin:.4em 0}
 <p>第二条最隐蔽：寄存器溢出不会报错，只在某些 shape 下慢 30%，很容易被当成"正常波动"。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收：用 ncu（Nsight Compute）看五个指标</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11.5 这些 kernel 什么时候不值得</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>用 FlashMLA 而不是 FlashAttention</td><td>序列短于 512 时，MLA 的额外元数据开销盖过收益</td></tr><tr><td>自研 GEMM 而不是 cuBLAS</td><td>只有 FP8 且形状固定时才赚；FP16 下 cuBLAS 更成熟</td></tr><tr><td>手写融合 kernel</td><td>融合后寄存器压力超限，occupancy 反而下降</td></tr><tr><td>SWA 限定窗口</td><td>任务需要跨长距离回忆时，截断直接掉点</td></tr></tbody></table></div>
+<p>第三条我没有实测：融合几个算子到底省多少，依赖具体形状，我给的数是按 kernel launch 开销推的上界。</p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 验收：用 ncu（Nsight Compute）看五个指标</h2>
 <div class="table-wrap"><table class="table table--spec"><thead><tr><th>ncu 指标</th><th>期望</th><th>说明</th></tr></thead><tbody><tr><td><code>sm__throughput</code></td><td>&gt;60%</td><td>SM 整体是否忙</td></tr><tr><td><code>gpu__dram_throughput</code></td><td>按 roofline 判断</td><td>是否撞带宽墙</td></tr><tr><td><code>sm__pipe_tensor_cycles_active</code></td><td>&gt;50%</td><td>tensor core 是否真在用</td></tr><tr><td><code>launch__registers_per_thread</code></td><td>&lt;128</td><td>过高会掉占用率</td></tr><tr><td><code>l1tex__data_bank_conflicts</code></td><td>接近 0</td><td>shared memory 冲突</td></tr></tbody></table></div>
 <p><strong>判据</strong>：一个 kernel 优化完，这五个数里至少有两项改善超过 10 个百分点，且端到端吞吐提升可测。只看 kernel 时间不看端到端，容易优化了 5% 的算子、丢了 20% 的收益。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 收口</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 收口</h2>
 <blockquote><p>**调度器决定"谁先算"，kernel 决定"算得多快"。</p><p>前者是你能改的，后者通常要等生态——所以选型时要把 kernel 的可获得性算进去。**</p></blockquote>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 复盘卡</h2>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>14. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一句话：kernel 是算子在硬件上的实现，融合省的是启动和 HBM 往返，代价是布局变成契约。
 我算的：750 次启动 × 4 μs = 3 ms，占 TPOT 25 ms 的 12%。
 我原来以为…实际…差在：以为 kernel 只是性能优化，实际它决定了权重格式和硬件选型。

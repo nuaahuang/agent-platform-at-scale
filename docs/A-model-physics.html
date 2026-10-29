@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：为什么"加卡"不一定变快</a><a href="#s2"><span>02</span>. 显存账本：640GB 里能装什么</a><a href="#s3"><span>03</span>. KV 公式：一个 token 占多少</a><a href="#s4"><span>04</span>. 解码是带宽游戏</a><a href="#s5"><span>05</span>. Prefill 是算力游戏</a><a href="#s6"><span>06</span>. 记住三个数字</a><a href="#s7"><span>07</span>. 三个误区</a><a href="#s8"><span>08</span>. 练习（15 分钟）</a><a href="#s9"><span>09</span>. 复盘卡（写完发我）</a><a href="#s10"><span>10</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：为什么"加卡"不一定变快</a><a href="#s2"><span>02</span>. 显存账本：640GB 里能装什么</a><a href="#s3"><span>03</span>. KV 公式：一个 token 占多少</a><a href="#s4"><span>04</span>. 解码是带宽游戏</a><a href="#s5"><span>05</span>. Prefill 是算力游戏</a><a href="#s6"><span>06</span>. 记住三个数字</a><a href="#s7"><span>07</span>. 三个误区</a><a href="#s8"><span>08</span>失败模式：五个算错的地方</a><a href="#s9"><span>09</span>. 练习（15 分钟）</a><a href="#s10"><span>10</span>. 复盘卡（写完发我）</a><a href="#s11"><span>11</span>. 延伸</a></nav>
       <div class="rail-foot">附录</div>
     </div>
   </aside>
@@ -430,7 +430,12 @@ T 个 token            ：2 × N × T</code></pre></figure>
 <p><strong>误区 3：TP 能线性加速。</strong>8 卡 TP 实测通常只有 3–5 倍，通信和效率会吃掉剩余部分。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 练习（15 分钟）</h2>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7.5 失败模式：五个算错的地方</h2>
+<p>下面五个错误都能让容量算错 2 倍以上，而且都不报错，只是数字不对。</p>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>算出的显存总比实测小 15%</td><td>只算了权重和 KV，漏了激活、workspace、显存碎片</td><td><code>nvidia-smi</code> 对比公式结果</td><td>预留 15%–20%，别算到 100%</td></tr><tr><td>KV 少算一半</td><td>忘了 K 和 V 是两份，且每层各有一份</td><td>拿引擎日志里 <code>kv_cache_size</code> 核对</td><td>公式里显式写 ×2×层数</td></tr><tr><td>按算力推的吞吐达不到</td><td>实际卡在带宽上（decode 小 batch）</td><td><code>ncu</code> 看 HBM 利用率是否接近 100%</td><td>用 roofline 判断，别只看 TFLOPS</td></tr><tr><td>单卡能跑，8 卡 OOM</td><td>忘了通信 buffer 与 NCCL 缓冲</td><td>逐卡看显存曲线</td><td>每卡留 2–4 GB</td></tr><tr><td>理论 FLOPs 与实测差 3 倍</td><td>拿峰值算 MFU，不是拿可达值</td><td>用实测 TFLOPS 反推</td><td>MFU 按 35%–45% 估</td></tr></tbody></table></div>
+<p>最后一条最容易被忽略：卡上标的 1,979 TFLOPS 是稠密 FP16 峰值，注意力与 GEMM 混跑能到 35%–45% 就算不错（第 10 章 §10）。按峰值算出来的卡数，落地必然不够。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 练习（15 分钟）</h2>
 <p><strong>手算 1</strong>：32K 上下文的单会话 KV 是多少 GB？300GB 能装几条？</p>
 <p><strong>手算 2</strong>：如果 KV 量化到 FP8（减半），同样 300GB 能装几条？吞吐上限变成多少？</p>
 <p><strong>上机</strong>：</p>
@@ -441,7 +446,7 @@ cd ../lab &amp;&amp; python3 sim_pd.py       # 看 decode 翻倍后的 TTFT 曲�
 <p>把 <code>calc.py --ctx 8000</code> 和 <code>--ctx 32000</code> 的输出记下来，差值就是"长上下文的代价"。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 复盘卡（写完发我）</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 复盘卡（写完发我）</h2>
 <figure class="code code--lang"><span class="code-lang">markdown</span><button class="copy" type="button">复制</button><pre><code>## 第 02 章复盘
 
 **一句话**：……
@@ -453,7 +458,7 @@ cd ../lab &amp;&amp; python3 sim_pd.py       # 看 decode 翻倍后的 TTFT 曲�
 **还没懂**：……</code></pre></figure>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 延伸</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 延伸</h2>
 <ul><li>完整容量模型：<code>../../model/capacity_model.py</code></li><li>公式速查：<code>../theory.md</code> 第五部分</li><li><strong>前置补充</strong>：<a href="ch02a-parallelism.md">附录 A · 并行策略与集合通信</a>（TP/EP、all-reduce/all-to-all、2:4 稀疏）</li><li>下一章：第 03 章《推理引擎：PagedAttention 与连续批处理》</li></ul>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="33-autoscaling.html"><span>上一章</span><b>33 · 扩缩容与弹性</b></a><i></i></nav>

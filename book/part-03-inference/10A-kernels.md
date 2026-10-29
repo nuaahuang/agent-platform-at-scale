@@ -247,6 +247,18 @@ kernel 是按 **SM 架构**编译的，架构一换，指令集、tensor core �
 
 ---
 
+## 11.5 这些 kernel 什么时候不值得
+
+| 结论 | 推翻条件 |
+|---|---|
+| 用 FlashMLA 而不是 FlashAttention | 序列短于 512 时，MLA 的额外元数据开销盖过收益 |
+| 自研 GEMM 而不是 cuBLAS | 只有 FP8 且形状固定时才赚；FP16 下 cuBLAS 更成熟 |
+| 手写融合 kernel | 融合后寄存器压力超限，occupancy 反而下降 |
+| SWA 限定窗口 | 任务需要跨长距离回忆时，截断直接掉点 |
+
+第三条我没有实测：融合几个算子到底省多少，依赖具体形状，我给的数是按 kernel launch 开销推的上界。
+
+
 ## 12. 验收：用 ncu（Nsight Compute）看五个指标
 
 | ncu 指标 | 期望 | 说明 |
