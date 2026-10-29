@@ -365,6 +365,7 @@ histogram_quantile(0.5, sum by (le) (rate(llm_request_temperature_bucket{env=&qu
 <h3>4.7 选型流程：从"想换模型"到"全量上线"</h3>
 <p>七步，每步写清输入、执行人、产出和门禁。门禁不过就停在这一步，不许带着问题上台阶。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>做什么</th><th>谁做</th><th>产出</th><th>耗时</th><th>门禁</th></tr></thead><tbody><tr><td>1</td><td>定能力清单与硬约束</td><td>PM + 算法</td><td>能力项、延迟/成本/合规红线</td><td>0.5 天</td><td>每条约束可量化</td></tr><tr><td>2</td><td>收集候选</td><td>算法</td><td>3–5 个候选及部署规格</td><td>1 天</td><td>每个候选有可跑形态</td></tr><tr><td>3</td><td>能力探针（初筛）</td><td>算法</td><td>20 题探针结果</td><td>0.5 天</td><td>通过率 ≥ 基线 −5pt</td></tr><tr><td>4</td><td>全量评测</td><td>QA + 算法</td><td>50 题 + 盲测 20 题报告</td><td>1 天</td><td>见 §5，含单项否决</td></tr><tr><td>5</td><td>成本与延迟实测</td><td>SRE</td><td>分/轮、TTFT/TPOT p95</td><td>1 天</td><td>成本 ≤ +20%，TTFT ≤ 800 ms</td></tr><tr><td>6</td><td>灰度</td><td>SRE + 算法</td><td>5% 流量 3 天数据</td><td>3 天</td><td>错误率不升、goodput 不降</td></tr><tr><td>7</td><td>放量与归档</td><td>平台</td><td>release manifest + 评测归档</td><td>0.5 天</td><td>回滚演练通过</td></tr></tbody></table></div>
+<p>七步里的人机分工：第 1 步定约束、第 4 步判全量、第 7 步放量签核，必须人做决定；第 2、3、5 步机器跑，人只看结论和门禁；第 6 步人和机器盯不同指标——机器盯错误率和 goodput，人盯用户申诉和客诉样本。</p>
 <p>表中的 SRE 指 Site Reliability Engineer（站点可靠性工程师），负责容量测算、灰度推进、告警配置和回滚演练。和传统运维的区别在考核方式：SRE 用 SLO 和错误预算衡量，不是用"有没有出事"衡量。</p>
 <p>一周左右能走完一轮。真正拖时间的是第 6 步，三天不能压——一天的灰度量不足以覆盖工作日和周末两种流量形态。</p>
 <p>第 3 步的"探针"是这套流程省时间的关键。20 道题按区分度选出来（正负样本各半，覆盖五类），30 分钟内能跑完 5 个候选，用来快速淘汰差 10 个点以上的模型，避免每个候选都跑全量。</p>
@@ -392,6 +393,23 @@ histogram_quantile(0.5, sum by (le) (rate(llm_request_temperature_bucket{env=&qu
 <p>把上面两步合成时间轴，一次真实的模型换代长这样：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>动作</th><th>负责人</th><th>产出</th></tr></thead><tbody><tr><td>D-7</td><td>需求评审，确认能力清单</td><td>PM</td><td>需求文档</td></tr><tr><td>D-6</td><td>收候选，跑探针</td><td>算法</td><td>探针报告</td></tr><tr><td>D-5</td><td>全量评测 + 盲测</td><td>QA</td><td>评测报告</td></tr><tr><td>D-4</td><td>成本与延迟实测</td><td>SRE</td><td>容量测算</td></tr><tr><td>D-3</td><td>灰度 5% 开启</td><td>SRE</td><td>灰度看板</td></tr><tr><td>D-1</td><td>灰度复盘</td><td>PM + SRE</td><td>放量决议</td></tr><tr><td>D0</td><td>放量 100%，归档</td><td>平台</td><td>release manifest</td></tr><tr><td>D+3</td><td>回滚演练</td><td>SRE</td><td>演练记录</td></tr></tbody></table></div>
 <p>D-3 到 D0 之间如果指标变差，走回滚而不是延期——已灰度的流量留着，问题会一直存在。</p>
+<div class="orn"></div>
+<h3>4.10 自动化的边界：哪些机器自己跑，哪些必须有人</h3>
+<p>评测的瓶颈不在跑，而在判。跑 50 道题机器三分钟就完了，判 50 道题人要做 8 小时。所以每一类评测都要先回答一个问题：它的期望值能不能写成判定函数。</p>
+<p>判断能不能自动，看四条，四条全满足才是全自动：</p>
+<ol><li>期望能写成确定性判据（schema、枚举、数值区间、调用序列）</li><li>判错的代价可逆，不会造成资金或合规损失</li><li>不需要解释业务政策（政策在文档里，不在模型脑子里）</li><li>有历史人工标注可以校准</li></ol>
+<p>少一条就往人机结合或全人工走。</p>
+<p>按这四条把评测项分成四档：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>评测项</th><th>判据性质</th><th>谁判</th><th>自动化程度</th><th>人怎么参与</th></tr></thead><tbody><tr><td>JSON 合法率、字段完整性</td><td>确定性</td><td>代码</td><td>全自动</td><td>不看，只在跌了才看</td></tr><tr><td>工具调用序列与参数</td><td>确定性</td><td>代码</td><td>全自动</td><td>月度看趋势</td></tr><tr><td>意图分类准确率</td><td>确定性（有标注）</td><td>代码</td><td>全自动</td><td>每月重采样校准</td></tr><tr><td>数值计算、引用来源</td><td>半确定</td><td>代码 + 规则</td><td>自动，冲突转人</td><td>冲突样本 100% 仲裁</td></tr><tr><td>退款资格、政策合规</td><td>业务规则</td><td>代码 + 人复审</td><td>人机结合</td><td>高风险样本全量人审</td></tr><tr><td>语气、有用性、完整性</td><td>主观</td><td>模型 judge</td><td>人机结合</td><td>每月校准 + 每周抽检 10%</td></tr><tr><td>提示注入、越权操作</td><td>高代价</td><td>机器筛 + 人定标准</td><td>机器全量筛</td><td>命中即人审，100%</td></tr><tr><td>新场景、新能力</td><td>无标准</td><td>人</td><td>全人工</td><td>人工探索后固化成题</td></tr></tbody></table></div>
+<p>第四条最容易被跳过："有标注可校准"意味着这件事以前有人做过、留下了判断依据。没有历史标注就先别上 judge，先人工标 100 条，把 rubric 写出来。</p>
+<p>人工参与有四种形态，不是笼统的"review 一下"：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>做什么</th><th>何时触发</th><th>单次成本</th><th>产出</th></tr></thead><tbody><tr><td>建标准</td><td>写 L3 的 rubric，定义什么叫"好"</td><td>换题时、季度评审</td><td>半天</td><td>rubric 文档</td></tr><tr><td>校准 judge</td><td>标 100 条，和 judge 结果比对算 Kappa</td><td>每月，或 judge/prompt 变更后</td><td>2 小时</td><td>Kappa 值 + 不一致样本</td></tr><tr><td>抽检</td><td>随机抽 10% 看结论对不对</td><td>每周</td><td>1 小时</td><td>badcase 清单</td></tr><tr><td>仲裁</td><td>处理冲突、高风险命中、线上申诉</td><td>触发式，SLA 4 小时</td><td>单条 10 分钟</td><td>判定结论，必要时改 rubric</td></tr></tbody></table></div>
+<p>四者的区别在频率和对象：建标准是定规则，校准是验规则，抽检是验执行，仲裁是处理规则没覆盖到的情况。只做抽检不做校准，等于拿一个人的标准去衡量另一个标准。</p>
+<p>成本账要算清楚。50 道题全人工，按每题 10 分钟算要 8.3 小时，一周一次就是一个人一天半。改成人机结合：机器判 L1/L2，L3 只占 20%（10 条）人工判，再抽检 10%（5 条），人的时间压到 2.5 小时，机器 3 分钟。前提是 Kappa ≥0.8——达不到就还得全人工，省下的时间会以事故形式还回来。</p>
+<p>模型能自己判什么，边界比想象的窄：</p>
+<ul><li>结构类，比如 JSON 合法、字段齐全、参数符合 schema，机器判 100% 可靠，因为判据就是代码本身。</li><li>语义等价类，比如"这句话和参考答案意思一样吗"，机器能判但必须校准，Kappa 低于 0.8 就是随机数。</li><li>政策类，比如"这单该不该退"，机器判不了。它不知道政策上周改过，也不知道这个用户有特殊标记。</li><li>自我认知类，比如"我这条答得有把握吗"，机器判不了——它不知道自己不知道，这正是需要人抽检的原因。</li></ul>
+<p>一个真实会发生的失效：全自动评测跑了一个月，通过率稳定在 91%，看着很健康。某天查 badcase 才发现，两个月前政策更新，有 30% 的题期望答案已经过期，机器一直在给"答对错题"打勾。通过率没跌，因为题目和模型一起错了。</p>
+<p>所以每月换题和每周抽检不是形式主义，它们是唯一能发现"标准本身过期"的机制。机器擅长执行标准，发现不了标准错了。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 通过标准：不是"准确率 90%"</h2>
