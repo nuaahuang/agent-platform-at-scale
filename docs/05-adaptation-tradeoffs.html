@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 同一句抱怨，三种病</a><a href="#s2"><span>02</span>. 四种手段的账</a><a href="#s3"><span>03</span>. Prompt：最便宜，也最容易高估</a><a href="#s4"><span>04</span>. RAG：解决"不知道"，但有三个天花板</a><a href="#s5"><span>05</span>. 微调：三个门槛，缺一个就别做</a><a href="#s6"><span>06</span>. 蒸馏：只在高频窄任务上划算</a><a href="#s7"><span>07</span>. 决策树</a><a href="#s8"><span>08</span>. 组合起来长什么样</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收：四个问题答得出来才算懂</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 同一句抱怨，三种病</a><a href="#s2"><span>02</span>. 这些手段在训练的哪个位置</a><a href="#s3"><span>03</span>. 四种手段的账</a><a href="#s4"><span>04</span>. Prompt：最便宜，也最容易高估</a><a href="#s5"><span>05</span>. RAG：解决"不知道"，但有三个天花板</a><a href="#s6"><span>06</span>. 微调：三个门槛，缺一个就别做</a><a href="#s7"><span>07</span>. 蒸馏：只在高频窄任务上划算</a><a href="#s8"><span>08</span>. 决策树</a><a href="#s9"><span>09</span>. 组合起来长什么样</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下这些结论不成立</a><a href="#s12"><span>12</span>. 验收：四个问题答得出来才算懂</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
       <div class="rail-foot">模型工程</div>
     </div>
   </aside>
@@ -236,14 +236,65 @@ blockquote p{margin:.4em 0}
 <p>选错路径的代价不是白花钱，是花两个月得出"这条路不行"的结论，然后再花两个月。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四种手段的账</h2>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 这些手段在训练的哪个位置</h2>
+<p>预训练、后训练、微调、蒸馏不是四个并列的选项。前两个是模型厂商造模型的阶段，后两个是你拿到模型之后的动作：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>预训练 ──────┼────── 后训练 ──────┼────── 微调 ──────┼────── 蒸馏
+学语言与世界知识      学&quot;怎么对话&quot;        学&quot;你的业务&quot;        换个小的重学
+10T+ token          百万条              5 千条             5 万条
+厂商做               厂商做              你做               你做
+亿元级               百万元              万元               万元</code></pre></figure>
+<p>先把这个位置关系记住，后面四条路的取舍才说得清。</p>
+<h3>2.1 预训练：把世界压进权重</h3>
+<p>预训练做的事只有一个：给一段文本，预测下一个 token。用 10 到 20 万亿 token 反复练这一件事。</p>
+<p>产出叫基座模型（base model）。它的特点是会续写，不会对话。你问它"你好"，它可能续写"你好，请问有什么可以帮您"——不是因为它理解指令，是因为客服语料里这句话出现得太多次。</p>
+<p>成本量级：200B 参数、30T token，按 2 万卡天算，¥10/卡时大约 2 亿元。这是模型厂商的生意，不是你的。</p>
+<p>你在这个阶段唯一要关心的事是供应商的发版节奏，因为它决定你什么时候需要重做微调和评测。</p>
+<h3>2.2 后训练：让基座学会"听话"</h3>
+<p>后训练把"续写器"变成"助手"，分两段：</p>
+<p>第一段是 SFT（Supervised Fine-Tuning，监督微调），用百万级的（指令，回答）对训练，教它三件事：看懂指令、按格式输出、知道什么时候拒绝。</p>
+<p>第二段是偏好对齐，让它学会"哪种回答更好"。两条技术路线：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>路线</th><th>做法</th><th>成本</th><th>稳定性</th></tr></thead><tbody><tr><td>RLHF</td><td>训奖励模型 + PPO 强化学习</td><td>高（要训三个模型）</td><td>难调，容易训崩</td></tr><tr><td>DPO</td><td>直接用偏好对做对比学习</td><td>低（一个模型）</td><td>稳定，工程上更常用</td></tr></tbody></table></div>
+<p>这里有个必须记住的认知：知识在预训练就定了，后训练改的是表达方式。所以"模型不知道我们公司政策"这件事，后训练同样救不了——它只是让模型更会把自己知道的东西说得像那么回事。</p>
+<h3>2.3 微调：你和厂商做的是同一件事</h3>
+<p>技术上，后训练里的 SFT 就是微调。区别不在方法，在谁做、用什么数据、为了什么：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>厂商的后训练 SFT</th><th>你的微调</th></tr></thead><tbody><tr><td>数据来源</td><td>通用指令集（公开采集 + 众包）</td><td>你的业务日志与标注</td></tr><tr><td>规模</td><td>百万条</td><td>5 千到 5 万条</td></tr><tr><td>目标</td><td>通用助手能力</td><td>特定任务的格式、话术、分类</td></tr><tr><td>评测</td><td>通用榜单</td><td>你的 50 题</td></tr></tbody></table></div>
+<p>所以不要把"后训练"和"微调"当成两种技术。它们是同一个动作在不同阶段的两次使用。</p>
+<p>工程上你几乎不会做全参微调。200B 全参训练要几百张卡，而 LoRA 只训一小部分参数：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>LoraConfig(
+    r=16,               # 秩，决定可训练参数量
+    lora_alpha=32,      # 缩放，通常取 2×r
+    target_modules=[&quot;q_proj&quot;, &quot;k_proj&quot;, &quot;v_proj&quot;, &quot;o_proj&quot;],
+    lora_dropout=0.05,
+)</code></pre></figure>
+<p>r=16 时，可训练参数约占全量的 0.1%，8 张 H100 六小时能跑完 5 千条样本。</p>
+<h3>2.4 蒸馏：不是阶段，是手段</h3>
+<p>蒸馏和前三个不在一个维度上。它不是"训练的某个阶段"，而是一种知识迁移的方式，可以发生在任何阶段：</p>
+<ul><li>预训练阶段蒸馏：学生学老师的 logits 分布（软标签），用 KL 散度对齐</li><li>后训练阶段蒸馏：学生学老师的回答文本（硬标签），本质是用老师的数据做 SFT</li></ul>
+<div class="table-wrap"><table class="table"><thead><tr><th>形式</th><th>学生学到什么</th><th>需要老师开放什么</th><th>效果</th></tr></thead><tbody><tr><td>硬蒸馏</td><td>老师的输出文本</td><td>只要 API</td><td>一般，损失了概率信息</td></tr><tr><td>软蒸馏</td><td>老师的完整概率分布</td><td>logits 接口</td><td>更好，小模型可提升 8–12 个点</td></tr></tbody></table></div>
+<p>现实里大多数是硬蒸馏，因为外部 API 只给文本。这也是为什么蒸馏出来的模型上限就是老师的水平，且会把老师的错抄得更自信。</p>
+<h3>2.5 一张表分清四件事</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>预训练</th><th>后训练</th><th>微调</th><th>蒸馏</th></tr></thead><tbody><tr><td>在哪个阶段</td><td>最前</td><td>预训练之后</td><td>后训练之后</td><td>任意阶段，是手段不是阶段</td></tr><tr><td>谁做</td><td>模型厂商</td><td>模型厂商</td><td>你</td><td>你</td></tr><tr><td>数据量</td><td>10T+ token</td><td>百万条</td><td>5 千到 5 万条</td><td>5 万条</td></tr><tr><td>改哪些参数</td><td>全部</td><td>全部</td><td>0.1%（LoRA）到全部</td><td>学生全部</td></tr><tr><td>能加新知识吗</td><td>能</td><td>少量</td><td>基本不能</td><td>继承老师的</td></tr><tr><td>能改行为吗</td><td>—</td><td>能</td><td>能</td><td>能</td></tr><tr><td>成本量级</td><td>亿元</td><td>百万元</td><td>万元</td><td>万元</td></tr><tr><td>周期</td><td>数月</td><td>数周</td><td>数天</td><td>数周</td></tr></tbody></table></div>
+<h3>2.6 为什么微调加不进新知识</h3>
+<p>这是最反直觉的一条，机制值得说清楚。</p>
+<p>知识存在 FFN 的权重里。要让一个新事实被"记住"，它需要在训练中反复出现几百次，梯度才会把这块权重推到能稳定召回的位置。你的政策文档每条只出现一次，5 千条样本摊下来，每个事实平均曝光一次。</p>
+<p>再加上 LoRA 只动 0.1% 的参数，模型能调的余地本来就小。结果就是它学会了"回答政策类问题的语气和句式"，没学会"政策的具体内容"。</p>
+<p>这个现象在评测里一眼能看出：问训练集里出现过的条款，它答得很像；问一个训练集里没有的具体订单能不能退，它照样编，而且编得比微调前更流利。</p>
+<p>所以分工是固定的：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>内容类型</th><th>走哪条路</th><th>原因</th></tr></thead><tbody><tr><td>政策条款、价格、库存、订单状态</td><td>RAG</td><td>每天在变，且每条只有一份</td></tr><tr><td>输出格式、话术、分类标准</td><td>微调</td><td>稳定、重复、样本量够</td></tr><tr><td>流程约束、拒绝边界</td><td>Prompt</td><td>一两句话能写清</td></tr></tbody></table></div>
+<h3>2.7 对你的三个决策意味着什么</h3>
+<p>第一，你只做后两个。预训练和后训练是厂商的活，你能控制的是微调和蒸馏，加上 Prompt 和 RAG。</p>
+<p>第二，基座升级会废掉你的微调。厂商发新版本时，LoRA 权重和新的基座不兼容，必须重训——而 Prompt 和 RAG 可以直接迁过去。这是"先 Prompt 再 RAG 再微调"的第二个理由（第一个是成本递增）：越靠前的手段，迁移成本越低。</p>
+<p>第三，看厂商宣传时留个心眼。说"后训练让模型更懂行业"多半是话术，模型的知识边界在预训练结束时就定了；真要让模型知道你的业务，还得靠 RAG。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 四种手段的账</h2>
 <p>先把账摆开，再谈怎么选。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>改什么</th><th>不改什么</th><th>生效周期</th><th>回滚成本</th><th>单轮成本增量</th></tr></thead><tbody><tr><td>Prompt</td><td>指令与约束</td><td>权重、知识</td><td>分钟级</td><td>回滚到旧版本</td><td>+50 到 +300 token 输入</td></tr><tr><td>RAG</td><td>输入上下文</td><td>权重</td><td>天到周</td><td>关掉检索开关</td><td>+1,500 到 +3,000 输入 token</td></tr><tr><td>微调</td><td>权重</td><td>系统架构</td><td>周到月</td><td>切回基础模型</td><td>0（权重变，推理结构不变)</td></tr><tr><td>蒸馏</td><td>模型规模</td><td>教师模型</td><td>月</td><td>切回大模型</td><td>降 3.8 倍（8B 替 200B）</td></tr></tbody></table></div>
 <p>回滚成本这一列最容易被忽略。微调把能力写进权重之后，"改回去"意味着重新拿基础模型再训一遍，中间那两周的评测和灰度要重走。Prompt 改坏了，一分钟就能退。</p>
 <p>所以原则是按成本递增试：先 Prompt，不行再 RAG，都不够才微调，蒸馏是最后一步且只对高频窄任务做。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. Prompt：最便宜，也最容易高估</h2>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. Prompt：最便宜，也最容易高估</h2>
 <p>Prompt 能解决的都是"模型本来就会，只是没被要求"的事：</p>
 <ul><li>输出格式（JSON schema、字段顺序、必填项）</li><li>语气与话术边界（不说"亲"、不承诺具体到账时间）</li><li>流程约束（先查订单再给方案、退款金额必须复述）</li><li>拒绝条件（超出权限时转人工）</li></ul>
 <p>它解决不了"模型根本不知道"的事。政策条款、这个用户的会员等级、昨天的系统故障——这些不在权重里。硬要用 Prompt 补，得到的不是正确答案，是更自信的编造。</p>
@@ -252,51 +303,51 @@ blockquote p{margin:.4em 0}
 <p>Prompt 必须有版本号，而且要和评测报告绑定。用 <code>p-2026-10-27.3</code> 这种格式，改一次加一次，评测报告的 manifest 里记这个值（第 4 章 §4.8）。没有版本号的 Prompt，出了问题连"什么时候开始坏的"都查不出来。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. RAG：解决"不知道"，但有三个天花板</h2>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. RAG：解决"不知道"，但有三个天花板</h2>
 <p>RAG（Retrieval-Augmented Generation，检索增强生成）的做法很直接：用户提问 → 检索相关文档 → 把文档片段拼进上下文 → 模型基于上下文回答。</p>
 <p>它把知识从权重里挪到了系统外，好处是政策改了只改文档，不用重训。但它有天花板，而且三个都在工程侧，不在模型侧。</p>
-<h3>4.1 第一个天花板：检索不到</h3>
+<h3>5.1 第一个天花板：检索不到</h3>
 <p>用户问"我买的东西晚到了三天，能赔吗"，知识库里的条款写的是"配送超时补偿标准"。字面几乎没有重叠，向量检索能不能命中，取决于 embedding 的质量和分块方式。</p>
 <p>分块是最常出错的地方。把一份 8,000 字的售后规则按 512 token 切，很可能把"7 天无理由"和它的例外条款切到两块里去。检索命中前半块，模型就按"可以退"回答，而例外条款说的是"拆封的电子产品除外"。</p>
 <p>工程上的做法是三件事一起上：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>配置</th><th>解决什么</th></tr></thead><tbody><tr><td>分块</td><td>512 token，重叠 64</td><td>避免条款被切断</td></tr><tr><td>混合检索</td><td>向量 + BM25，各取 20 条</td><td>字面不重叠时靠语义，术语精确时靠关键词</td></tr><tr><td>重排</td><td>交叉编码器，取前 3</td><td>20 条里挑真正相关的 3 条</td></tr></tbody></table></div>
 <p>三件都做，召回率能从 60% 出头到 85% 左右。只做向量检索就上线，是第一大坑。</p>
-<h3>4.2 第二个天花板：检索到了，但模型没用上</h3>
+<h3>5.2 第二个天花板：检索到了，但模型没用上</h3>
 <p>这是更隐蔽的一种。检索结果正确，拼进上下文了，模型回答却绕开了它。</p>
 <p>原因有两个。一是上下文太长，关键信息落在中间，模型对首尾更敏感——把最重要的那条放最前面，效果比排序优化更直接。二是上下文里有互相矛盾的条款（新旧政策同时被检索出来），模型会挑一个,挑哪个不确定。</p>
 <p>解法是给检索结果加元数据：政策生效日期、适用范围、优先级。拼上下文时按生效日期过滤，冲突时明确告诉模型"以 2026-09 版为准"。这比调 Prompt 有效得多。</p>
-<h3>4.3 第三个天花板：上下文预算和 TTFT 抢资源</h3>
+<h3>5.3 第三个天花板：上下文预算和 TTFT 抢资源</h3>
 <p>这是最硬的一个，也是容量规划里最容易被忽略的。</p>
 <p>检索 2,000 token 上下文，prefill 多 180 ms（0.09 ms/token）。基线 TTFT 610 ms 变成 790 ms，而 SLO 是 800 ms——只剩 10 ms 余量，任何抖动都会破线。</p>
 <p>所以 RAG 的上下文长度不是一个"效果越好越长"的参数，它有硬上限：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>可用上下文预算 = (TTFT 目标 − 当前 TTFT) / 0.09 ms per token</code></pre></figure>
 <p>按 800 ms 目标和 610 ms 基线算，预算是 2,111 token。这决定了 top-k 取 3 还是 5，也决定了要不要做重排压缩。</p>
 <p>如果业务确实需要更长的上下文，只有两条路：把 TTFT 目标放宽（用户感知会变差），或者把检索结果做摘要后再拼（多一次模型调用，但省上下文）。</p>
-<h3>4.4 什么时候不该用 RAG</h3>
+<h3>5.4 什么时候不该用 RAG</h3>
 <p>两个判断：</p>
 <p>知识总量很小，比如整个售后规则不到 50 页，约 3 万 token。这种情况下把它全塞进系统提示，比搭一套检索系统简单得多，也没有召回失败的风险。代价是每轮多付 3 万 token 的 prefill，按 0.09 ms/token 算 TTFT 要 2.7 秒——超过 SLO，所以只在低峰或离线场景可用。</p>
 <p>另一个判断是任务性质：RAG 适合"查了就能答"，不适合"查了还要推"。用户问"我的情况和条款里第三条对不对得上"，这是推理任务，检索解决不了，得靠模型能力和 Prompt 引导。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 微调：三个门槛，缺一个就别做</h2>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 微调：三个门槛，缺一个就别做</h2>
 <p>微调的诱惑在于它看起来最"彻底"——直接改模型。但它是四条路里唯一会留下长期负债的一条。</p>
-<h3>5.1 门槛一：数据量</h3>
+<h3>6.1 门槛一：数据量</h3>
 <p>高质量样本 5,000 条起，且必须包含错例。</p>
 <p>所谓错例，是"模型现在会答错、但正确答案明确"的样本。只用正确样本训，模型学到的是"这种问法该怎么答"，学不到"这种问法容易错在哪"。</p>
 <p>数据的另一个要求是一致性。5,000 条样本如果由三个人标，标准不统一，训出来的模型会比基座更不稳定——它把三种标准都学了。</p>
-<h3>5.2 门槛二：任务窄且稳定</h3>
+<h3>6.2 门槛二：任务窄且稳定</h3>
 <p>微调适合"同一个动作重复一万次"：把非结构化地址解析成省市区、把客诉文本分类到 12 个工单类型、把退款理由映射到标准码。</p>
 <p>它不适合"什么都能答"——那是通用能力，微调只会让它在这件事上变差（灾难性遗忘）。判断方法很简单：能不能用一句话写清"这个模型只做这件事"。写不清就别微调。</p>
-<h3>5.3 门槛三：能承担版本管理成本</h3>
+<h3>6.3 门槛三：能承担版本管理成本</h3>
 <p>微调之后，你的发布单元从"Prompt 版本"变成了三件套：模型权重 + 训练数据 + 评测基线。</p>
 <p>任何一件变了，都要重跑全量评测。这不是流程洁癖——只跑任务集会漏掉通用能力退化。常见做法是混合数据：80% 任务样本 + 20% 通用样本，训完两边都测。</p>
 <p>一个 LoRA 微调的实测量级：8×H100，5,000 条样本，r=16、alpha=32、学习率 1e-4、3 个 epoch，约 6 小时，按 ¥30/卡时算约 ¥1,440。钱不多，贵的是后面的评测和灰度。</p>
-<h3>5.4 灾难性遗忘有多严重</h3>
+<h3>6.4 灾难性遗忘有多严重</h3>
 <p>按上面的混合比例训，通用能力通常掉 2 到 5 个百分点。掉在哪很关键：知识问答掉得多，指令遵循掉得少。</p>
 <p>如果掉超过 5 个点，说明任务数据和通用数据的比例失衡，或者学习率太高。这两个参数是最常调的两个。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 蒸馏：只在高频窄任务上划算</h2>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 蒸馏：只在高频窄任务上划算</h2>
 <p>蒸馏是让一个小模型学大模型的输出分布。它划算的条件有三个，同时满足才行：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>条件</th><th>判据</th><th>不满足的后果</th></tr></thead><tbody><tr><td>流量足够大</td><td>该任务占比 ≥20%</td><td>省下的钱不够训练和评测成本</td></tr><tr><td>任务足够窄</td><td>一句话能说清</td><td>学生学不全，掉点严重</td></tr><tr><td>老师足够强</td><td>老师在该任务上 ≥90%</td><td>学生只能学到老师的水平</td></tr></tbody></table></div>
 <p>售后场景里符合条件的是意图分类：占流量 40%，任务窄（12 个类），200B 老师在 50 题上 91%。</p>
@@ -305,7 +356,7 @@ blockquote p{margin:.4em 0}
 <p>另一个风险是分布漂移。意图分类的类别会变，加一个新类别就要重蒸一次，否则新类会被硬分到旧类里。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 决策树</h2>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 决策树</h2>
 <p>把上面五节压成一棵树，遇到"它不懂业务"这类反馈时从上往下走：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>用户抱怨&quot;不懂业务&quot;
 │
@@ -327,28 +378,28 @@ blockquote p{margin:.4em 0}
 <p>这棵树里唯一需要"判断力"的节点是第一个。判断方法不是问产品经理，是拿 20 条 badcase 逐条看：每条错在哪一步，错的原因是"没这条信息"还是"有信息但没用对"。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 组合起来长什么样</h2>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 组合起来长什么样</h2>
 <p>真实的系统不会只用一种。售后 Agent 的分层是这样：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>占比</th><th>手段</th><th>模型</th><th>单轮成本</th></tr></thead><tbody><tr><td>意图分类</td><td>40%</td><td>蒸馏到 8B + Prompt</td><td>8B</td><td>0.078 分</td></tr><tr><td>简单问答</td><td>25%</td><td>Prompt + 小 RAG</td><td>8B</td><td>0.11 分</td></tr><tr><td>复杂售后</td><td>30%</td><td>RAG + Prompt</td><td>200B MoE</td><td>0.35 分</td></tr><tr><td>疑难与兜底</td><td>5%</td><td>大模型 API</td><td>外部</td><td>3.5 分</td></tr></tbody></table></div>
 <p>加权下来约 0.30 分/轮，比全走 200B 的 0.294 分差不多，但复杂场景的成功率高 6 个百分点——这才是分层的目的，不是为了省钱，是为了把预算花在需要的地方。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>加了 RAG，回答反而更差</td><td>检索到矛盾条款，模型挑错的</td><td>抽样看上下文里有没有新旧两版</td><td>按生效日期过滤元数据</td></tr><tr><td>Prompt 越写越长，效果没变好</td><td>指令互相冲突，模型挑一条执行</td><td>逐条删，看哪条有用</td><td>砍到 800 token 以内</td></tr><tr><td>微调后通用能力崩了</td><td>任务数据占比过高</td><td>训完跑通用评测集</td><td>混合 80/20 重训</td></tr><tr><td>蒸馏模型在边界样本上特别自信</td><td>学了老师的错误分布</td><td>看错误样本的置信度分布</td><td>10% 人工校验，加拒答样本</td></tr><tr><td>RAG 上线后 TTFT 破线</td><td>上下文预算没算</td><td>对比上线前后 TTFT p95</td><td>top-k 从 5 降到 3，或加重排压缩</td></tr><tr><td>换了模型，Prompt 全废</td><td>指令格式不通用</td><td>新模型上跑全量评测</td><td>Prompt 与模型一起评测，别分开</td></tr></tbody></table></div>
 <p>第一条最反直觉：RAG 不是"有总比没有好"。检索系统引入了一个新的失败点，而这个失败点用户看得见——模型会引用一条过时条款，说得头头是道。</p>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 什么情况下这些结论不成立</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 什么情况下这些结论不成立</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>先 Prompt 再 RAG 再微调</td><td>知识每天变（如库存、价格）时，微调从一开始就错</td></tr><tr><td>RAG 上下文控制在 2,000 token</td><td>模型支持长上下文且 prefill 更快时，可以放宽</td></tr><tr><td>微调需要 5,000 条</td><td>任务极窄（二分类）时，1,000 条够</td></tr><tr><td>蒸馏只在 ≥20% 流量做</td><td>成本敏感且延迟要求极严时，10% 也可能值得</td></tr></tbody></table></div>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 验收：四个问题答得出来才算懂</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收：四个问题答得出来才算懂</h2>
 <ol><li>给定一条 badcase，能判断它属于"不知道"还是"不会"，并说出依据。</li><li>能算出加 2,000 token 上下文对 TTFT 的影响，并判断是否破线。</li><li>能说出微调之后发布单元变成了哪三件，为什么必须一起绑。</li><li>能判断一个任务该不该蒸馏，用哪三个条件。</li></ol>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 复盘卡</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
 <p>我原来以为 RAG 是"接个向量库就行"，实际差在检索质量——分块、混合检索、重排三步少一步，召回率就掉 20 个点。</p>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 延伸</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 延伸</h2>
 <ul><li>第 4 章：怎么证明换了手段之后确实变好了</li><li>第 6 章：RAG 的检索链路怎么搭（分块、embedding、重排的具体实现）</li><li>第 7 章：上下文工程——同样的检索结果，怎么排列才不被模型忽略</li></ul>
 <p>四条路的顺序不是偏好，是成本递增。结论是：能半天解决的，不要花两个月。</p>
 </section></article>
