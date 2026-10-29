@@ -236,7 +236,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三个维度，不能只看一个</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>怎么量</th><th>我们的一票否决线</th></tr></thead><tbody><tr><td><strong>能力</strong></td><td>50 题通过率</td><td>&lt;85%</td></tr><tr><td><strong>成本</strong></td><td>分/轮（推理算力）</td><td>&gt;0.8 分/轮</td></tr><tr><td><strong>延迟</strong></td><td>TTFT p95 / TPOT p95</td><td>TTFT &gt;1,000 ms</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>怎么量</th><th>我们的一票否决线</th></tr></thead><tbody><tr><td><strong>能力</strong></td><td>50 题通过率</td><td>&lt;85%</td></tr><tr><td><strong>成本</strong></td><td>分/轮（推理算力）</td><td>&gt;0.8 分/轮</td></tr><tr><td><strong>延迟</strong></td><td>TTFT（Time To First Token） p95 / TPOT（Time Per Output Token） p95</td><td>TTFT &gt;1,000 ms</td></tr></tbody></table></div>
 <p>三者是乘性关系，不是加性：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>能不能用 = 能力达标 × 成本可承受 × 延迟可接受</code></pre></figure>
 <p>任何一项为 0，整体为 0。所以<strong>先做一票否决，再比总分</strong>——不要用加权平均掩盖硬伤。</p>
@@ -289,7 +289,7 @@ E = 专家总数，k = 每 token 激活数</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>总参数</th><th>激活</th><th>相对算力</th><th>能力（通过率）</th></tr></thead><tbody><tr><td>30B 稠密</td><td>30B</td><td>30B</td><td>1.0×</td><td>74%</td></tr><tr><td>70B 稠密</td><td>70B</td><td>70B</td><td>2.33×</td><td>78%</td></tr><tr><td><strong>200B MoE</strong></td><td>200B</td><td>30B</td><td><strong>1.0×</strong></td><td><strong>91%</strong></td></tr></tbody></table></div>
 <p>同样算力下，MoE 用 6.7 倍的参数换来了 17 个点的通过率。</p>
 <h3>3.2 MoE 的代价必须说清</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>代价</th><th>数值</th><th>影响</th></tr></thead><tbody><tr><td><strong>显存</strong></td><td>权重 200 GB（FP8），TP8 每卡 25 GB</td><td>单卡装不下，必须 8 卡起</td></tr><tr><td><strong>通信</strong></td><td>专家并行 all-to-all</td><td>跨机走 IB 50 GB/s，是瓶颈（第 9 章）</td></tr><tr><td><strong>负载不均</strong></td><td>热门专家排队</td><td>需要 EPLB 均衡（第 10A 章）</td></tr><tr><td><strong>显存换 KV</strong></td><td>640 GB 里 200 GB 给权重，KV 只剩 400 GB</td><td>并发上限被压缩</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>代价</th><th>数值</th><th>影响</th></tr></thead><tbody><tr><td><strong>显存</strong></td><td>权重 200 GB（FP8），TP8 每卡 25 GB</td><td>单卡装不下，必须 8 卡起</td></tr><tr><td><strong>通信</strong></td><td>专家并行 all-to-all</td><td>跨机走 IB 50 GB/s，是瓶颈（第 9 章）</td></tr><tr><td><strong>负载不均</strong></td><td>热门专家排队</td><td>需要 EPLB（Expert Parallel Load Balancer） 均衡（第 10A 章）</td></tr><tr><td><strong>显存换 KV</strong></td><td>640 GB 里 200 GB 给权重，KV 只剩 400 GB</td><td>并发上限被压缩</td></tr></tbody></table></div>
 <p><strong>推翻条件</strong>：如果目标硬件只有 40 GB 显存（如部分国产卡），200 GB 权重装不进 8 卡，MoE 方案直接不成立——这时只能退到 30B 稠密或更激进的量化。</p>
 <div class="orn"></div>
 </section>

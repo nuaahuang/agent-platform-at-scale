@@ -53,7 +53,7 @@
 | **DP** 数据并行 | 切 batch，每卡一份完整模型 | 梯度 all-reduce（训练） | 多机 |
 | **TP** 张量并行 | 切**一层内的矩阵**（按列/行） | 每层 **all-reduce** | 机内 ≤8 卡（NVLink） |
 | **PP** 流水并行 | 切**层**（前几层在 A 卡，后几层在 B 卡） | 点对点 send/recv | 多机 |
-| **EP** 专家并行 | 切 **MoE 专家**（e1–e8 放不同卡） | **all-to-all** | 多机（IB/RDMA） |
+| **EP** 专家并行 | 切 **MoE 专家**（e1–e8 放不同卡） | **all-to-all** | 多机（IB/RDMA（Remote Direct Memory Access）） |
 
 ### TP 长什么样
 
@@ -463,7 +463,7 @@ NCCL 启动时做的"拓扑发现"，本质就是找到这个域，把 TP 通信
    昇腾走 MindIE 或 vllm-ascend，成熟度和 SGLang 特性（RadixAttention）可能滞后；
 4. **网络**：只有华为有 UB 这种机柜级域；其他家的 EP 跨机依赖无损 RoCE（§A.6 全套照样要配）；
 5. **采购策略**：合规要求国产卡时，建议 **H800 池与国产池双栈、网关层按模型路由**，
-   用同一套 SLO（TTFT/TPOT/单 token 成本）做 A/B，而不是假设两边等价。
+   用同一套 SLO（TTFT（Time To First Token）/TPOT（Time Per Output Token）/单 token 成本）做 A/B，而不是假设两边等价。
 
 来源：华为全联接大会 2025 路线图报道（[电子工程专辑](https://www.eet-china.com/mp/a486527.html)、
 [腾讯云](https://cloud.tencent.com.cn/developer/article/2643177)）、

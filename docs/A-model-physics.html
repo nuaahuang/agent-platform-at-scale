@@ -231,7 +231,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：为什么"加卡"不一定变快</h2>
 <p>新手的第一反应是"慢了就加卡"。但真实情况是：</p>
-<ul><li>加卡后 <strong>TTFT 没降</strong>——因为瓶颈在排队，不在算力；</li><li>加卡后 <strong>吞吐没涨</strong>——因为瓶颈在显存带宽，不在 FLOPs；</li><li>加卡后 <strong>更慢了</strong>——因为 TP 通信开销超过了收益。</li></ul>
+<ul><li>加卡后 <strong>TTFT（Time To First Token） 没降</strong>——因为瓶颈在排队，不在算力；</li><li>加卡后 <strong>吞吐没涨</strong>——因为瓶颈在显存带宽，不在 FLOPs；</li><li>加卡后 <strong>更慢了</strong>——因为 TP 通信开销超过了收益。</li></ul>
 <p>要判断"该加什么"，必须先知道<strong>当前卡在哪一种资源上</strong>。这一章就是教你怎么判断。</p>
 <div class="orn"></div>
 </section>
@@ -279,7 +279,7 @@ MLA（DeepSeek）：低秩压缩 KV，比 GQA 再小 3–4 倍</code></pre></fig
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>每步读取字节 ≈ 激活权重 + B × 单会话KV
 每步耗时     ≈ 读取字节 / HBM带宽</code></pre></figure>
 <p>H800 的 HBM 带宽是 <strong>3.35 TB/s</strong>，MoE 激活权重 30GB：</p>
-<blockquote><p><strong>B 就是 batch size（批大小）：一个 step 里同时处理多少个序列。</strong></p><p>GPU 几万个核心，一次只算一个用户根本喂不饱；把 B 个用户凑成一批，</p><p>权重读一次给 B 个人共用——这就是 batch 的意义。</p><p>- 训练：一个 batch 是一组样本，算完一起更新权重（典型几百到几千条）；</p><p>- 推理：一个 step 里<strong>正在同时生成</strong>的请求数（vLLM 动态变化，几十到几百）；</p><p>- 每 step 每个序列各出 1 个 token → <strong>每步共产出 B 个 token</strong>；</p><p>- B 越大越省（权重摊薄），但每步越慢（TPOT 变差）、KV 越占显存——上限由 KV 预算决定。</p></blockquote>
+<blockquote><p><strong>B 就是 batch size（批大小）：一个 step 里同时处理多少个序列。</strong></p><p>GPU 几万个核心，一次只算一个用户根本喂不饱；把 B 个用户凑成一批，</p><p>权重读一次给 B 个人共用——这就是 batch 的意义。</p><p>- 训练：一个 batch 是一组样本，算完一起更新权重（典型几百到几千条）；</p><p>- 推理：一个 step 里<strong>正在同时生成</strong>的请求数（vLLM 动态变化，几十到几百）；</p><p>- 每 step 每个序列各出 1 个 token → <strong>每步共产出 B 个 token</strong>；</p><p>- B 越大越省（权重摊薄），但每步越慢（TPOT（Time Per Output Token） 变差）、KV 越占显存——上限由 KV 预算决定。</p></blockquote>
 <div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>每步读取</th><th>每步耗时</th><th>聚合吞吐</th></tr></thead><tbody><tr><td>1</td><td>30 GB</td><td>9.0 ms</td><td>~111 tok/s</td></tr><tr><td>64</td><td>30 + 61 GB</td><td>27 ms</td><td>~2,370 tok/s</td></tr><tr><td>256</td><td>30 + 246 GB</td><td>82 ms</td><td>~3,120 tok/s</td></tr><tr><td>∞</td><td>KV 主导</td><td>—</td><td><strong>上限 ≈ 3,350 / 0.96 ≈ 3,490 tok/s</strong></td></tr></tbody></table></div>
 <p><strong>一个 decode step 的五步</strong>（以生成第 5,002 个 token 为例）：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>做什么</th><th>数据量</th></tr></thead><tbody><tr><td>① 投影</td><td>算新 token 自己的 K₅₀₀₂/V₅₀₀₂（只算 1 个）</td><td>1 token</td></tr><tr><td>② Q·K</td><td>新 token 的 Q 乘<strong>全部历史的 K</strong>（1×5,002）</td><td>读 5,002 个 K</td></tr><tr><td>③ softmax·V</td><td>对<strong>全部历史 V</strong> 加权求和</td><td>读 5,002 个 V</td></tr><tr><td>④ 输出层</td><td>output projection + FFN → 新 token</td><td>2N FLOPs</td></tr><tr><td>⑤ 追加</td><td>K₅₀₀₂/V₅₀₀₂ 写进 Cache</td><td><strong>+120 KB</strong></td></tr></tbody></table></div>
@@ -297,7 +297,7 @@ MLA（DeepSeek）：低秩压缩 KV，比 GQA 再小 3–4 倍</code></pre></fig
 <p><strong>关键区别：聚合吞吐 vs 单用户速度</strong></p>
 <div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>每步耗时</th><th>单用户速度 = 1/耗时</th><th>聚合吞吐 = B/耗时</th></tr></thead><tbody><tr><td>1</td><td>9.0 ms</td><td>111 tok/s</td><td>111 tok/s</td></tr><tr><td>64</td><td>27 ms</td><td><strong>37 tok/s</strong></td><td><strong>2,344 tok/s</strong></td></tr><tr><td>256</td><td>82 ms</td><td>12 tok/s</td><td>3,122 tok/s</td></tr></tbody></table></div>
 <ul><li><strong>聚合吞吐</strong>：这块卡每秒总共吐出多少 token → 决定<strong>成本</strong>；</li><li><strong>单用户速度</strong>：某一个用户每 s 收到几个 token（= TPOT 的倒数）→ 决定<strong>体验</strong>。</li></ul>
-<p>batch 变大，聚合吞吐涨（权重被 64 个请求摊薄），但单用户速度反而掉——<strong>连续批处理就是在"成本"和"TPOT SLO"之间找最大 batch</strong>。batch→∞ 时，KV 主导：<code>3350 ÷ 0.96 ≈ 3,490 tok/s</code> 就是聚合上限。</p>
+<p>batch 变大，聚合吞吐涨（权重被 64 个请求摊薄），但单用户速度反而掉——<strong>连续批处理就是在"成本"和"TPOT SLO（Service Level Objective）"之间找最大 batch</strong>。batch→∞ 时，KV 主导：<code>3350 ÷ 0.96 ≈ 3,490 tok/s</code> 就是聚合上限。</p>
 <blockquote><p>注：这是数量级模型（把整台机器当一块卡，忽略了 TP 切分、kernel 效率），</p><p>真实值再乘 30–50%。<strong>用它判断方向和上限，不用它定合同指标。</strong></p></blockquote>
 <ol><li><strong>batch 变大，吞吐上升，但会饱和</strong>——因为 KV 读取最终主导。</li><li><strong>吞吐上限 ≈ HBM 带宽 / 单会话 KV</strong>。想让上限翻倍，要么换带宽更高的卡，要么把 KV 变小（MLA/量化）。</li><li>上表是<strong>理论上限</strong>，真实要乘 <strong>30–50%</strong> 的效率系数（kernel、调度、通信开销）。</li></ol>
 <blockquote><p>这也解释了为什么"decode 加卡"有效但线性度差：TP 会把 KV 和权重切开，</p><p>但每一步都要 all-reduce，通信会吃掉一部分收益。</p></blockquote>
@@ -411,7 +411,7 @@ T 个 token            ：2 × N × T</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>Prefill</th><th>Decode</th></tr></thead><tbody><tr><td>输入</td><td>5,000 token 一次到达</td><td>每步只新增 1 个 token</td></tr><tr><td>每步算术强度</td><td>2T ≈ 10,000 FLOP/Byte</td><td>≈ 2 FLOP/Byte</td></tr><tr><td>相对 Roofline 拐点 590</td><td><strong>远高于 → 算力受限</strong></td><td><strong>远低于 → 带宽受限</strong></td></tr><tr><td>每步主要成本</td><td>矩阵乘法的 FLOPs</td><td>读全部 KV 的 HBM 流量</td></tr><tr><td>跑满什么</td><td>Tensor Core</td><td>HBM 带宽</td></tr><tr><td>典型耗时</td><td>300–600ms（一次）</td><td>每步 20–30ms（×350 次）</td></tr><tr><td>KV Cache</td><td><strong>生产 KV</strong></td><td><strong>消费 KV + 追加 KV</strong></td></tr><tr><td>负载特征</td><td>突发、秒级伸缩</td><td>平稳、长连接、分钟级</td></tr></tbody></table></div>
 <p><strong>串起来的三条工程结论</strong>：</p>
 <ol><li><strong>PD 分离</strong>：两种相反的负载必须拆——prefill 池配算力、decode 池配大显存带宽；</li></ol>
-<p>   两池之间传 KV（RDMA），传 0.96GB 只需 20ms，远小于重算的 300ms，所以值得。</p>
+<p>   两池之间传 KV（RDMA（Remote Direct Memory Access）），传 0.96GB 只需 20ms，远小于重算的 300ms，所以值得。</p>
 <ol><li><strong>Chunked prefill</strong>：不分离时，5,000 token 的 prefill 会独占 GPU 几十毫秒，</li></ol>
 <p>   decode 请求的 TPOT 会抖；把 prefill 切成小块和 decode 请求混批，平滑 TPOT。</p>
 <ol><li><strong>前缀缓存 / GQA / MLA</strong>：全部作用在<strong>让 KV 更少、更可复用</strong>上——</li></ol>

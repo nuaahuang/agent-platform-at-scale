@@ -80,7 +80,7 @@ torch.matmul
 750 × 4 μs ≈ 3 ms
 ```
 
-而 TPOT 预算是 25 ms——**光下发就吃掉 12%**，还没开始算。
+而 TPOT（Time Per Output Token） 预算是 25 ms——**光下发就吃掉 12%**，还没开始算。
 
 这就是 **CUDA Graph** 存在的理由：把整条 kernel 序列录成一张图，一次提交，
 重复下发归零。代价是**形状必须固定**，所以变长 batch 要用 padding 或 masked 方案
@@ -94,7 +94,7 @@ GPU 的执行层次：
 
 ```
 Grid                     一次 kernel 启动
-└── CTA                  跑在一个 SM 上，最多 1024 线程
+└── CTA（Cooperative Thread Array）                  跑在一个 SM 上，最多 1024 线程
     └── Warp             32 个线程，同一条指令
         └── Thread       一个 lane
 ```

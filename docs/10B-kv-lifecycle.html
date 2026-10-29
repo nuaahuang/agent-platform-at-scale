@@ -278,7 +278,7 @@ KV 可用    400 GB
 <p>于是有两个数决定了用户的等待：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>排队时间 ≈ 队列长度 ÷ 每实例吞吐</code></pre></figure>
 <p>按我们的账（单实例 2.8 QPS）：队列 64 个 → 平均等 <strong>23 秒</strong>。这就是第 33 章把 <code>num_requests_waiting &gt; 64</code> 当扩容阈值的原因。</p>
-<p><strong>最危险的默认值是"队列无上限"</strong>：流量翻倍时队列长到 5,000，TTFT 变成 30 分钟，所有请求都在等一个永远不会释放的块——成功率 100%，体验归零。</p>
+<p><strong>最危险的默认值是"队列无上限"</strong>：流量翻倍时队列长到 5,000，TTFT（Time To First Token） 变成 30 分钟，所有请求都在等一个永远不会释放的块——成功率 100%，体验归零。</p>
 <h3>3.2 队列会不会满：上限怎么定，满了怎么办</h3>
 <p>先分清三种"放不下"，它们的行为完全不同：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>默认上限</th><th>满了的表现</th></tr></thead><tbody><tr><td>网关熔断器</td><td>1,024</td><td>503，<strong>快速返回</strong></td></tr><tr><td><strong>引擎 waiting 队列</strong></td><td><strong>无上限</strong></td><td><strong>不报错，延迟无限涨</strong></td></tr><tr><td>KV 块池</td><td>208,000 块</td><td>请求卡在 waiting</td></tr></tbody></table></div>
@@ -363,7 +363,7 @@ KV cache       →  token 序列的哈希</code></pre></figure>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 卸载：把 KV 搬到显存之外</h2>
 <h3>6.1 谁来做：三种组件形态</h3>
 <p>"卸载"不是一个开关，而是三种不同的部署形态，复杂度递增：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>组件</th><th>谁负责搬运</th><th>典型实现</th><th>适用</th></tr></thead><tbody><tr><td><strong>① 引擎内置</strong></td><td>block manager 自带两级池</td><td>引擎自己</td><td><code>--cpu-offload-gb</code>、vLLM swap space</td><td>单机，快速试水</td></tr><tr><td><strong>② 外挂连接器</strong></td><td>KV Connector 接口 + 外部存储客户端</td><td>引擎调接口，外部服务存</td><td>LMCache connector</td><td>希望复用已有存储</td></tr><tr><td><strong>③ 独立服务</strong></td><td>独立的 KV Store 集群</td><td>专门的传输层（RDMA）</td><td>Mooncake Store</td><td>跨机共享、全球复用</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>组件</th><th>谁负责搬运</th><th>典型实现</th><th>适用</th></tr></thead><tbody><tr><td><strong>① 引擎内置</strong></td><td>block manager 自带两级池</td><td>引擎自己</td><td><code>--cpu-offload-gb</code>、vLLM swap space</td><td>单机，快速试水</td></tr><tr><td><strong>② 外挂连接器</strong></td><td>KV Connector 接口 + 外部存储客户端</td><td>引擎调接口，外部服务存</td><td>LMCache connector</td><td>希望复用已有存储</td></tr><tr><td><strong>③ 独立服务</strong></td><td>独立的 KV Store 集群</td><td>专门的传输层（RDMA（Remote Direct Memory Access））</td><td>Mooncake Store</td><td>跨机共享、全球复用</td></tr></tbody></table></div>
 <p>对应的角色分工：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>角色</th><th>职责</th></tr></thead><tbody><tr><td><strong>Scheduler</strong></td><td>决定"这个请求值不值得去远端取"（取比算快才取）</td></tr><tr><td><strong>Block manager</strong></td><td>执行 evict → 发起 offload 写、发起 fetch 读</td></tr><tr><td><strong>Connector / Store client</strong></td><td>序列化、传输、重试、校验</td></tr><tr><td><strong>KV Store 服务</strong></td><td>存块、按哈希索引、自己再做一层 LRU</td></tr><tr><td><strong>平台 SRE</strong></td><td>配容量、配租户配额、配保留策略</td></tr></tbody></table></div>
 <h3>6.2 一次卸载的完整动作序列</h3>
@@ -397,7 +397,7 @@ KV cache       →  token 序列的哈希</code></pre></figure>
 → B 的 TTFT 从 600 ms 变 1.4 s，A 毫发无损</code></pre></figure>
 <p><strong>这不是容量问题，是分配问题。</strong> 扩容治不了，只会让 A 占得更多。</p>
 <h3>7.2 四种解法对比</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>做法</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td><strong>硬分区</strong></td><td>每租户独立缓存，互不可见</td><td>隔离彻底、实现简单</td><td>碎片浪费，小租户吃不满</td></tr><tr><td><strong>软配额 + 加权淘汰</strong></td><td>超配额者优先被淘汰</td><td>利用率高</td><td>需要配额中心</td></tr><tr><td><strong>SLA 分级</strong></td><td>金牌租户保底池</td><td>商业上可解释</td><td>配置复杂</td></tr><tr><td><strong>租户哈希命名空间</strong></td><td>缓存键带租户盐</td><td><strong>安全</strong>（防串号）</td><td>减少跨租户复用</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>做法</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td><strong>硬分区</strong></td><td>每租户独立缓存，互不可见</td><td>隔离彻底、实现简单</td><td>碎片浪费，小租户吃不满</td></tr><tr><td><strong>软配额 + 加权淘汰</strong></td><td>超配额者优先被淘汰</td><td>利用率高</td><td>需要配额中心</td></tr><tr><td><strong>SLA（Service Level Agreement） 分级</strong></td><td>金牌租户保底池</td><td>商业上可解释</td><td>配置复杂</td></tr><tr><td><strong>租户哈希命名空间</strong></td><td>缓存键带租户盐</td><td><strong>安全</strong>（防串号）</td><td>减少跨租户复用</td></tr></tbody></table></div>
 <p>实践组合：<strong>命名空间（安全）+ 软配额（公平）+ 金牌保底（商业）</strong>。</p>
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def weighted_evict(candidates, quota):
     # 超出配额的租户，淘汰优先级更高；同优先级下再看 LRU
@@ -488,7 +488,7 @@ assert golden_pass_rate(v2) &gt;= golden_pass_rate(v1) - 0.02</code></pre></figu
 <p>第一条最直接：<strong>灰度期间命中率莫名变高，就是跨版本共享的信号。</strong></p>
 </section>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 备选方案：如果不这么做会怎样</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>备选做法</th><th>代价</th><th>为什么没成主流</th></tr></thead><tbody><tr><td><strong>预分配最大长度</strong>（PagedAttention 之前）</td><td>按 32K 预留 → 实际用 2K 时浪费 94% 显存</td><td>并发上不去</td></tr><tr><td><strong>连续分配 + 搬移</strong></td><td>每次扩容要拷贝整段 KV</td><td>拷贝成本随长度平方增长</td></tr><tr><td><strong>固定块但不共享</strong></td><td>无前缀复用</td><td>命中率 0，等于没有缓存</td></tr><tr><td><strong>全量下沉 CPU</strong></td><td>每次 decode 都过 PCIe</td><td>带宽被打爆，TPOT 从 25 ms 涨到 200 ms+</td></tr><tr><td><strong>不分页 + 大页（2 MB）</strong></td><td>内部碎片</td><td>短请求浪费，长请求仍不连续</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>备选做法</th><th>代价</th><th>为什么没成主流</th></tr></thead><tbody><tr><td><strong>预分配最大长度</strong>（PagedAttention 之前）</td><td>按 32K 预留 → 实际用 2K 时浪费 94% 显存</td><td>并发上不去</td></tr><tr><td><strong>连续分配 + 搬移</strong></td><td>每次扩容要拷贝整段 KV</td><td>拷贝成本随长度平方增长</td></tr><tr><td><strong>固定块但不共享</strong></td><td>无前缀复用</td><td>命中率 0，等于没有缓存</td></tr><tr><td><strong>全量下沉 CPU</strong></td><td>每次 decode 都过 PCIe</td><td>带宽被打爆，TPOT（Time Per Output Token） 从 25 ms 涨到 200 ms+</td></tr><tr><td><strong>不分页 + 大页（2 MB）</strong></td><td>内部碎片</td><td>短请求浪费，长请求仍不连续</td></tr></tbody></table></div>
 <p><strong>PagedAttention 赢在"间接层"</strong>：物理可以不连续，逻辑连续由 block table 保证。这个思路和操作系统的虚拟内存完全同构——只是页大小从 4 KB 变成了 1.92 MB。</p>
 <p>替代路线里唯一有竞争力的是 <strong>vAttention</strong>（动态显存 + CUDA VMM API 直接映射），它省掉了 block table 的软件开销，但要求驱动与硬件支持，可移植性差。</p>
 <div class="orn"></div>

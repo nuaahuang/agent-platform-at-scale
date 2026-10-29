@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>写作契约（WRITING CONTRACT） · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">book · 第 00 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 规则表（17 条）</a><a href="#s2"><span>02</span>. 机器可判的 6 条，判定口径</a><a href="#s3"><span>03</span>. 变更日志</a><a href="#s4"><span>04</span>. 一次完整的写作回合</a></nav>
+      <div class="rail-foot">book</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">00</div><div class="ch-kicker">book</div><h1>写作契约（WRITING CONTRACT）</h1><div class="ch-rule"></div></header>
+<blockquote><p><strong>版本 v1.0 · 2026-10-29</strong></p><p>本文件是约束，不是建议。每条规则都有编号、来由和一个检查方式。</p><p>注入上下文的是 <a href="../AGENTS.md">AGENTS.md</a>（短版）；这里是完整版与变更记录。</p><p>用法：动笔前读 §1 的规则表；交付前跑 <code>make check</code>；</p><p>用户每提一次意见，按 R16 加一条规则并全库回扫。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 规则表（17 条）</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>规则</th><th>检查</th><th>来由（真实反馈）</th></tr></thead><tbody><tr><td><strong>R01</strong></td><td>所有数字能在 <code>labs/calc.py</code> 或账本表复现；改一处必须全库回扫</td><td>人工 + 账本</td><td>把 FP8 权重写成 400 GB（应为 200）</td></tr><tr><td><strong>R02</strong></td><td>公式必须给单位；无量纲量要说明怎么消去</td><td>人工</td><td>"成本 0.05 的单位是什么？"</td></tr><tr><td><strong>R03</strong></td><td>数学必须能代入数字算通</td><td>人工</td><td>"350×50ms≠9s，推导不自洽"</td></tr><tr><td><strong>R04</strong></td><td>外部事实带链接与日期；推断标"推断"</td><td>人工</td><td>DeepInfer 数据需可溯源</td></tr><tr><td><strong>R05</strong></td><td>每章至少一条纵向链路：问题→机制→组件→配置→达标线</td><td>人工</td><td>"不光表格，还要从顶到底的设计思考"</td></tr><tr><td><strong>R06</strong></td><td>写"怎么做"必须给四要素：谁执行 / 什么组件 / 配置或命令 / 达标线</td><td>人工</td><td>"缩容具体怎么缩还是没讲清楚，只讲了为什么"</td></tr><tr><td><strong>R07</strong></td><td>失败模式单列：现象 → 根因 → 怎么发现 → 怎么修</td><td><strong>机器</strong></td><td>全书习惯</td></tr><tr><td><strong>R08</strong></td><td>至少一处"以为…其实…"</td><td>提示</td><td>全书习惯</td></tr><tr><td><strong>R09</strong></td><td>选型必写"否了什么"+"推翻条件"</td><td><strong>机器</strong></td><td>只讲选中的等于没决策</td></tr><tr><td><strong>R10</strong></td><td>禁止连续两张表之间无说明文字</td><td><strong>机器</strong></td><td>表格占比 45%，论述被表替代</td></tr><tr><td><strong>R11</strong></td><td>每万字 ≥2 处承认不确定/试错/被推翻</td><td><strong>机器</strong></td><td>全库 13 章该作者位置 = 0</td></tr><tr><td><strong>R12</strong></td><td>表占比 ≤45%；收口句 ≤6/万字</td><td><strong>机器</strong></td><td>AI 味反馈</td></tr><tr><td><strong>R13</strong></td><td>假对比 ≤1.5/万字；"必须" ≤18/万字</td><td><strong>机器</strong></td><td>AI 味反馈</td></tr><tr><td><strong>R14</strong></td><td>缩写首次出现给英文全称 + 一句定义</td><td><strong>提示</strong></td><td>CTA/SLO/KEDA/FFI 都被问过</td></tr><tr><td><strong>R15</strong></td><td>不许每节都写"一句话/这就是"式收口</td><td><strong>机器</strong>（同 R12）</td><td>AI 味反馈</td></tr><tr><td><strong>R16</strong></td><td>用户每条反馈 → 新增编号规则 + 检查 + 全库回扫；本文件留变更日志</td><td>流程</td><td>本次</td></tr><tr><td><strong>R17</strong></td><td>交付前 <code>make check</code> 全绿；❌ 或人工未核 &gt;3 条不提交</td><td>流程</td><td>本次</td></tr></tbody></table></div>
+<p><strong>冲突时的优先级</strong>：R01（事实） &gt; R03（自洽） &gt; R06（实操） &gt; 其余。任何"为了好读"而牺牲事实的改法，一律拒绝。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 机器可判的 6 条，判定口径</h2>
+<h3>R07 失败模式单列</h3>
+<ul><li>通过：章内存在 <code>失败模式</code> / <code>失败</code> / <code>会坏</code> 小节，且至少 1 张表含"现象/根因"两列。</li><li>不通过：只在正文里零散提到"可能出问题"。</li></ul>
+<h3>R09 选型写否决</h3>
+<ul><li>触发：章内出现 <code>候选</code> / <code>选型</code> / <code>方案对比</code>。</li><li>通过：同章出现 <code>推翻条件</code> 或 <code>否了</code> / <code>否决</code> 或表格含"否了什么"列。</li><li>不通过：只列选中项的优点。</li></ul>
+<h3>R10 两表之间要有话</h3>
+<ul><li>判定：解析表格块；若上一个表格块之后、本表格块之前，没有一行 ≥20 汉字的正文，判违规。</li><li>例外：紧跟在标题后、且标题本身已承接上下文的第一张表。</li></ul>
+<h3>R11 留白密度</h3>
+<ul><li>计入短语：<code>我没测</code> <code>没有实测</code> <code>不确定</code> <code>可能错</code> <code>存疑</code> <code>尚未验证</code> <code>我一开始</code> <code>我原来以为</code> <code>我们试过</code> <code>踩过</code> <code>说实话</code> <code>我倾向于</code></li><li>阈值：<strong>≥2 处/万字</strong>（汉字口径）。</li><li>不通过：全章 0 处——说明每个结论都像一开始就想对了。</li></ul>
+<h3>R12 / R15 收口与表占比</h3>
+<ul><li>收口短语：<code>一句话：</code> <code>这就是</code> <code>这才是</code>；阈值 <strong>≤6/万字</strong>。</li><li>表占比 = 表格行 ÷ 非空行；阈值 <strong>≤45%</strong>。</li><li>不通过的处理：把一组表改回两段话讲因果，表只留并列项。</li></ul>
+<h3>R13 假对比与命令式</h3>
+<ul><li>假对比：<code>不是……而是……</code>；阈值 <strong>≤1.5/万字</strong>（纠正真实误解时允许，需人工确认）。</li><li>命令式 <code>必须</code>：<strong>≤18/万字</strong>；超出说明语气没有梯度，改成"建议/我们选了/通常"。</li></ul>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 变更日志</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>版本</th><th>变更</th><th>触发</th></tr></thead><tbody><tr><td>2026-10-29</td><td>v1.0</td><td>建立 R01–R17；机器检查 6 条；AGENTS.md 短版注入</td><td>"AI 味太重，应该用约束文档的方式"</td></tr><tr><td>2026-10-29</td><td>v1.0</td><td>从 STYLE.md §7 的"六条减法"升级为编号契约</td><td>事后润色不如前置约束</td></tr></tbody></table></div>
+<blockquote><p>后续每次用户反馈追加一行：<strong>日期 / 版本 / 加了哪条规则 / 谁提的</strong>。</p><p>规则只增不删；被推翻的规则标 <code>废止</code> 并写明原因，不直接删除。</p></blockquote>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一次完整的写作回合</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>① 读 AGENTS.md（已在上下文）+ 本章 OUTLINE 条目
+② 按 R05 先画纵向链路：问题 → 机制 → 组件 → 配置 → 达标线
+③ 正文按 R06 展开，每处&quot;怎么做&quot;补齐四要素
+④ 自查 R01/R03：数字回账本、公式代数字
+⑤ make check → 看 R07/R09/R10/R11/R12/R13
+⑥ 把 R11 的留白写够：至少有 2 处&quot;这里我没验证过&quot;
+⑦ 提交；如果这轮有新反馈，回到契约加规则（R16）</code></pre></figure>
+</section></article>
+    <nav class="pager"><i></i><a class="nav-next" href="01-scale-slo-economics.html"><span>下一章</span><b>01 · 规模、SLO（Service Level Objective） 与经济红线</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

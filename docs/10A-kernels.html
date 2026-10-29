@@ -256,14 +256,14 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>每层 kernel 数</th></tr></thead><tbody><tr><td>RMSNorm、RoPE</td><td>2</td></tr><tr><td>QKV / O 投影</td><td>3</td></tr><tr><td>Attention</td><td>1</td></tr><tr><td>MoE gate + topk</td><td>2</td></tr><tr><td>dispatch / grouped GEMM ×2 / SwiGLU / combine</td><td>4–5</td></tr><tr><td><strong>每层合计</strong></td><td><strong>约 12–13</strong></td></tr></tbody></table></div>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>单 token step ≈ 60 层 × 12.5 ≈ 750 次 kernel 启动
 750 × 4 μs ≈ 3 ms</code></pre></figure>
-<p>而 TPOT 预算是 25 ms——<strong>光下发就吃掉 12%</strong>，还没开始算。</p>
+<p>而 TPOT（Time Per Output Token） 预算是 25 ms——<strong>光下发就吃掉 12%</strong>，还没开始算。</p>
 <p>这就是 <strong>CUDA Graph</strong> 存在的理由：把整条 kernel 序列录成一张图，一次提交，重复下发归零。代价是<strong>形状必须固定</strong>，所以变长 batch 要用 padding 或 masked 方案（DeepGEMM 的 masked grouped GEMM 就是为此而生）。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一个 kernel 的内部结构</h2>
 <p>GPU 的执行层次：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>Grid                     一次 kernel 启动
-└── CTA                  跑在一个 SM 上，最多 1024 线程
+└── CTA（Cooperative Thread Array）                  跑在一个 SM 上，最多 1024 线程
     └── Warp             32 个线程，同一条指令
         └── Thread       一个 lane</code></pre></figure>
 <p><strong>CTA 是什么</strong>：Cooperative Thread Array，NVIDIA 对 thread block 的正式叫法（CUDA 里 <code>blockIdx</code> 指的就是它；OpenCL 叫 work-group，WebGPU 叫 workgroup）。</p>

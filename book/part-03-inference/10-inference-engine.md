@@ -78,7 +78,7 @@ GPU 要求：每行都是 5000 → B 的请求后面补 4800 个占位符（padd
 > ```
 >
 > 即"约 25ms"= B≈64、8K 上下文时的每步访存时间（理论值，真实乘效率系数）。
-> **它不是常数，而是一个被选中的工作点**：SLO 定 TPOT ≤ 50ms，
+> **它不是常数，而是一个被选中的工作点**：SLO（Service Level Objective） 定 TPOT ≤ 50ms，
 > 调度器就把 batch 顶到满足该红线的最大值（约 120–130），25ms 是留了余量的典型值。
 > 用户体验上：25ms/token ≈ 40 tok/s ≈ 每秒约 60 个汉字，快于人眼阅读。
 > batch 越大 step 越慢（字蹦得越慢），所以"聚合吞吐 vs TPOT"是调度器的核心权衡。
@@ -175,7 +175,7 @@ step: [decode A][decode B][prefill C 的第 2 块]
 ```
 
 - decode 请求每 step 都在推进，TPOT 平滑；
-- prefill 请求多花几个 step 完成，TTFT 略增——用 TTFT 换 TPOT 稳定；
+- prefill 请求多花几个 step 完成，TTFT（Time To First Token） 略增——用 TTFT 换 TPOT 稳定；
 - 这个**配比是调度参数**（如 vLLM 的 `--max-num-batched-tokens`、SGLang 的 chunk 策略），
   生产调优的核心旋钮之一。
 
@@ -332,7 +332,7 @@ SGLang 的内存层是**三级结构**（自顶向下：复用关系 → 逻辑�
 | 8B FP16 | 16GB | 1 卡（可一卡多实例/MIG） | |
 | 70B FP16 | 140GB | TP=2–4 | |
 | **200B MoE FP8（本项目）** | 200GB | **TP=8（一台 H800）** | ≥3 卡装权重，NVLink 域 8 卡 |
-| DeepSeek 671B FP8 | 670GB | **16–32 卡**（TP=8 × EP 跨机 RDMA） | MoE 专家并行必须跨机 |
+| DeepSeek 671B FP8 | 670GB | **16–32 卡**（TP=8 × EP 跨机 RDMA（Remote Direct Memory Access）） | MoE 专家并行必须跨机 |
 
 **卡数下限 = 权重装得下；上限 = 通信不拖后腿**：
 H800 NVLink 域只有 8 卡（跨机退到 IB）；GB200 NVL72 才把域扩到 72 卡。
@@ -357,7 +357,7 @@ H800 NVLink 域只有 8 卡（跨机退到 IB）；GB200 NVL72 才把域扩到 7
 ```
 
 **你在第 01 章看到的 `vllm:num_requests_waiting` 和 `gpu_cache_usage_perc`，就是 ②③ 的输出。**
-KEDA 按这两个数扩缩容——调度器的内部状态直接决定了基础设施的行为。
+KEDA（Kubernetes Event-driven Autoscaling） 按这两个数扩缩容——调度器的内部状态直接决定了基础设施的行为。
 
 ---
 
@@ -392,7 +392,7 @@ KEDA 按这两个数扩缩容——调度器的内部状态直接决定了基础
 | Chunked Prefill | **SWA bounded replay**：prefill 只重放有界后缀，默认保留 140 token | 官方称 prefill 计算量近乎减半；**只在滑动窗口注意力下成立** |
 | 前缀缓存 | 未开源（KV 管理与内部基础设施耦合） | 说明"缓存"不是引擎单体能做干净的 |
 | 投机解码 | **DSpark**：草稿模型一次提 5 个 token + 置信度调度验证 | 每步验证 token 数 −30%，吞吐 +4%–7% |
-| 专家并行 | MoE EP + **EPLB**（专家负载均衡） | 直接针对 all-to-all 热点 |
+| 专家并行 | MoE EP + **EPLB（Expert Parallel Load Balancer）**（专家负载均衡） | 直接针对 all-to-all 热点 |
 | 可复现性 | **batch-invariant** + 确定性采样（仅 NVIDIA） | 换 batch 组合结果不变，评测与回放才可比 |
 | 结构化输出 | 正则 / JSON Schema / EBNF 约束 | 把"格式对"从提示词问题变成解码问题 |
 | 引擎底座 | 最初基于 **vLLM** 构建，后自研 kernel | 连头部团队也是"先站在 vLLM 上，再换心脏" |

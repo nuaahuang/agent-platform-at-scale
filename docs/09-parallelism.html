@@ -242,7 +242,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>A.2 四种并行：DP / TP / PP / EP</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>并行</th><th>切什么</th><th>通信</th><th>典型范围</th></tr></thead><tbody><tr><td><strong>DP</strong> 数据并行</td><td>切 batch，每卡一份完整模型</td><td>梯度 all-reduce（训练）</td><td>多机</td></tr><tr><td><strong>TP</strong> 张量并行</td><td>切<strong>一层内的矩阵</strong>（按列/行）</td><td>每层 <strong>all-reduce</strong></td><td>机内 ≤8 卡（NVLink）</td></tr><tr><td><strong>PP</strong> 流水并行</td><td>切<strong>层</strong>（前几层在 A 卡，后几层在 B 卡）</td><td>点对点 send/recv</td><td>多机</td></tr><tr><td><strong>EP</strong> 专家并行</td><td>切 <strong>MoE 专家</strong>（e1–e8 放不同卡）</td><td><strong>all-to-all</strong></td><td>多机（IB/RDMA）</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>并行</th><th>切什么</th><th>通信</th><th>典型范围</th></tr></thead><tbody><tr><td><strong>DP</strong> 数据并行</td><td>切 batch，每卡一份完整模型</td><td>梯度 all-reduce（训练）</td><td>多机</td></tr><tr><td><strong>TP</strong> 张量并行</td><td>切<strong>一层内的矩阵</strong>（按列/行）</td><td>每层 <strong>all-reduce</strong></td><td>机内 ≤8 卡（NVLink）</td></tr><tr><td><strong>PP</strong> 流水并行</td><td>切<strong>层</strong>（前几层在 A 卡，后几层在 B 卡）</td><td>点对点 send/recv</td><td>多机</td></tr><tr><td><strong>EP</strong> 专家并行</td><td>切 <strong>MoE 专家</strong>（e1–e8 放不同卡）</td><td><strong>all-to-all</strong></td><td>多机（IB/RDMA（Remote Direct Memory Access））</td></tr></tbody></table></div>
 <h3>TP 长什么样</h3>
 <p>一个线性层 <code>Y = XW</code>，W 是 4096×4096。TP=2 时：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>GPU0: W 的左半（4096×2048）→ 算出一半输出
@@ -407,7 +407,7 @@ GPU1: e2 e3      GPU3: e6 e7</code></pre></figure>
 <ol><li><strong>引擎</strong>：PagedAttention/连续批处理/前缀缓存不是免费的——需要厂商 kernel 适配。</li></ol>
 <p>   昇腾走 MindIE 或 vllm-ascend，成熟度和 SGLang 特性（RadixAttention）可能滞后；</p>
 <ol><li><strong>网络</strong>：只有华为有 UB 这种机柜级域；其他家的 EP 跨机依赖无损 RoCE（§A.6 全套照样要配）；</li><li><strong>采购策略</strong>：合规要求国产卡时，建议 <strong>H800 池与国产池双栈、网关层按模型路由</strong>，</li></ol>
-<p>   用同一套 SLO（TTFT/TPOT/单 token 成本）做 A/B，而不是假设两边等价。</p>
+<p>   用同一套 SLO（TTFT（Time To First Token）/TPOT（Time Per Output Token）/单 token 成本）做 A/B，而不是假设两边等价。</p>
 <p>来源：华为全联接大会 2025 路线图报道（<a href="https://www.eet-china.com/mp/a486527.html">电子工程专辑</a>、<a href="https://cloud.tencent.com.cn/developer/article/2643177">腾讯云</a>）、国产卡参数汇总（<a href="https://www.iotdt.com/news/xingyezixun/2693.html">物联网百科</a>，厂商博客性质需交叉验证）、CloudMatrix 384 论文（<a href="https://ar5iv.labs.arxiv.org/html/2506.12708">arXiv:2506.12708</a>）。</p>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>A.8.3 失败模式：并行最容易在哪坏</h2>

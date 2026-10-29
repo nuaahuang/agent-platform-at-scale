@@ -4,7 +4,7 @@
 
 
 > **一句话结论**：prefill 和 decode 是两种相反的负载——一个突发吃算力，一个平稳吃带宽。
-> 规模一大，唯一正确的做法是**拆成两个资源池、两套调度信号、两个 SLO**，
+> 规模一大，唯一正确的做法是**拆成两个资源池、两套调度信号、两个 SLO（Service Level Objective）**，
 > 中间用一次 KV 传输完成交接。
 
 ---
@@ -18,7 +18,7 @@
 | 工作方式 | 几千 token 一次并行 | 1 token/步，走几百步 |
 | Roofline 位置 | 平屋顶，**算力受限** | 斜屋顶，**带宽受限** |
 | 负载形态 | **突发**（7000 QPS 到达） | 平稳（每个会话持续几秒） |
-| 关心的 SLO | **TTFT** < 800ms | **TPOT** p95 ≤ 50ms |
+| 关心的 SLO | **TTFT（Time To First Token）** < 800ms | **TPOT（Time Per Output Token）** p95 ≤ 50ms |
 | 扩容速度 | 秒级响应突发 | 分钟级，随在飞会话数变 |
 | 容量模型里的卡数 | 909（含前缀命中折扣） | 700 |
 
@@ -56,7 +56,7 @@
         └──────────┬──────────┘       └──────────▲──────────┘
                    │  算完所有 KV                 │
                    ▼                             │
-        ┌─────────────────────┐    RDMA/RoCE      │
+        ┌─────────────────────┐    RDMA（Remote Direct Memory Access）/RoCE      │
         │  KV 传输层           │ ────────────────▶ │
         │  NIXL / Mooncake /  │  0.96GB ≈ 20ms    │
         │  vLLM KV Connector  │                   │
@@ -145,7 +145,7 @@
 | 响应速度 | 秒级（突发） | 分钟级（随会话数平滑变） |
 | 冷启动代价 | 拉权重 200GB ≈ 数分钟 → **必须有 warm pool** | 同左 |
 | 缩容方式 | 队列空了立刻缩 | **drain**：等现有会话跑完再下线，不能杀连接 |
-| K8s 手段 | KEDA + Karpenter + 预热池 | KEDA + PDB + 优雅终止宽限 |
+| K8s 手段 | KEDA（Kubernetes Event-driven Autoscaling） + Karpenter + 预热池 | KEDA + PDB + 优雅终止宽限 |
 
 我们部署目录里的 [`20-keda-decode.yaml`](../../deploy/k8s/20-keda-decode.yaml)
 已经是这套信号（waiting 数 + cache 水位双触发）；P 池再加一个队列长度触发器即可。

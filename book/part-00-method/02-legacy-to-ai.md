@@ -80,7 +80,7 @@
 
 | 模式 | 改法（怎么做） | 达标线 | 新增件 | 新增件达标线 |
 |---|---|---|---|---|
-| **无状态** | 按 `(tenant, session)` 一致性哈希；路由表存 Redis，实例 5 s 心跳；实例故障时回退冷实例 + 事件重放 | 亲和命中 ≥95%；路由收敛 ≤5 s；迁移后 TTFT ≤2 s | 路由表、会话迁移协议、预热副本 | 路由表 99.99%；迁移成功率 99.9%；预热副本 ≤5% 成本 |
+| **无状态** | 按 `(tenant, session)` 一致性哈希；路由表存 Redis，实例 5 s 心跳；实例故障时回退冷实例 + 事件重放 | 亲和命中 ≥95%；路由收敛 ≤5 s；迁移后 TTFT（Time To First Token） ≤2 s | 路由表、会话迁移协议、预热副本 | 路由表 99.99%；迁移成功率 99.9%；预热副本 ≤5% 成本 |
 | **连接池** | 池大小按"在飞请求数"定，不按连接数；每实例独立池 | 等待队列 ≤5%；连接复用率 ≥90% | 池水位指标 | 排队等待 p95 ≤5 ms |
 | **多级缓存** | 缓存对象换成 **KV block**；稳定前缀（系统提示 + 工具 schema）固定放最前；租户哈希加盐 | 前缀命中 ≥85%；缓存 ≤30% 显存；跨租户 **0** 共享 | 前缀模板管理、驱逐策略、命中率看板 | 命中率跌 5 pt 告警；驱逐后 TTFT 回退 ≤200 ms |
 | **MQ 削峰** | 不再"先存后算"，改**入口准入**：有界队列（≤2× 在飞）+ 快速拒绝 | 拒绝 ≤50 ms；队列 ≤2× 在飞；goodput 走平 | 拒绝语义（429 + Retry-After）、队列深度指标 | 1.5× 过载时 goodput ≥90% |
@@ -147,7 +147,7 @@
 |---|---|---|---|
 | **L0 采集** | 打点、统一 schema | SDK / sidecar / eBPF | 标签 ≤20 个防基数爆炸 |
 | **L1 汇聚** | 多分辨率聚合、原始事件留存 | 流式聚合 + 列存 | 1 s 粒度延迟 ≤3 s |
-| **L2 判定** | SLO burn rate、规则、异常检测 | 规则引擎 | 误报率 <5% |
+| **L2 判定** | SLO（Service Level Objective） burn rate、规则、异常检测 | 规则引擎 | 误报率 <5% |
 | **L3 决策** | 选动作、算预算、定优先级 | 决策引擎 | 决策延迟 ≤5 s |
 | **L4 执行** | 调 K8s / 网关 / 配置 | Controller | 动作可回滚率 100% |
 | **L5 审计** | 每次自动动作留痕 | 事件日志 | 可复原"当时为什么这么做" |
@@ -192,7 +192,7 @@
 | L0 采集 | 指标 SDK、抓取 | OpenTelemetry、vLLM/SGLang 的 `/metrics`、eBPF（Pixie） | 需要引擎内部细粒度（每层 KV、每 block 命中） |
 | L1 汇聚 | 时序库、规则聚合 | Prometheus + Thanos/Mimir、VictoriaMetrics、ClickHouse | 高基数（按 session 维度）或跨年留存 |
 | L2 判定 | SLO 规则生成 | Sloth、Pyrra、Alertmanager | 多租户差异化 SLO、复合条件 |
-| L3 决策 | 简单伸缩 | HPA（custom metrics）、KEDA、Karpenter | 需要"先判类型再选动作"——**必须自研** |
+| L3 决策 | 简单伸缩 | HPA（custom metrics）、KEDA（Kubernetes Event-driven Autoscaling）、Karpenter | 需要"先判类型再选动作"——**必须自研** |
 | L4 执行 | 扩容/灰度/切流 | K8s Operator、Argo Rollouts、Flagger、Envoy xDS | 预热池、权重分发 |
 | L5 审计 | 日志 | ClickHouse / Loki | 与变更系统联动 |
 

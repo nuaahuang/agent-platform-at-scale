@@ -254,7 +254,7 @@ GPU 要求：每行都是 5000 → B 的请求后面补 4800 个占位符（padd
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 连续批处理（Continuous Batching）</h2>
 <p><strong>规则只有一条：每个 decode step（约 25ms）结束后，重组一次 batch。</strong></p>
-<blockquote><p><strong>25ms 哪来的？</strong> 它就是 TPOT（每 token 生成间隔），由第 02 章的带宽账决定：</p><p>```</p><p>每步耗时 = (激活权重 30GB + B × 单会话KV 0.96GB) ÷ 3.35 TB/s</p><p>B=32  → 60.7GB ÷ 3.35TB/s ≈ 18ms</p><p>B=64  → 91.4GB ÷ 3.35TB/s ≈ 27ms   ← 我们的典型工作点</p><p>B=128 → 152.9GB ÷ 3.35TB/s ≈ 46ms</p><p>```</p><p>即"约 25ms"= B≈64、8K 上下文时的每步访存时间（理论值，真实乘效率系数）。</p><p><strong>它不是常数，而是一个被选中的工作点</strong>：SLO 定 TPOT ≤ 50ms，</p><p>调度器就把 batch 顶到满足该红线的最大值（约 120–130），25ms 是留了余量的典型值。</p><p>用户体验上：25ms/token ≈ 40 tok/s ≈ 每秒约 60 个汉字，快于人眼阅读。</p><p>batch 越大 step 越慢（字蹦得越慢），所以"聚合吞吐 vs TPOT"是调度器的核心权衡。</p></blockquote>
+<blockquote><p><strong>25ms 哪来的？</strong> 它就是 TPOT（每 token 生成间隔），由第 02 章的带宽账决定：</p><p>```</p><p>每步耗时 = (激活权重 30GB + B × 单会话KV 0.96GB) ÷ 3.35 TB/s</p><p>B=32  → 60.7GB ÷ 3.35TB/s ≈ 18ms</p><p>B=64  → 91.4GB ÷ 3.35TB/s ≈ 27ms   ← 我们的典型工作点</p><p>B=128 → 152.9GB ÷ 3.35TB/s ≈ 46ms</p><p>```</p><p>即"约 25ms"= B≈64、8K 上下文时的每步访存时间（理论值，真实乘效率系数）。</p><p><strong>它不是常数，而是一个被选中的工作点</strong>：SLO（Service Level Objective） 定 TPOT ≤ 50ms，</p><p>调度器就把 batch 顶到满足该红线的最大值（约 120–130），25ms 是留了余量的典型值。</p><p>用户体验上：25ms/token ≈ 40 tok/s ≈ 每秒约 60 个汉字，快于人眼阅读。</p><p>batch 越大 step 越慢（字蹦得越慢），所以"聚合吞吐 vs TPOT"是调度器的核心权衡。</p></blockquote>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>step 1:  [A 已到][B 已到][C 已到]            → 算 A B C
 step 2:  [A][B][C][D 刚到]                   → 算 A B C D   ← D 直接插队
 step 3:  [A][C][D]                           → B 完成了，移出
@@ -296,7 +296,7 @@ step 4:  [A][C][D][E][F]                     → E F 补进来</code></pre></fig
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>step: [decode A][decode B][prefill C 的第 1 块 512 token]
 step: [decode A][decode B][prefill C 的第 2 块]
 ...</code></pre></figure>
-<ul><li>decode 请求每 step 都在推进，TPOT 平滑；</li><li>prefill 请求多花几个 step 完成，TTFT 略增——用 TTFT 换 TPOT 稳定；</li><li>这个<strong>配比是调度参数</strong>（如 vLLM 的 <code>--max-num-batched-tokens</code>、SGLang 的 chunk 策略），</li></ul>
+<ul><li>decode 请求每 step 都在推进，TPOT 平滑；</li><li>prefill 请求多花几个 step 完成，TTFT（Time To First Token） 略增——用 TTFT 换 TPOT 稳定；</li><li>这个<strong>配比是调度参数</strong>（如 vLLM 的 <code>--max-num-batched-tokens</code>、SGLang 的 chunk 策略），</li></ul>
 <p>  生产调优的核心旋钮之一。</p>
 <p>PD 分离是另一个极端答案：干脆分池（第 04 章细讲）。Chunked prefill 是"不分离时的最优解"。</p>
 <blockquote><p>如果模型用的是<strong>滑动窗口注意力</strong>（SWA），还有第三种答案：不切 prefill，而是<strong>只重放最后一段</strong>。</p><p>见 §9 的 SWA bounded replay——它能把 prefill 计算量近乎砍半，但前提是注意力窗口有限。</p></blockquote>
@@ -370,7 +370,7 @@ step: [decode A][decode B][prefill C 的第 2 块]
 <blockquote><p>树节点只存 token 索引和引用关系（CPU 内存，几 MB 级），真正的 KV 在 GPU pool。</p><p>所以"多棵树"很便宜，跨机"共享树"很贵——这决定了业界选择"本地树 + 路由亲和 + 显式传输"，</p><p>而不是做一棵全局分布式树。</p></blockquote>
 <h3>6.4 一个实例对应几张卡</h3>
 <p><strong>1 个引擎实例 = 1 个并行组 = TP × PP 张卡</strong>；扩容靠多副本（数据并行），不靠做大单实例。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>权重</th><th>单实例卡数</th><th>约束</th></tr></thead><tbody><tr><td>8B FP16</td><td>16GB</td><td>1 卡（可一卡多实例/MIG）</td><td></td></tr><tr><td>70B FP16</td><td>140GB</td><td>TP=2–4</td><td></td></tr><tr><td><strong>200B MoE FP8（本项目）</strong></td><td>200GB</td><td><strong>TP=8（一台 H800）</strong></td><td>≥3 卡装权重，NVLink 域 8 卡</td></tr><tr><td>DeepSeek 671B FP8</td><td>670GB</td><td><strong>16–32 卡</strong>（TP=8 × EP 跨机 RDMA）</td><td>MoE 专家并行必须跨机</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>权重</th><th>单实例卡数</th><th>约束</th></tr></thead><tbody><tr><td>8B FP16</td><td>16GB</td><td>1 卡（可一卡多实例/MIG）</td><td></td></tr><tr><td>70B FP16</td><td>140GB</td><td>TP=2–4</td><td></td></tr><tr><td><strong>200B MoE FP8（本项目）</strong></td><td>200GB</td><td><strong>TP=8（一台 H800）</strong></td><td>≥3 卡装权重，NVLink 域 8 卡</td></tr><tr><td>DeepSeek 671B FP8</td><td>670GB</td><td><strong>16–32 卡</strong>（TP=8 × EP 跨机 RDMA（Remote Direct Memory Access））</td><td>MoE 专家并行必须跨机</td></tr></tbody></table></div>
 <p><strong>卡数下限 = 权重装得下；上限 = 通信不拖后腿</strong>：H800 NVLink 域只有 8 卡（跨机退到 IB）；GB200 NVL72 才把域扩到 72 卡。</p>
 <p>不做超大实例的三个原因：all-reduce ring 随卡数变长；故障域大（重载权重几分钟）；弹性粒度粗（闲 10% 就是几十张卡白烧）。所以线上是"几十个 8 卡副本 + 前缀亲和路由"，每副本各有自己的基数树——<strong>扩容 = 复制"8 卡 + 一棵树"。</strong></p>
 <div class="orn"></div>
@@ -383,7 +383,7 @@ step: [decode A][decode B][prefill C 的第 2 块]
 ④ 执行 kernel（attention 时按 block table 取 KV）
 ⑤ 回收：完成的请求释放 block，引用计数减一
 ⑥ 统计：waiting/running、KV 使用率、抢占次数（全部暴露成指标）</code></pre></figure>
-<p><strong>你在第 01 章看到的 <code>vllm:num_requests_waiting</code> 和 <code>gpu_cache_usage_perc</code>，就是 ②③ 的输出。</strong>KEDA 按这两个数扩缩容——调度器的内部状态直接决定了基础设施的行为。</p>
+<p><strong>你在第 01 章看到的 <code>vllm:num_requests_waiting</code> 和 <code>gpu_cache_usage_perc</code>，就是 ②③ 的输出。</strong>KEDA（Kubernetes Event-driven Autoscaling） 按这两个数扩缩容——调度器的内部状态直接决定了基础设施的行为。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 三个误区</h2>
@@ -396,7 +396,7 @@ step: [decode A][decode B][prefill C 的第 2 块]
 <blockquote><p><strong>本节是外部事实，全部带出处</strong>，与本书的教学案例（200B MoE / H800 / 32K）不是同一个系统。</p><p>读法：先看它和你已经理解的机制<strong>哪里一样、哪里不一样</strong>，不要直接把它的数字搬进我们的容量模型。</p></blockquote>
 <p>2026 年 10 月 20 日，DeepSeek 把支撑其生产服务的推理框架 <strong>DeepInfer</strong> 开源（Apache-2.0，<a href="https://github.com/deepseek-ai/DeepInfer">GitHub</a>、<a href="https://pypi.org/project/deepinfer/">PyPI</a>）。它只支持一个模型：<strong>DeepSeek-V4.1-Flash</strong>（1M 上下文，MIT 许可，<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017">模型卡</a>）。</p>
 <p>它对本章八个机制的答案，横向对比如下：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>本章机制</th><th>DeepInfer 的实现</th><th>关键差异 / 代价</th></tr></thead><tbody><tr><td>连续批处理</td><td><strong>异步调度</strong>：CPU 组批与 GPU 执行重叠，默认开启</td><td>消除"组批气泡"；代价是调度状态机复杂度上升</td></tr><tr><td>Chunked Prefill</td><td><strong>SWA bounded replay</strong>：prefill 只重放有界后缀，默认保留 140 token</td><td>官方称 prefill 计算量近乎减半；<strong>只在滑动窗口注意力下成立</strong></td></tr><tr><td>前缀缓存</td><td>未开源（KV 管理与内部基础设施耦合）</td><td>说明"缓存"不是引擎单体能做干净的</td></tr><tr><td>投机解码</td><td><strong>DSpark</strong>：草稿模型一次提 5 个 token + 置信度调度验证</td><td>每步验证 token 数 −30%，吞吐 +4%–7%</td></tr><tr><td>专家并行</td><td>MoE EP + <strong>EPLB</strong>（专家负载均衡）</td><td>直接针对 all-to-all 热点</td></tr><tr><td>可复现性</td><td><strong>batch-invariant</strong> + 确定性采样（仅 NVIDIA）</td><td>换 batch 组合结果不变，评测与回放才可比</td></tr><tr><td>结构化输出</td><td>正则 / JSON Schema / EBNF 约束</td><td>把"格式对"从提示词问题变成解码问题</td></tr><tr><td>引擎底座</td><td>最初基于 <strong>vLLM</strong> 构建，后自研 kernel</td><td>连头部团队也是"先站在 vLLM 上，再换心脏"</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>本章机制</th><th>DeepInfer 的实现</th><th>关键差异 / 代价</th></tr></thead><tbody><tr><td>连续批处理</td><td><strong>异步调度</strong>：CPU 组批与 GPU 执行重叠，默认开启</td><td>消除"组批气泡"；代价是调度状态机复杂度上升</td></tr><tr><td>Chunked Prefill</td><td><strong>SWA bounded replay</strong>：prefill 只重放有界后缀，默认保留 140 token</td><td>官方称 prefill 计算量近乎减半；<strong>只在滑动窗口注意力下成立</strong></td></tr><tr><td>前缀缓存</td><td>未开源（KV 管理与内部基础设施耦合）</td><td>说明"缓存"不是引擎单体能做干净的</td></tr><tr><td>投机解码</td><td><strong>DSpark</strong>：草稿模型一次提 5 个 token + 置信度调度验证</td><td>每步验证 token 数 −30%，吞吐 +4%–7%</td></tr><tr><td>专家并行</td><td>MoE EP + <strong>EPLB（Expert Parallel Load Balancer）</strong>（专家负载均衡）</td><td>直接针对 all-to-all 热点</td></tr><tr><td>可复现性</td><td><strong>batch-invariant</strong> + 确定性采样（仅 NVIDIA）</td><td>换 batch 组合结果不变，评测与回放才可比</td></tr><tr><td>结构化输出</td><td>正则 / JSON Schema / EBNF 约束</td><td>把"格式对"从提示词问题变成解码问题</td></tr><tr><td>引擎底座</td><td>最初基于 <strong>vLLM</strong> 构建，后自研 kernel</td><td>连头部团队也是"先站在 vLLM 上，再换心脏"</td></tr></tbody></table></div>
 <h3>9.1 DSpark：把"猜几个"变成"猜几个值得验"</h3>
 <p>第 10 章我们在 §1 就说过 decode 是带宽受限。投机解码用"小模型猜、大模型验"换速度，但朴素做法有个隐形成本：<strong>猜得越多，验证越浪费</strong>——高并发下，验证 token 占的是本该给别人 decode 的 batch 容量。</p>
 <p>DSpark 的两处改动（<a href="https://arxiv.org/abs/2607.05147">论文</a>）：</p>

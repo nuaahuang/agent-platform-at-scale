@@ -226,11 +226,11 @@ blockquote p{margin:.4em 0}
   <main class="content">
     <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">11</div><div class="ch-kicker">推理工程</div><h1>调度与 PD 分离</h1><div class="ch-rule"></div></header>
 <blockquote><p>迁移自 v1 <code>ch04-pd-disaggregation.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../../MIGRATION.md">../../MIGRATION.md</a>。</p></blockquote>
-<blockquote><p><strong>一句话结论</strong>：prefill 和 decode 是两种相反的负载——一个突发吃算力，一个平稳吃带宽。</p><p>规模一大，唯一正确的做法是<strong>拆成两个资源池、两套调度信号、两个 SLO</strong>，</p><p>中间用一次 KV 传输完成交接。</p></blockquote>
+<blockquote><p><strong>一句话结论</strong>：prefill 和 decode 是两种相反的负载——一个突发吃算力，一个平稳吃带宽。</p><p>规模一大，唯一正确的做法是<strong>拆成两个资源池、两套调度信号、两个 SLO（Service Level Objective）</strong>，</p><p>中间用一次 KV 传输完成交接。</p></blockquote>
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题重述：为什么必须谈这件事</h2>
 <p>把前三章的结论并排放：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th></th><th>Prefill</th><th>Decode</th></tr></thead><tbody><tr><td>工作方式</td><td>几千 token 一次并行</td><td>1 token/步，走几百步</td></tr><tr><td>Roofline 位置</td><td>平屋顶，<strong>算力受限</strong></td><td>斜屋顶，<strong>带宽受限</strong></td></tr><tr><td>负载形态</td><td><strong>突发</strong>（7000 QPS 到达）</td><td>平稳（每个会话持续几秒）</td></tr><tr><td>关心的 SLO</td><td><strong>TTFT</strong> &lt; 800ms</td><td><strong>TPOT</strong> p95 ≤ 50ms</td></tr><tr><td>扩容速度</td><td>秒级响应突发</td><td>分钟级，随在飞会话数变</td></tr><tr><td>容量模型里的卡数</td><td>909（含前缀命中折扣）</td><td>700</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>Prefill</th><th>Decode</th></tr></thead><tbody><tr><td>工作方式</td><td>几千 token 一次并行</td><td>1 token/步，走几百步</td></tr><tr><td>Roofline 位置</td><td>平屋顶，<strong>算力受限</strong></td><td>斜屋顶，<strong>带宽受限</strong></td></tr><tr><td>负载形态</td><td><strong>突发</strong>（7000 QPS 到达）</td><td>平稳（每个会话持续几秒）</td></tr><tr><td>关心的 SLO</td><td><strong>TTFT（Time To First Token）</strong> &lt; 800ms</td><td><strong>TPOT（Time Per Output Token）</strong> p95 ≤ 50ms</td></tr><tr><td>扩容速度</td><td>秒级响应突发</td><td>分钟级，随在飞会话数变</td></tr><tr><td>容量模型里的卡数</td><td>909（含前缀命中折扣）</td><td>700</td></tr></tbody></table></div>
 <p>让它们共用一张卡，就像<strong>让急诊和住院部共用同一间手术室</strong>：住院（decode）本来按部就班，一来急诊（5000 token prefill）所有人暂停。</p>
 <p>实验 <a href="../../labs/pd_lab.py"><code>pd_lab.py</code></a> 把这一幕量化了（40 个在跑 decode，7 QPS 到达）：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>模式</th><th>TPOT p50</th><th>TPOT p95</th><th>TPOT max</th><th>超 50ms 占比</th><th>TTFT p95</th></tr></thead><tbody><tr><td>混部（prefill 独占）</td><td>25ms</td><td><strong>75ms</strong></td><td><strong>224ms</strong></td><td><strong>10.8%</strong></td><td>200ms</td></tr><tr><td>Chunked prefill</td><td>36ms</td><td>36ms</td><td>36ms</td><td>0%</td><td><strong>667ms</strong></td></tr><tr><td><strong>PD 分离</strong></td><td><strong>25ms</strong></td><td><strong>25ms</strong></td><td><strong>25ms</strong></td><td><strong>0%</strong></td><td><strong>220ms</strong></td></tr></tbody></table></div>
@@ -251,7 +251,7 @@ blockquote p{margin:.4em 0}
         └──────────┬──────────┘       └──────────▲──────────┘
                    │  算完所有 KV                 │
                    ▼                             │
-        ┌─────────────────────┐    RDMA/RoCE      │
+        ┌─────────────────────┐    RDMA（Remote Direct Memory Access）/RoCE      │
         │  KV 传输层           │ ────────────────▶ │
         │  NIXL / Mooncake /  │  0.96GB ≈ 20ms    │
         │  vLLM KV Connector  │                   │
@@ -292,7 +292,7 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 扩缩容：两套完全不同的信号</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th></th><th>Prefill 池</th><th>Decode 池</th></tr></thead><tbody><tr><td>主信号</td><td>排队请求数、TTFT p95</td><td>TPOT p95、KV 水位、抢占次数</td></tr><tr><td>响应速度</td><td>秒级（突发）</td><td>分钟级（随会话数平滑变）</td></tr><tr><td>冷启动代价</td><td>拉权重 200GB ≈ 数分钟 → <strong>必须有 warm pool</strong></td><td>同左</td></tr><tr><td>缩容方式</td><td>队列空了立刻缩</td><td><strong>drain</strong>：等现有会话跑完再下线，不能杀连接</td></tr><tr><td>K8s 手段</td><td>KEDA + Karpenter + 预热池</td><td>KEDA + PDB + 优雅终止宽限</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>Prefill 池</th><th>Decode 池</th></tr></thead><tbody><tr><td>主信号</td><td>排队请求数、TTFT p95</td><td>TPOT p95、KV 水位、抢占次数</td></tr><tr><td>响应速度</td><td>秒级（突发）</td><td>分钟级（随会话数平滑变）</td></tr><tr><td>冷启动代价</td><td>拉权重 200GB ≈ 数分钟 → <strong>必须有 warm pool</strong></td><td>同左</td></tr><tr><td>缩容方式</td><td>队列空了立刻缩</td><td><strong>drain</strong>：等现有会话跑完再下线，不能杀连接</td></tr><tr><td>K8s 手段</td><td>KEDA（Kubernetes Event-driven Autoscaling） + Karpenter + 预热池</td><td>KEDA + PDB + 优雅终止宽限</td></tr></tbody></table></div>
 <p>我们部署目录里的 <a href="../../deploy/k8s/20-keda-decode.yaml"><code>20-keda-decode.yaml</code></a>已经是这套信号（waiting 数 + cache 水位双触发）；P 池再加一个队列长度触发器即可。</p>
 <p><strong>关键纪律</strong>：<strong>不要按 GPU 利用率扩缩容</strong>。decode 池 GPU 算力利用率常年 &lt;10%（带宽受限！），按 GPU% 扩容会永远不弹。按队列和 SLO 扩。</p>
 <h3>5.1 分离后"闲置的另一半"怎么办</h3>

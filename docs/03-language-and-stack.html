@@ -256,7 +256,7 @@ Go：    7,000 ÷ 60,000 × 2 = 1 台，配 6 台覆盖多 AZ</code></pre></figu
               └────────────┘</code></pre></figure>
 <p>三条纪律：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>纪律</th><th>原因</th></tr></thead><tbody><tr><td>跨语言只走 gRPC/HTTP</td><td>不共享内存，不做 FFI（Foreign Function Interface，进程内跨语言调用）</td></tr><tr><td><strong>proto 是唯一真相</strong></td><td>三语言各自生成代码，不许手写结构体</td></tr><tr><td>跨边界调用要少</td><td>gRPC 一次 0.2–0.5 ms，本地调用 0.1 μs，<strong>差 5,000 倍</strong></td></tr></tbody></table></div>
-<p>第三条最容易违反：如果按 token 逐次跨语言调用，单次 0.3 ms × 300 token = <strong>90 ms</strong>，比整个 TPOT 预算还大。所以流式必须<strong>批量推送</strong>（每 10–20 token 一批）。</p>
+<p>第三条最容易违反：如果按 token 逐次跨语言调用，单次 0.3 ms × 300 token = <strong>90 ms</strong>，比整个 TPOT（Time Per Output Token） 预算还大。所以流式必须<strong>批量推送</strong>（每 10–20 token 一批）。</p>
 <div class="callout callout--warn"><span class="callout-tag">注意</span><div><strong>注意 FFI 的例外</strong>：引擎内部到处都是 FFI——Python 调 C++ 调 CUDA kernel，<br>那是同一进程、同一生命周期、同一发布节奏，代价可接受（第 10A 章）。<br>业务层不用 FFI，是因为两侧要独立扩缩容、独立发布、故障互相隔离。</div></div>
 <div class="orn"></div>
 </section>
