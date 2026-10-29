@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 规则表（17 条）</a><a href="#s2"><span>02</span>. 机器可判的 6 条，判定口径</a><a href="#s3"><span>03</span>. 变更日志</a><a href="#s4"><span>04</span>. 一次完整的写作回合</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 反 AI 味（放最前面，因为它是最高频违反项）</a><a href="#s2"><span>02</span>. 规则表（18 条）</a><a href="#s3"><span>03</span>. 机器可判的 6 条，判定口径</a><a href="#s4"><span>04</span>. 变更日志</a><a href="#s5"><span>05</span>. 一次完整的写作回合</a></nav>
       <div class="rail-foot">book</div>
     </div>
   </aside>
@@ -227,12 +227,18 @@ blockquote p{margin:.4em 0}
     <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">00</div><div class="ch-kicker">book</div><h1>写作契约（WRITING CONTRACT）</h1><div class="ch-rule"></div></header>
 <blockquote><p><strong>版本 v1.0 · 2026-10-29</strong></p><p>本文件是约束，不是建议。每条规则都有编号、来由和一个检查方式。</p><p>注入上下文的是 <a href="../AGENTS.md">AGENTS.md</a>（短版）；这里是完整版与变更记录。</p><p>用法：动笔前读 §1 的规则表；交付前跑 <code>make check</code>；</p><p>用户每提一次意见，按 R16 加一条规则并全库回扫。</p></blockquote>
 <div class="orn"></div>
-<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 规则表（17 条）</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>规则</th><th>检查</th><th>来由（真实反馈）</th></tr></thead><tbody><tr><td><strong>R01</strong></td><td>所有数字能在 <code>labs/calc.py</code> 或账本表复现；改一处必须全库回扫</td><td>人工 + 账本</td><td>把 FP8 权重写成 400 GB（应为 200）</td></tr><tr><td><strong>R02</strong></td><td>公式必须给单位；无量纲量要说明怎么消去</td><td>人工</td><td>"成本 0.05 的单位是什么？"</td></tr><tr><td><strong>R03</strong></td><td>数学必须能代入数字算通</td><td>人工</td><td>"350×50ms≠9s，推导不自洽"</td></tr><tr><td><strong>R04</strong></td><td>外部事实带链接与日期；推断标"推断"</td><td>人工</td><td>DeepInfer 数据需可溯源</td></tr><tr><td><strong>R05</strong></td><td>每章至少一条纵向链路：问题→机制→组件→配置→达标线</td><td>人工</td><td>"不光表格，还要从顶到底的设计思考"</td></tr><tr><td><strong>R06</strong></td><td>写"怎么做"必须给四要素：谁执行 / 什么组件 / 配置或命令 / 达标线</td><td>人工</td><td>"缩容具体怎么缩还是没讲清楚，只讲了为什么"</td></tr><tr><td><strong>R07</strong></td><td>失败模式单列：现象 → 根因 → 怎么发现 → 怎么修</td><td><strong>机器</strong></td><td>全书习惯</td></tr><tr><td><strong>R08</strong></td><td>至少一处"以为…其实…"</td><td>提示</td><td>全书习惯</td></tr><tr><td><strong>R09</strong></td><td>选型必写"否了什么"+"推翻条件"</td><td><strong>机器</strong></td><td>只讲选中的等于没决策</td></tr><tr><td><strong>R10</strong></td><td>禁止连续两张表之间无说明文字</td><td><strong>机器</strong></td><td>表格占比 45%，论述被表替代</td></tr><tr><td><strong>R11</strong></td><td>每万字 ≥2 处承认不确定/试错/被推翻</td><td><strong>机器</strong></td><td>全库 13 章该作者位置 = 0</td></tr><tr><td><strong>R12</strong></td><td>表占比 ≤45%；收口句 ≤6/万字</td><td><strong>机器</strong></td><td>AI 味反馈</td></tr><tr><td><strong>R13</strong></td><td>假对比 ≤1.5/万字；"必须" ≤18/万字</td><td><strong>机器</strong></td><td>AI 味反馈</td></tr><tr><td><strong>R14</strong></td><td>缩写首次出现给英文全称 + 一句定义</td><td><strong>提示</strong></td><td>CTA/SLO/KEDA/FFI 都被问过</td></tr><tr><td><strong>R15</strong></td><td>不许每节都写"一句话/这就是"式收口</td><td><strong>机器</strong>（同 R12）</td><td>AI 味反馈</td></tr><tr><td><strong>R16</strong></td><td>用户每条反馈 → 新增编号规则 + 检查 + 全库回扫；本文件留变更日志</td><td>流程</td><td>本次</td></tr><tr><td><strong>R17</strong></td><td>交付前 <code>make check</code> 全绿；❌ 或人工未核 &gt;3 条不提交</td><td>流程</td><td>本次</td></tr></tbody></table></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>0. 反 AI 味（放最前面，因为它是最高频违反项）</h2>
+<p>初版把这条埋在"五条最常犯"的第 4 条，用户扫了一遍没看见——<strong>约束写了但不在显眼位置，等于没写</strong>。所以单独立节，六个数全部可机器判。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>阈值</th><th>检查</th><th>违反了的样子</th></tr></thead><tbody><tr><td>留白</td><td>≥2 处/万字</td><td>R11</td><td>通篇断言，无一处"我没测过"</td></tr><tr><td>表占比</td><td>≤45%</td><td>R12</td><td>两表之间无正文</td></tr><tr><td>收口</td><td>≤6 处/万字</td><td>R15</td><td>每节都"一句话：…"</td></tr><tr><td>假对比</td><td>≤1.5 处/万字</td><td>R13</td><td>"不是 X，而是 Y" 抬语气</td></tr><tr><td>命令式</td><td>≤18 处/万字</td><td>R13</td><td>满篇"必须"</td></tr><tr><td>段落 CV</td><td>≥0.35</td><td><code>check_voice.py</code></td><td>每段三行，无长短错落</td></tr></tbody></table></div>
+<p>三条写作操作：<strong>先写两段再上表</strong>；<strong>结论说完就停</strong>；<strong>每章至少两处说不知道</strong>。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>1. 规则表（18 条）</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>规则</th><th>检查</th><th>来由（真实反馈）</th></tr></thead><tbody><tr><td><strong>R01</strong></td><td>所有数字能在 <code>labs/calc.py</code> 或账本表复现；改一处必须全库回扫</td><td>人工 + 账本</td><td>把 FP8 权重写成 400 GB（应为 200）</td></tr><tr><td><strong>R02</strong></td><td>公式必须给单位；无量纲量要说明怎么消去</td><td>人工</td><td>"成本 0.05 的单位是什么？"</td></tr><tr><td><strong>R03</strong></td><td>数学必须能代入数字算通</td><td>人工</td><td>"350×50ms≠9s，推导不自洽"</td></tr><tr><td><strong>R04</strong></td><td>外部事实带链接与日期；推断标"推断"</td><td>人工</td><td>DeepInfer 数据需可溯源</td></tr><tr><td><strong>R05</strong></td><td>每章至少一条纵向链路：问题→机制→组件→配置→达标线</td><td>人工</td><td>"不光表格，还要从顶到底的设计思考"</td></tr><tr><td><strong>R06</strong></td><td>写"怎么做"必须给四要素：谁执行 / 什么组件 / 配置或命令 / 达标线</td><td>人工</td><td>"缩容具体怎么缩还是没讲清楚，只讲了为什么"</td></tr><tr><td><strong>R07</strong></td><td>失败模式单列：现象 → 根因 → 怎么发现 → 怎么修</td><td><strong>机器</strong></td><td>全书习惯</td></tr><tr><td><strong>R08</strong></td><td>至少一处"以为…其实…"</td><td>提示</td><td>全书习惯</td></tr><tr><td><strong>R09</strong></td><td>选型必写"否了什么"+"推翻条件"</td><td><strong>机器</strong></td><td>只讲选中的等于没决策</td></tr><tr><td><strong>R10</strong></td><td>禁止连续两张表之间无说明文字</td><td><strong>机器</strong></td><td>表格占比 45%，论述被表替代</td></tr><tr><td><strong>R11</strong></td><td>每万字 ≥2 处承认不确定/试错/被推翻</td><td><strong>机器</strong></td><td>全库 13 章该作者位置 = 0</td></tr><tr><td><strong>R12</strong></td><td>表占比 ≤45%；收口句 ≤6/万字</td><td><strong>机器</strong></td><td>AI 味反馈</td></tr><tr><td><strong>R13</strong></td><td>假对比 ≤1.5/万字；"必须" ≤18/万字</td><td><strong>机器</strong></td><td>AI 味反馈</td></tr><tr><td><strong>R14</strong></td><td>缩写首次出现给英文全称 + 一句定义</td><td><strong>提示</strong></td><td>CTA/SLO/KEDA/FFI 都被问过</td></tr><tr><td><strong>R15</strong></td><td>不许每节都写"一句话/这就是"式收口</td><td><strong>机器</strong>（同 R12）</td><td>AI 味反馈</td></tr><tr><td><strong>R16</strong></td><td>用户每条反馈 → 新增编号规则 + 检查 + 全库回扫；本文件留变更日志</td><td>流程</td><td>本次</td></tr><tr><td><strong>R17</strong></td><td>交付前 <code>make check</code> 全绿；❌ 或人工未核 &gt;3 条不提交</td><td>流程</td><td>本次</td></tr><tr><td><strong>R18</strong></td><td>注入层（AGENTS.md）只放 ≤20 条、每条一行；最高频违反项必须放 §0 独立成节</td><td>人工</td><td>"在 agent 里没看到去 AI 味的约束"</td></tr></tbody></table></div>
 <p><strong>冲突时的优先级</strong>：R01（事实） &gt; R03（自洽） &gt; R06（实操） &gt; 其余。任何"为了好读"而牺牲事实的改法，一律拒绝。</p>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 机器可判的 6 条，判定口径</h2>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>2. 机器可判的 6 条，判定口径</h2>
 <h3>R07 失败模式单列</h3>
 <ul><li>通过：章内存在 <code>失败模式</code> / <code>失败</code> / <code>会坏</code> 小节，且至少 1 张表含"现象/根因"两列。</li><li>不通过：只在正文里零散提到"可能出问题"。</li></ul>
 <h3>R09 选型写否决</h3>
@@ -247,12 +253,12 @@ blockquote p{margin:.4em 0}
 <ul><li>假对比：<code>不是……而是……</code>；阈值 <strong>≤1.5/万字</strong>（纠正真实误解时允许，需人工确认）。</li><li>命令式 <code>必须</code>：<strong>≤18/万字</strong>；超出说明语气没有梯度，改成"建议/我们选了/通常"。</li></ul>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 变更日志</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>版本</th><th>变更</th><th>触发</th></tr></thead><tbody><tr><td>2026-10-29</td><td>v1.0</td><td>建立 R01–R17；机器检查 6 条；AGENTS.md 短版注入</td><td>"AI 味太重，应该用约束文档的方式"</td></tr><tr><td>2026-10-29</td><td>v1.0</td><td>从 STYLE.md §7 的"六条减法"升级为编号契约</td><td>事后润色不如前置约束</td></tr></tbody></table></div>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>3. 变更日志</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>版本</th><th>变更</th><th>触发</th></tr></thead><tbody><tr><td>2026-10-29</td><td>v1.0</td><td>建立 R01–R17；机器检查 6 条；AGENTS.md 短版注入</td><td>"AI 味太重，应该用约束文档的方式"</td></tr><tr><td>2026-10-29</td><td>v1.0</td><td>从 STYLE.md §7 的"六条减法"升级为编号契约</td><td>事后润色不如前置约束</td></tr><tr><td>2026-10-29</td><td>v1.1</td><td>新增 R18；AGENTS.md 重排，反 AI 味提到 §0 独立成节</td><td>"在 agent 里没看到去 AI 味的约束"</td></tr></tbody></table></div>
 <blockquote><p>后续每次用户反馈追加一行：<strong>日期 / 版本 / 加了哪条规则 / 谁提的</strong>。</p><p>规则只增不删；被推翻的规则标 <code>废止</code> 并写明原因，不直接删除。</p></blockquote>
 <div class="orn"></div>
 </section>
-<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一次完整的写作回合</h2>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>4. 一次完整的写作回合</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>① 读 AGENTS.md（已在上下文）+ 本章 OUTLINE 条目
 ② 按 R05 先画纵向链路：问题 → 机制 → 组件 → 配置 → 达标线
 ③ 正文按 R06 展开，每处&quot;怎么做&quot;补齐四要素
