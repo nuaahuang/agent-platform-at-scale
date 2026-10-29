@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSI：数据飞轮与自我改进 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">数据与存储 · 第 31A 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 先把 RSI 说具体</a><a href="#s2"><span>02</span>. 三条闭环，周期差一个数量级</a><a href="#s3"><span>03</span>. 数据闭环：badcase 怎么变成资产</a><a href="#s4"><span>04</span>. 评测闭环：为什么会自己把自己刷上去</a><a href="#s5"><span>05</span>. 合成数据：从哪一步开始退化</a><a href="#s6"><span>06</span>. 能自动改什么，不能自动改什么</a><a href="#s7"><span>07</span>. 转错的时候长什么样</a><a href="#s8"><span>08</span>. 一个月的闭环怎么跑</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <div class="rail-foot">数据与存储</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">31A</div><div class="ch-kicker">数据与存储</div><h1>RSI：数据飞轮与自我改进</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>RSI 在 Agent 平台里具体指什么，不是"AI 自己进化"那句空话？</li><li>三条闭环各自的周期、负责方和自动化边界在哪？</li><li>为什么自动评测会被模型自己"刷上去"，用什么指标能发现？</li><li>合成数据训自己的退化从哪一步开始，防法是什么？</li><li>哪些东西可以交给闭环自动改，哪些一旦自动改就会出事？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 先把 RSI 说具体</h2>
+<p>RSI（Recursive Self-Improvement，递归自我改进）常被讲成"模型自己变聪明"。在工程上它不是这个东西。</p>
+<p>一个售后 Agent 平台里的 RSI，具体是三件事在转：</p>
+<ul><li>线上出现 badcase，它被采集、归因、标注，进了评测集</li><li>新版本在评测集上跑不过，就改 Prompt、改检索、改微调数据</li><li>改完灰度验证，通过后放量，再产生新的 badcase</li></ul>
+<p>这三步连起来是闭环，转一圈大约一个月。RSI 指的就是这个环能不能自己转、转多快、转错的时候能不能发现。</p>
+<p>它不是"模型改自己的权重"。你的平台没有预训练能力，模型权重是厂商的。你能自我改进的是 Prompt、检索、路由、工具描述、微调数据——都是系统层的东西。</p>
+<p>这一章讲的就是这个环怎么搭，以及它在哪几个地方会转成自我强化错误。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三条闭环，周期差一个数量级</h2>
+<p>不同环节的反馈周期完全不同，混在一起谈就会设计错。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>闭环</th><th>输入</th><th>改什么</th><th>周期</th><th>自动化程度</th></tr></thead><tbody><tr><td>快速闭环</td><td>单条 badcase</td><td>Prompt、工具描述、路由规则</td><td>小时到天</td><td>高，可自动生成候选</td></tr><tr><td>中期闭环</td><td>一周的 badcase 聚类</td><td>检索配置、few-shot、知识库</td><td>周到两周</td><td>中，人定方案机器执行</td></tr><tr><td>慢速闭环</td><td>一个月的标注数据</td><td>微调数据、蒸馏数据、评测集</td><td>月到季度</td><td>低，人主导</td></tr></tbody></table></div>
+<p>快速闭环能自动化的部分最多，也最容易出错——因为它改的是线上行为，一次改坏影响所有用户。慢速闭环最慢，但改的是权重和数据，影响面更大、回滚更贵。</p>
+<p>三条闭环必须是同一个环的三个速度，不是三套独立系统。共享同一份 badcase 库、同一个评测集、同一套门禁。分开建的结果是：快速闭环把 Prompt 调到能过 50 题，慢速闭环训出来的模型却在另一套标准上评测。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 数据闭环：badcase 怎么变成资产</h2>
+<p>一条 badcase 要变成能用的东西，中间有四步，每一步都可能断。</p>
+<p>第一步是采集。线上不能全量存请求（成本和合规都不允许），只能采样加规则命中。采什么：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>触发条件</th><th>采集什么</th><th>占比</th></tr></thead><tbody><tr><td>用户点了"没解决"</td><td>完整会话 + 工具调用链</td><td>100%</td></tr><tr><td>转人工</td><td>转人工前的最后三轮</td><td>100%</td></tr><tr><td>用户重问同一问题</td><td>两次请求 + 中间隔了多久</td><td>100%</td></tr><tr><td>随机采样</td><td>完整会话</td><td>1%</td></tr><tr><td>申诉与投诉</td><td>全链路 + 工单结论</td><td>100%</td></tr></tbody></table></div>
+<p>前三个是"用户已经告诉你出问题了"，信号最强。随机采样是为了抓"用户没抱怨但答得不好"的情况，1% 就够。</p>
+<p>第二步是归因。一条 badcase 要归到四类之一，归错类后面全错：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>归因</th><th>判断依据</th><th>进哪个池</th></tr></thead><tbody><tr><td>知识缺失</td><td>检索结果里没有正确条款</td><td>知识库待补</td></tr><tr><td>检索失败</td><td>条款在库里但没被召回</td><td>检索配置</td></tr><tr><td>行为不符</td><td>知道答案但格式/语气/流程不对</td><td>Prompt 或微调</td></tr><tr><td>能力不足</td><td>多步推理走错</td><td>换模型或拆步骤</td></tr></tbody></table></div>
+<p>归因是人的活，不能交给模型。模型归因会倾向于归到"Prompt 能解决"那一类，因为它自己就是这么被训练的。</p>
+<p>第三步是标注。一条 badcase 标注完要同时进两个地方：评测集（防回归）和训练集（如果要微调）。只进训练集不进评测集，改完没法验证；只进评测集不进训练集，同类问题会反复出现。</p>
+<p>第四步是淘汰。评测集不能只增不减。每月新增 20 题，同时淘汰 20 题——淘汰规则是"连续三个月所有候选模型都通过"的题，它已经失去区分度。</p>
+<p>这个 20/20 的节奏很关键。只增不减，评测集会从 50 题涨到 300 题，跑一次要一小时，然后没人跑了。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 评测闭环：为什么会自己把自己刷上去</h2>
+<p>这是 RSI 最危险的地方，也是最容易被忽略的。</p>
+<p>用 LLM-as-judge 做自动评测，判分的是模型。如果候选模型和 judge 是同一家族、同一次迭代，它们会共享同一种偏好。结果是：新模型在 judge 眼里越来越好，在人工眼里没变。</p>
+<p>具体的失效路径是这样的：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>模型 A → judge 打分 0.82 → 微调出模型 B
+模型 B → judge 打分 0.88 → 但人工抽检是 0.80（和 A 持平）
+模型 C → judge 打分 0.93 → 人工抽检 0.76</code></pre></figure>
+<p>分数一路涨，人工评估一路跌。原因是 B 和 C 都在向 judge 的偏好靠，而不是向真实质量靠。</p>
+<p>三个信号能提前发现：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>信号</th><th>怎么测</th><th>阈值</th></tr></thead><tbody><tr><td>judge 与人工的 Kappa 漂移</td><td>每月重标 100 条比对</td><td>从 0.82 掉到 0.65 就要停</td></tr><tr><td>人工抽检分与 judge 分的差</td><td>每周抽 10%</td><td>差值连续两周扩大</td></tr><tr><td>通过率分布收窄</td><td>看各题得分的方差</td><td>方差掉一半以上</td></tr></tbody></table></div>
+<p>第三个最隐蔽：所有题都变成 0.85 分，看起来整齐，其实是模型学会了"哪种回答 judge 喜欢"，而不是"哪种回答对"。</p>
+<p>防法不是不用 judge，是三条一起上：</p>
+<ol><li>judge 与被测模型不同源（至少不同厂商）</li><li>每月人工重标 100 条，重算 Kappa，掉了就换 judge</li><li>保留一个 20 题的人工盲测集，从不用于任何训练和调参，只用于验证</li></ol>
+<p>第三条是底线。没有 held-out 的人工集，整个闭环就是自己证明自己。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 合成数据：从哪一步开始退化</h2>
+<p>模型生成数据训模型，这件事在小规模上有效，规模一大就退化。这条路叫 model collapse。</p>
+<p>退化不是突然发生的，是分阶段的：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>现象</th><th>数据特征</th></tr></thead><tbody><tr><td>第一代</td><td>效果提升</td><td>30% 合成 + 70% 真实</td></tr><tr><td>第三代</td><td>提升变缓</td><td>50% 合成，长尾开始消失</td></tr><tr><td>第五代</td><td>分布收窄</td><td>70% 合成，罕见表达消失</td></tr><tr><td>第 N 代</td><td>只会说套话</td><td>90% 合成，多样性崩溃</td></tr></tbody></table></div>
+<p>根源是采样偏差的累积：模型生成时倾向于高概率表达，低概率但真实的表达（方言、错别字、罕见句式）在每一代都被过滤掉一部分，几代之后彻底消失。</p>
+<p>工程上的防法是三条硬约束：</p>
+<ul><li>合成数据占比不超过 30%</li><li>每一代必须混入新采集的真实数据，不能只用历史数据生成</li><li>保留一个真实数据构成的验证集，每一代都测它的分布距离</li></ul>
+<p>第三条可以量化：算验证集和训练集的 token 分布 KL 散度，超过 0.3 就说明训练数据已经偏离真实分布。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 能自动改什么，不能自动改什么</h2>
+<p>这是设计 RSI 时最重要的一个决定。分错一次，可能造成安全事故。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>对象</th><th>能否自动改</th><th>为什么</th></tr></thead><tbody><tr><td>Prompt 的措辞与示例</td><td>可以，但要过评测和灰度</td><td>影响面可控，能回滚</td></tr><tr><td>工具描述与参数说明</td><td>可以</td><td>同上</td></tr><tr><td>路由规则（简单/复杂分流）</td><td>可以</td><td>影响成本，不影响正确性</td></tr><tr><td>few-shot 示例选择</td><td>可以</td><td>同上</td></tr><tr><td>检索的分块与 top-k</td><td>半自动，人确认</td><td>影响召回，错了很难发现</td></tr><tr><td>微调数据配比</td><td>不能</td><td>训一次两小时，错了要重来</td></tr><tr><td>评测集内容</td><td>绝对不能</td><td>自己改考卷等于作弊</td></tr><tr><td>安全策略与拒绝规则</td><td>绝对不能</td><td>自动化会让它越走越松</td></tr><tr><td>权限与工具白名单</td><td>绝对不能</td><td>一次错就是越权</td></tr><tr><td>模型版本选择</td><td>不能</td><td>涉及成本和容量的全局决策</td></tr></tbody></table></div>
+<p>中间有一条清晰的线：影响"答得好不好"的可以自动，影响"能不能做"的不能自动。</p>
+<p>这条线画错的代价不对称。自动改 Prompt 改坏了，回滚一分钟；自动改安全规则改坏了，可能已经放出去一批越权操作，回滚也追不回来。所以判断标准不是"改这个会不会出错"，而是"出错了能不能收得回来"。</p>
+<p>下面三件事看着像同类，其实分属两边。</p>
+<p>安全规则尤其危险。如果让闭环去优化"拒绝率"，它会找到那条最省事的路径：全部放行，拒绝率归零，指标完美。所以安全相关的指标只能人定阈值，且只许收紧不许放松。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 转错的时候长什么样</h2>
+<p>一个自我强化的错误闭环，有三个典型形态。</p>
+<p>第一种是目标被替换。指标从"用户问题解决率"变成"模型通过率"，因为后者好测。半年后通过率 96%，客诉率翻倍。</p>
+<p>第二种是长尾被牺牲。闭环优化的永远是高频场景，因为样本多、收益大。低频场景没人管，慢慢全坏。售后里 5% 的疑难单，在闭环里永远排不上优先级。</p>
+<p>第三种是评审疲劳。每周 200 条 badcase 要归因，前两个月认真，第三个月开始按模板填，第六个月归因准确率掉到 50% 以下。归因一错，后面全错。</p>
+<p>三个形态的共同点是：指标都在变好，系统在变差。</p>
+<p>防法只有一个——保留一个不参与优化的观察集，且由不看指标的人来评。</p>
+<p>闭环本身有成本，不算清楚就撑不住长期跑。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>单条成本</th><th>每月 800 条的量</th></tr></thead><tbody><tr><td>归因</td><td>5 分钟人工</td><td>67 小时 ≈ 0.4 人</td></tr><tr><td>标注（写期望 + 判定）</td><td>12 分钟，¥15 外采</td><td>160 小时 + ¥12,000</td></tr><tr><td>评测集维护</td><td>20 进 20 出，2 小时</td><td>2 小时</td></tr><tr><td>灰度观察</td><td>每天 30 分钟</td><td>15 小时</td></tr></tbody></table></div>
+<p>一个月约 1.2 人力和 ¥1 万出头。看起来不多，但它要长期养——三年就是 43 人月。所以闭环的产出必须能算成钱：修复一条高频问题，如果它影响 0.3% 的会话，按 1.5 亿轮/日算就是 45 万轮/日，值得修；影响 0.001% 的长尾，一个月只出现 15 次，就不该进本月的队列。</p>
+<p>优先级按"影响面 × 修复成本"排，不按"谁先提的"排。这一点听着显然，但实际跑起来，喊得响的人永远排在前面——上线三个月回头看，队列里 60% 是影响面小于 0.01% 的个案。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 一个月的闭环怎么跑</h2>
+<p>把上面拼成排期：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>动作</th><th>谁做</th><th>产出</th></tr></thead><tbody><tr><td>每日</td><td>采集 badcase，自动去重聚类</td><td>系统</td><td>待归因队列</td></tr><tr><td>每周一</td><td>归因 + 排优先级</td><td>值班 + 产品</td><td>本周修复清单</td></tr><tr><td>每周三</td><td>快速闭环：改 Prompt/检索，跑评测</td><td>算法</td><td>候选版本</td></tr><tr><td>每周五</td><td>灰度 10%，看 goodput 与客诉</td><td>SRE</td><td>放量决议</td></tr><tr><td>每月 1 日</td><td>评测集换题 20 进 20 出</td><td>QA</td><td>新评测集</td></tr><tr><td>每月 5 日</td><td>人工重标 100 条，重算 Kappa</td><td>QA</td><td>judge 健康度</td></tr><tr><td>每季度</td><td>判定是否微调/蒸馏</td><td>算法 + 架构</td><td>数据需求单</td></tr></tbody></table></div>
+<p>跑顺之后的关键指标是三个：</p>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>定义</th><th>目标</th></tr></thead><tbody><tr><td>badcase 转化率</td><td>进入评测集或训练集的比例</td><td>≥30%</td></tr><tr><td>修复周期</td><td>从采集到灰度通过的中位天数</td><td>≤7 天</td></tr><tr><td>回归率</td><td>修好的问题三个月内再次出现</td><td>≤5%</td></tr></tbody></table></div>
+<p>回归率最容易被忽略。修一个问题引入另一个问题，是闭环跑快之后最常见的副作用。它的根因通常是只跑任务集不跑全量。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>评测分涨，客诉不降</td><td>judge 与被测模型同源，一起漂</td><td>人工抽检分与 judge 分背离</td><td>换 judge，恢复人工盲测集</td></tr><tr><td>模型只会说套话</td><td>合成数据占比过高</td><td>验证集 KL 散度 &gt;0.3</td><td>降到 30%，混入新真实数据</td></tr><tr><td>修一个坏两个</td><td>只跑任务集没跑全量</td><td>回归率上升</td><td>全量评测 + 变更影响面分析</td></tr><tr><td>归因准确率下降</td><td>评审疲劳，模板化填表</td><td>随机抽 20 条复核</td><td>轮岗、缩短单次时长</td></tr><tr><td>低频场景全坏</td><td>闭环只优化高频</td><td>分场景统计通过率</td><td>给小类设独立配额</td></tr><tr><td>拒绝率异常低</td><td>把安全指标交给自动优化</td><td>拒绝率曲线单调下降</td><td>安全阈值只许人改，且单向收紧</td></tr></tbody></table></div>
+<p>最后一条值得单独说。任何"越低越好"或"越高越好"的单一指标，一旦交给优化器，它一定会走到极端。安全指标必须是双向约束（既不能太低也不能太高），且由人持有。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>合成数据不超过 30%</td><td>有独立的高质量真实数据源持续供给时，比例可以放宽</td></tr><tr><td>三条闭环共享同一评测集</td><td>业务线差异极大、评测标准互斥时，要拆成多套</td></tr><tr><td>快速闭环周期以天计</td><td>强监管场景下，任何变更都要人工复核，周期必然拉长到周</td></tr><tr><td>归因必须人做</td><td>归因分类极稳定（如只有两类）且有大量标注时，可先机器预分再人确认</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 验收</h2>
+<ol><li>能画出你所在系统的三条闭环，说出各自的周期和责任人。</li><li>能说出 judge 漂移的三个信号，并指出你的系统里哪个指标能测到。</li><li>能判断一个优化动作属于"答得好不好"还是"能不能做"。</li><li>能解释为什么安全指标不能交给自动优化，并举一个反向例子。</li></ol>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为闭环越快越好，实际差在越快越需要观察集——没有不参与优化的那 20 题，跑得越快，偏离得越远。</p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 延伸</h2>
+<ul><li>第 4 章：评测集怎么出题、怎么判、怎么防过拟合</li><li>第 5 章：微调与蒸馏的适用条件，闭环什么时候该走到这一步</li><li>第 31 章：离线数据回流与合规</li><li>第 36 章：灰度与版本协同，闭环的最后一公里</li></ul>
+<p>结论是：RSI 的价值不在"转得快"，在于转得快的同一条链路上还留着一个不参与优化的观察点。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="12-advanced-and-benchmarking.html"><span>上一章</span><b>12 · 高级特性与压测方法论</b></a><a class="nav-next" href="33-autoscaling.html"><span>下一章</span><b>33 · 扩缩容与弹性</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
