@@ -288,7 +288,7 @@ Go：    7,000 ÷ 60,000 × 2 = 1 台，配 6 台覆盖多 AZ</code></pre></figu
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 团队规模：AI 之后要重算</h2>
 <h3>7.1 旧模型错在哪</h3>
-<p>上一版这张表是按"每个中间件一个 owner、每种语言一个专家"算的：</p>
+<p>按"每个中间件一个 owner、每种语言一个专家"来算，人数会被抬到 20 以上：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>旧假设</th><th>后果</th></tr></thead><tbody><tr><td>8 个中间件 → 8 个 owner</td><td>直接把人数抬到 20+</td></tr><tr><td>3 种语言 → 3 组专家</td><td>再翻一倍</td></tr><tr><td>7×24 值班 → 每班 2 人</td><td>至少 10 人</td></tr></tbody></table></div>
 <p>这套算法在 AI 辅助编程之前是对的，现在<strong>前两条已经不成立</strong>：中间件的部署、升级、排障样板代码，AI 几分钟就能生成；跨语言也不再需要"专家"，需要的是"能 review 的人"。</p>
 <h3>7.2 什么被压缩了，什么没有</h3>
@@ -296,7 +296,7 @@ Go：    7,000 ÷ 60,000 × 2 = 1 台，配 6 台覆盖多 AZ</code></pre></figu
 <p>结论：建设期人力断崖式下降，运行期几乎不变。</p>
 <h3>7.3 修正后的人数</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>规模</th><th>建设（AI 辅助）</th><th>运行（值班 + 变更）</th><th>合计</th></tr></thead><tbody><tr><td>0→1 原型</td><td>1 万 DAU / 16 卡</td><td>2</td><td>0（自己兼）</td><td>2</td></tr><tr><td>1→10 产品化</td><td>100 万 DAU / 128 卡</td><td>3</td><td>1</td><td>4</td></tr><tr><td>10→100 规模化</td><td>1,000 万 DAU / 1,024 卡</td><td>5</td><td>3</td><td>8</td></tr><tr><td>亿级</td><td>2,000 万 DAU / 2,512 卡</td><td>7</td><td>4</td><td>11</td></tr></tbody></table></div>
-<p>对照上一版：亿级平台<strong>从 100 人降到 11 人</strong>，差 9 倍。</p>
+<p>同一件事，按旧算法要 100 人，按这一套 11 人，差 9 倍。</p>
 <p>但 11 人里 <strong>4 个是值班</strong>，不是写代码——这个比例很说明问题。</p>
 <h3>7.4 真正的瓶颈：两端没动，中间塌了</h3>
 <p>把交付拆成五段，AI 只压缩了中间：</p>
