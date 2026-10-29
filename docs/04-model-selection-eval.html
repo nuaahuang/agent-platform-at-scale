@@ -482,7 +482,7 @@ API  → 兜底与疑难（占流量 5%）</code></pre></figure>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
-<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>评测 93%，上线 79%</td><td>刷题过拟合</td><td>盲测集分数低</td><td>换题 + 盲测</td></tr><tr><td>总分 89% 但工具调用 0 分</td><td>平均掩盖单类</td><td>分组报告</td><td>一票否决</td></tr><tr><td>上线后"感觉变笨"</td><td>分布漂移</td><td>生产抽样通过率</td><td>每月重采样</td></tr><tr><td>Judge 分数虚高</td><td>长度偏好</td><td>A/B 交换后不一致</td><td>双 judge</td></tr><tr><td>换模型后成本翻倍</td><td>只看通过率不看 token</td><td>统计 output_tokens</td><td>加成本维度</td></tr><tr><td>安全测试全过但线上被绕过</td><td>缺对抗样本</td><td>—</td><td>补注入类用例</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>评测 93%，上线 79%</td><td>刷题过拟合</td><td>盲测集分数低</td><td>换题 + 盲测</td></tr><tr><td>总分 89% 但工具调用 0 分</td><td>平均掩盖单类</td><td>分组报告</td><td>一票否决</td></tr><tr><td>上线后"感觉变笨"</td><td>分布漂移</td><td>生产抽样通过率</td><td>每月重采样</td></tr><tr><td>Judge 分数虚高</td><td>长度偏好</td><td>A/B 交换后不一致</td><td>双 judge</td></tr><tr><td>换模型后成本翻倍</td><td>只看通过率不看 token</td><td>统计 output_tokens</td><td>加成本维度</td></tr><tr><td>安全测试全过但线上被绕过</td><td>缺对抗样本</td><td>—</td><td>补注入类用例</td></tr><tr><td>反馈"不懂我们业务"，团队想换模型</td><td>知识在预训练就定了，换一个模型同样不知道</td><td>拿 20 条 badcase 看是缺信息还是用错信息</td><td>缺信息走 RAG；换模型解决不了（第 5 章 §2.6）</td></tr></tbody></table></div>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
