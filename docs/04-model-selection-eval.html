@@ -326,7 +326,7 @@ E = 专家总数，k = 每 token 激活数</code></pre></figure>
 <p>50 道题全部通过，上线仍然可能不可用，因为题目只测了模型，没测模型外面那一圈。真实链路是：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>客户端 → 网关 → Harness（编排 / 工具 / RAG）→ 模型 → 后处理 → 渲染</code></pre></figure>
 <p>每一段都可能改变结果，所以评测要分五层：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>测什么</th><th>手段</th><th>通过线</th></tr></thead><tbody><tr><td><strong>L0 模型</strong></td><td>单次调用输出质量</td><td>50 题离线</td><td>见 §5</td></tr><tr><td><strong>L1 契约</strong></td><td>请求/响应字段、错误码、流式分片</td><td>schema 校验 + 契约测试</td><td>0 字段丢失</td></tr><tr><td><strong>L2 编排</strong></td><td>多轮状态、工具调用、RAG 命中</td><td>录制回放（replay）</td><td>工具序列一致率 ≥98%</td></tr><tr><td><strong>L3 端到端</strong></td><td>用户最终看到的内容</td><td>真实请求回放 + 结果比对</td><td>与基线差异可解释</td></tr><tr><td><strong>L4 线上</strong></td><td>goodput、SLO 达成、人工抽检</td><td>灰度 + 影子流量</td><td>SLO ≥99.9%</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>测什么</th><th>手段</th><th>通过线</th></tr></thead><tbody><tr><td><strong>L0 模型</strong></td><td>单次调用输出质量</td><td>50 题离线</td><td>见 §5</td></tr><tr><td><strong>L1 契约</strong></td><td>请求/响应字段、错误码、流式分片</td><td>schema 校验 + 契约测试</td><td>0 字段丢失</td></tr><tr><td><strong>L2 编排</strong></td><td>多轮状态、工具调用、RAG 命中</td><td>录制回放（replay）</td><td>工具序列一致率 ≥98%</td></tr><tr><td><strong>L3 端到端</strong></td><td>用户最终看到的内容</td><td>真实请求回放 + 结果比对</td><td>与基线差异可解释</td></tr><tr><td><strong>L4 线上</strong></td><td>goodput、SLO（Service Level Objective）达成、人工抽检</td><td>灰度 + 影子流量</td><td>SLO ≥99.9%</td></tr></tbody></table></div>
 <p>L0 通过只是入场券。三个最常见的断裂点都在 L1–L3：</p>
 <ul><li><strong>工具 schema 变了</strong>：模型按旧参数调，工具返回 400，Harness 重试三次后降级成兜底话术。L0 看不出来，用户看到的是"抱歉我暂时无法处理"。</li><li><strong>RAG 检索不到</strong>：模型本身答得对，但 Harness 塞给它的上下文是空的。L0 用的是自己准备的标准上下文，永远命中。</li><li><strong>流式被截断</strong>：网关 buffer 或超时把最后几个分片丢了，JSON 少了收尾括号。L0 拿的是完整响应。</li></ul>
 <p>所以 L2 和 L3 要用录制回放：把线上真实请求（含工具返回值、检索结果）存下来，重放时逐段比对。录制文件要带版本号，和模型版本、Prompt 版本一起绑定。</p>
@@ -361,6 +361,36 @@ histogram_quantile(0.5, sum by (le) (rate(llm_request_temperature_bucket{env=&qu
 <h3>4.6 判分：三种手段，按可靠性排序</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>适用</th><th>可靠性</th></tr></thead><tbody><tr><td>规则/精确匹配</td><td>分类、JSON、字段</td><td>最高（无歧义）</td></tr><tr><td>调用序列比对</td><td>工具调用</td><td>高（可精确到参数）</td></tr><tr><td>LLM-as-judge</td><td>开放式回答</td><td>中（需校准）</td></tr></tbody></table></div>
 <p>judge 能用有前提：与人工标注的一致率 Kappa ≥0.8。达不到就说明判定标准没写清楚，先改标准，别调 judge 的 prompt。</p>
+<div class="orn"></div>
+<h3>4.7 选型流程：从"想换模型"到"全量上线"</h3>
+<p>七步，每步写清输入、执行人、产出和门禁。门禁不过就停在这一步，不许带着问题上台阶。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>做什么</th><th>谁做</th><th>产出</th><th>耗时</th><th>门禁</th></tr></thead><tbody><tr><td>1</td><td>定能力清单与硬约束</td><td>PM + 算法</td><td>能力项、延迟/成本/合规红线</td><td>0.5 天</td><td>每条约束可量化</td></tr><tr><td>2</td><td>收集候选</td><td>算法</td><td>3–5 个候选及部署规格</td><td>1 天</td><td>每个候选有可跑形态</td></tr><tr><td>3</td><td>能力探针（初筛）</td><td>算法</td><td>20 题探针结果</td><td>0.5 天</td><td>通过率 ≥ 基线 −5pt</td></tr><tr><td>4</td><td>全量评测</td><td>QA + 算法</td><td>50 题 + 盲测 20 题报告</td><td>1 天</td><td>见 §5，含单项否决</td></tr><tr><td>5</td><td>成本与延迟实测</td><td>SRE</td><td>分/轮、TTFT/TPOT p95</td><td>1 天</td><td>成本 ≤ +20%，TTFT ≤ 800 ms</td></tr><tr><td>6</td><td>灰度</td><td>SRE + 算法</td><td>5% 流量 3 天数据</td><td>3 天</td><td>错误率不升、goodput 不降</td></tr><tr><td>7</td><td>放量与归档</td><td>平台</td><td>release manifest + 评测归档</td><td>0.5 天</td><td>回滚演练通过</td></tr></tbody></table></div>
+<p>一周左右能走完一轮。真正拖时间的是第 6 步，三天不能压——一天的灰度量不足以覆盖工作日和周末两种流量形态。</p>
+<p>第 3 步的"探针"是这套流程省时间的关键。20 道题按区分度选出来（正负样本各半，覆盖五类），30 分钟内能跑完 5 个候选，用来快速淘汰差 10 个点以上的模型，避免每个候选都跑全量。</p>
+<p>门禁不过时的处理方式，比门禁本身更重要：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>卡在哪</th><th>先改什么</th><th>不要做什么</th></tr></thead><tbody><tr><td>探针不过</td><td>换候选</td><td>调 Prompt 硬拉——拉上来也撑不住长尾</td></tr><tr><td>全量总分不够</td><td>看单类，补 few-shot 或改 Prompt</td><td>改评测题</td></tr><tr><td>全量单项跌破否决线</td><td>单类专项优化；仍不过就放弃这个候选</td><td>用总分把单项平均掉</td></tr><tr><td>成本超标</td><td>量化、压 <code>max_tokens</code>、把简单请求分流到小模型</td><td>先上线再优化</td></tr><tr><td>灰度指标变差</td><td>回滚，拉 trace 定位</td><td>加大流量"再看看"</td></tr></tbody></table></div>
+<h3>4.8 评测流程：四个触发点</h3>
+<p>评测不是上线前跑一次，它挂在四个位置上。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>触发</th><th>谁跑</th><th>跑什么</th><th>出结果</th><th>阻断什么</th></tr></thead><tbody><tr><td>PR 合入（改 Prompt / 工具 schema）</td><td>CI 自动</td><td>全量 50 题</td><td>3 分钟</td><td>合入</td></tr><tr><td>模型版本变更</td><td>算法</td><td>50 题 + 盲测 20 题</td><td>1 小时</td><td>发布</td></tr><tr><td>每日 02:00</td><td>CI</td><td>盲测 20 题</td><td>10 分钟</td><td>不阻断，只告警</td></tr><tr><td>每月首个工作日</td><td>QA</td><td>按生产日志重采样换题</td><td>半天</td><td>下个月的评测集</td></tr></tbody></table></div>
+<p>每日巡检用盲测集而不是全量集，是因为全量集天天跑会被团队当成噪声忽略；20 题出问题才值得叫醒人。</p>
+<p>每次评测落一个 <code>report.json</code>，字段固定，便于跨版本对比：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
+  &quot;run_id&quot;: &quot;2026-10-29T02:00:07Z-7f3a&quot;,
+  &quot;manifest&quot;: {
+    &quot;model_digest&quot;: &quot;sha256:9c1e...&quot;,
+    &quot;prompt_version&quot;: &quot;p-2026-10-27.3&quot;,
+    &quot;contract_version&quot;: &quot;v4&quot;
+  },
+  &quot;scores&quot;: {&quot;total&quot;: 0.912, &quot;tool&quot;: 0.933, &quot;json&quot;: 0.995, &quot;refusal&quot;: 0.971},
+  &quot;cost_per_turn&quot;: 0.294,
+  &quot;latency&quot;: {&quot;ttft_p95_ms&quot;: 612, &quot;tpot_p95_ms&quot;: 47},
+  &quot;diff_vs_baseline&quot;: {&quot;total&quot;: 0.004, &quot;tool&quot;: -0.007}
+}</code></pre></figure>
+<p><code>manifest</code> 里那三个值是绑定关系：模型换了、Prompt 换了、契约换了，任何一个变了都要重跑。只记 <code>run_id</code> 不记 manifest，三个月后没人说得清那次 91.2% 是哪个组合跑出来的。</p>
+<h3>4.9 一次换代的完整排期</h3>
+<p>把上面两步合成时间轴，一次真实的模型换代长这样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>动作</th><th>负责人</th><th>产出</th></tr></thead><tbody><tr><td>D-7</td><td>需求评审，确认能力清单</td><td>PM</td><td>需求文档</td></tr><tr><td>D-6</td><td>收候选，跑探针</td><td>算法</td><td>探针报告</td></tr><tr><td>D-5</td><td>全量评测 + 盲测</td><td>QA</td><td>评测报告</td></tr><tr><td>D-4</td><td>成本与延迟实测</td><td>SRE</td><td>容量测算</td></tr><tr><td>D-3</td><td>灰度 5% 开启</td><td>SRE</td><td>灰度看板</td></tr><tr><td>D-1</td><td>灰度复盘</td><td>PM + SRE</td><td>放量决议</td></tr><tr><td>D0</td><td>放量 100%，归档</td><td>平台</td><td>release manifest</td></tr><tr><td>D+3</td><td>回滚演练</td><td>SRE</td><td>演练记录</td></tr></tbody></table></div>
+<p>D-3 到 D0 之间如果指标变差，走回滚而不是延期——已灰度的流量留着，问题会一直存在。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 通过标准：不是"准确率 90%"</h2>
