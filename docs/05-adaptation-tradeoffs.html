@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>适配取舍：Prompt / RAG / 微调 / 蒸馏 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">模型工程 · 第 05 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 同一句抱怨，三种病</a><a href="#s2"><span>02</span>. 四种手段的账</a><a href="#s3"><span>03</span>. Prompt：最便宜，也最容易高估</a><a href="#s4"><span>04</span>. RAG：解决"不知道"，但有三个天花板</a><a href="#s5"><span>05</span>. 微调：三个门槛，缺一个就别做</a><a href="#s6"><span>06</span>. 蒸馏：只在高频窄任务上划算</a><a href="#s7"><span>07</span>. 决策树</a><a href="#s8"><span>08</span>. 组合起来长什么样</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收：四个问题答得出来才算懂</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <div class="rail-foot">模型工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">05</div><div class="ch-kicker">模型工程</div><h1>适配取舍：Prompt / RAG / 微调 / 蒸馏</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>客诉说"它不懂我们的业务"，这句话背后可能是三种病，怎么分？.</li><li>四种手段改的分别是什么，改一个要多久、能不能回滚？</li><li>RAG 的三个天花板在哪，什么时候它反而不如把文档塞进 Prompt？</li><li>微调的三个门槛缺一个就不该做，分别是哪三个？</li><li>蒸馏什么时候值得，什么时候只是把老师的错抄一遍？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 同一句抱怨，三种病</h2>
+<p>运营那边反馈："它不懂我们售后业务。"</p>
+<p>这句话本身没有信息量。把它拆开，至少是三种完全不同的病，对应四条不同的修复路径：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>用户实际遇到的现象</th><th>病在哪</th><th>该走哪条路</th><th>修复周期</th></tr></thead><tbody><tr><td>问"我的订单到哪了"，模型答"请提供订单号"但不查</td><td>不知道有这个工具</td><td>Prompt 补工具说明</td><td>半天</td></tr><tr><td>问"签收 9 天能退吗"，模型答"可以退"</td><td>不知道政策是 7 天</td><td>RAG 检索政策</td><td>两周</td></tr><tr><td>每次回复都带"亲~"，不符合客诉场景</td><td>行为不符合要求</td><td>Prompt 改语气约束</td><td>半天</td></tr><tr><td>输出的 JSON 少了 <code>refund_amount</code> 字段</td><td>格式不稳定</td><td>Prompt few-shot 或微调</td><td>3 天到 2 个月</td></tr><tr><td>多步退款流程走到第三步就乱</td><td>能力不足（不是知识）</td><td>换更大模型，或拆步骤</td><td>换模型</td></tr></tbody></table></div>
+<p>这张表是本章的地基。四件事修的从来不是同一个东西：</p>
+<ul><li>Prompt 改的是<strong>指令</strong>，模型权重和知识都没动</li><li>RAG 改的是<strong>这次请求的输入上下文</strong>，知识在系统外</li><li>微调改的是<strong>权重</strong>，知识进模型了，但会忘</li><li>蒸馏改的是<strong>模型规模</strong>，用一个小的去模仿大的</li></ul>
+<p>选错路径的代价不是白花钱，是花两个月得出"这条路不行"的结论，然后再花两个月。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四种手段的账</h2>
+<p>先把账摆开，再谈怎么选。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>改什么</th><th>不改什么</th><th>生效周期</th><th>回滚成本</th><th>单轮成本增量</th></tr></thead><tbody><tr><td>Prompt</td><td>指令与约束</td><td>权重、知识</td><td>分钟级</td><td>回滚到旧版本</td><td>+50 到 +300 token 输入</td></tr><tr><td>RAG</td><td>输入上下文</td><td>权重</td><td>天到周</td><td>关掉检索开关</td><td>+1,500 到 +3,000 输入 token</td></tr><tr><td>微调</td><td>权重</td><td>系统架构</td><td>周到月</td><td>切回基础模型</td><td>0（权重变，推理结构不变)</td></tr><tr><td>蒸馏</td><td>模型规模</td><td>教师模型</td><td>月</td><td>切回大模型</td><td>降 3.8 倍（8B 替 200B）</td></tr></tbody></table></div>
+<p>回滚成本这一列最容易被忽略。微调把能力写进权重之后，"改回去"意味着重新拿基础模型再训一遍，中间那两周的评测和灰度要重走。Prompt 改坏了，一分钟就能退。</p>
+<p>所以原则是按成本递增试：先 Prompt，不行再 RAG，都不够才微调，蒸馏是最后一步且只对高频窄任务做。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. Prompt：最便宜，也最容易高估</h2>
+<p>Prompt 能解决的都是"模型本来就会，只是没被要求"的事：</p>
+<ul><li>输出格式（JSON schema、字段顺序、必填项）</li><li>语气与话术边界（不说"亲"、不承诺具体到账时间）</li><li>流程约束（先查订单再给方案、退款金额必须复述）</li><li>拒绝条件（超出权限时转人工）</li></ul>
+<p>它解决不了"模型根本不知道"的事。政策条款、这个用户的会员等级、昨天的系统故障——这些不在权重里。硬要用 Prompt 补，得到的不是正确答案，是更自信的编造。</p>
+<p>一个具体的边界例子：给模型加一句"退款必须在签收 7 天内"，模型会照做，但它不知道"7 天"从哪天算。这个不知道会以两种方式暴露：一种是答错（用户说"我 8 天前签收的"它还说能退），一种是过度保守（把所有退款都转人工）。两种都比不加这句更糟。</p>
+<p>Prompt 的成本要算进去。系统提示从 300 token 涨到 1,200 token，按 prefill 0.09 ms/token 算，TTFT（Time To First Token，首 token 延迟）多 81 ms。基线 610 ms 变成 691 ms，离 800 ms 的红线只剩 109 ms。这就是为什么系统提示不能无限加——它和 TTFT 抢的是同一份 SLO（Service Level Objective）预算。</p>
+<p>Prompt 必须有版本号，而且要和评测报告绑定。用 <code>p-2026-10-27.3</code> 这种格式，改一次加一次，评测报告的 manifest 里记这个值（第 4 章 §4.8）。没有版本号的 Prompt，出了问题连"什么时候开始坏的"都查不出来。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. RAG：解决"不知道"，但有三个天花板</h2>
+<p>RAG（Retrieval-Augmented Generation，检索增强生成）的做法很直接：用户提问 → 检索相关文档 → 把文档片段拼进上下文 → 模型基于上下文回答。</p>
+<p>它把知识从权重里挪到了系统外，好处是政策改了只改文档，不用重训。但它有天花板，而且三个都在工程侧，不在模型侧。</p>
+<h3>4.1 第一个天花板：检索不到</h3>
+<p>用户问"我买的东西晚到了三天，能赔吗"，知识库里的条款写的是"配送超时补偿标准"。字面几乎没有重叠，向量检索能不能命中，取决于 embedding 的质量和分块方式。</p>
+<p>分块是最常出错的地方。把一份 8,000 字的售后规则按 512 token 切，很可能把"7 天无理由"和它的例外条款切到两块里去。检索命中前半块，模型就按"可以退"回答，而例外条款说的是"拆封的电子产品除外"。</p>
+<p>工程上的做法是三件事一起上：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>配置</th><th>解决什么</th></tr></thead><tbody><tr><td>分块</td><td>512 token，重叠 64</td><td>避免条款被切断</td></tr><tr><td>混合检索</td><td>向量 + BM25，各取 20 条</td><td>字面不重叠时靠语义，术语精确时靠关键词</td></tr><tr><td>重排</td><td>交叉编码器，取前 3</td><td>20 条里挑真正相关的 3 条</td></tr></tbody></table></div>
+<p>三件都做，召回率能从 60% 出头到 85% 左右。只做向量检索就上线，是第一大坑。</p>
+<h3>4.2 第二个天花板：检索到了，但模型没用上</h3>
+<p>这是更隐蔽的一种。检索结果正确，拼进上下文了，模型回答却绕开了它。</p>
+<p>原因有两个。一是上下文太长，关键信息落在中间，模型对首尾更敏感——把最重要的那条放最前面，效果比排序优化更直接。二是上下文里有互相矛盾的条款（新旧政策同时被检索出来），模型会挑一个,挑哪个不确定。</p>
+<p>解法是给检索结果加元数据：政策生效日期、适用范围、优先级。拼上下文时按生效日期过滤，冲突时明确告诉模型"以 2026-09 版为准"。这比调 Prompt 有效得多。</p>
+<h3>4.3 第三个天花板：上下文预算和 TTFT 抢资源</h3>
+<p>这是最硬的一个，也是容量规划里最容易被忽略的。</p>
+<p>检索 2,000 token 上下文，prefill 多 180 ms（0.09 ms/token）。基线 TTFT 610 ms 变成 790 ms，而 SLO 是 800 ms——只剩 10 ms 余量，任何抖动都会破线。</p>
+<p>所以 RAG 的上下文长度不是一个"效果越好越长"的参数，它有硬上限：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>可用上下文预算 = (TTFT 目标 − 当前 TTFT) / 0.09 ms per token</code></pre></figure>
+<p>按 800 ms 目标和 610 ms 基线算，预算是 2,111 token。这决定了 top-k 取 3 还是 5，也决定了要不要做重排压缩。</p>
+<p>如果业务确实需要更长的上下文，只有两条路：把 TTFT 目标放宽（用户感知会变差），或者把检索结果做摘要后再拼（多一次模型调用，但省上下文）。</p>
+<h3>4.4 什么时候不该用 RAG</h3>
+<p>两个判断：</p>
+<p>知识总量很小，比如整个售后规则不到 50 页，约 3 万 token。这种情况下把它全塞进系统提示，比搭一套检索系统简单得多，也没有召回失败的风险。代价是每轮多付 3 万 token 的 prefill，按 0.09 ms/token 算 TTFT 要 2.7 秒——超过 SLO，所以只在低峰或离线场景可用。</p>
+<p>另一个判断是任务性质：RAG 适合"查了就能答"，不适合"查了还要推"。用户问"我的情况和条款里第三条对不对得上"，这是推理任务，检索解决不了，得靠模型能力和 Prompt 引导。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 微调：三个门槛，缺一个就别做</h2>
+<p>微调的诱惑在于它看起来最"彻底"——直接改模型。但它是四条路里唯一会留下长期负债的一条。</p>
+<h3>5.1 门槛一：数据量</h3>
+<p>高质量样本 5,000 条起，且必须包含错例。</p>
+<p>所谓错例，是"模型现在会答错、但正确答案明确"的样本。只用正确样本训，模型学到的是"这种问法该怎么答"，学不到"这种问法容易错在哪"。</p>
+<p>数据的另一个要求是一致性。5,000 条样本如果由三个人标，标准不统一，训出来的模型会比基座更不稳定——它把三种标准都学了。</p>
+<h3>5.2 门槛二：任务窄且稳定</h3>
+<p>微调适合"同一个动作重复一万次"：把非结构化地址解析成省市区、把客诉文本分类到 12 个工单类型、把退款理由映射到标准码。</p>
+<p>它不适合"什么都能答"——那是通用能力，微调只会让它在这件事上变差（灾难性遗忘）。判断方法很简单：能不能用一句话写清"这个模型只做这件事"。写不清就别微调。</p>
+<h3>5.3 门槛三：能承担版本管理成本</h3>
+<p>微调之后，你的发布单元从"Prompt 版本"变成了三件套：模型权重 + 训练数据 + 评测基线。</p>
+<p>任何一件变了，都要重跑全量评测。这不是流程洁癖——只跑任务集会漏掉通用能力退化。常见做法是混合数据：80% 任务样本 + 20% 通用样本，训完两边都测。</p>
+<p>一个 LoRA 微调的实测量级：8×H100，5,000 条样本，r=16、alpha=32、学习率 1e-4、3 个 epoch，约 6 小时，按 ¥30/卡时算约 ¥1,440。钱不多，贵的是后面的评测和灰度。</p>
+<h3>5.4 灾难性遗忘有多严重</h3>
+<p>按上面的混合比例训，通用能力通常掉 2 到 5 个百分点。掉在哪很关键：知识问答掉得多，指令遵循掉得少。</p>
+<p>如果掉超过 5 个点，说明任务数据和通用数据的比例失衡，或者学习率太高。这两个参数是最常调的两个。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 蒸馏：只在高频窄任务上划算</h2>
+<p>蒸馏是让一个小模型学大模型的输出分布。它划算的条件有三个，同时满足才行：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>条件</th><th>判据</th><th>不满足的后果</th></tr></thead><tbody><tr><td>流量足够大</td><td>该任务占比 ≥20%</td><td>省下的钱不够训练和评测成本</td></tr><tr><td>任务足够窄</td><td>一句话能说清</td><td>学生学不全，掉点严重</td></tr><tr><td>老师足够强</td><td>老师在该任务上 ≥90%</td><td>学生只能学到老师的水平</td></tr></tbody></table></div>
+<p>售后场景里符合条件的是意图分类：占流量 40%，任务窄（12 个类），200B 老师在 50 题上 91%。</p>
+<p>做法是拿 200B 标注 5 万条，其中 10% 人工校验，然后用它训 8B。结果通常是 8B 从 62% 提到 85% 到 88%，成本从 0.294 分/轮降到 0.078 分/轮，3.8 倍。</p>
+<p>有一个风险要说清：老师答错的样本，学生会学得更自信。因为学生学的不是"正确答案"，是"老师的输出分布"。所以 10% 人工校验那一步不能省，尤其是边界样本。</p>
+<p>另一个风险是分布漂移。意图分类的类别会变，加一个新类别就要重蒸一次，否则新类会被硬分到旧类里。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 决策树</h2>
+<p>把上面五节压成一棵树，遇到"它不懂业务"这类反馈时从上往下走：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>用户抱怨&quot;不懂业务&quot;
+│
+├─ 问：是&quot;不知道事实&quot;还是&quot;行为不对&quot;？
+│
+├─ 不知道事实（政策、订单、库存）
+│   ├─ 知识总量 &lt; 50 页 → 全量塞进 Prompt（注意 TTFT 预算）
+│   ├─ 知识会变 → RAG（混合检索 + 重排）
+│   └─ 需要跨文档推理 → RAG + 更强的模型，别指望检索本身
+│
+├─ 行为不对（格式、语气、流程）
+│   ├─ 能用一两句话写清规则 → 改 Prompt（半天，先试这个）
+│   ├─ 写不清但能举例 → Prompt few-shot（三天）
+│   └─ 例子要几千条、且任务极窄 → 微调（两个月）
+│
+└─ 能力不足（多步推理、长链路）
+    ├─ 换更大的模型 → 成本上升，先算账
+    └─ 拆步骤 + 每步用小模型 → 工程活，但成本可控</code></pre></figure>
+<p>这棵树里唯一需要"判断力"的节点是第一个。判断方法不是问产品经理，是拿 20 条 badcase 逐条看：每条错在哪一步，错的原因是"没这条信息"还是"有信息但没用对"。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 组合起来长什么样</h2>
+<p>真实的系统不会只用一种。售后 Agent 的分层是这样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>占比</th><th>手段</th><th>模型</th><th>单轮成本</th></tr></thead><tbody><tr><td>意图分类</td><td>40%</td><td>蒸馏到 8B + Prompt</td><td>8B</td><td>0.078 分</td></tr><tr><td>简单问答</td><td>25%</td><td>Prompt + 小 RAG</td><td>8B</td><td>0.11 分</td></tr><tr><td>复杂售后</td><td>30%</td><td>RAG + Prompt</td><td>200B MoE</td><td>0.35 分</td></tr><tr><td>疑难与兜底</td><td>5%</td><td>大模型 API</td><td>外部</td><td>3.5 分</td></tr></tbody></table></div>
+<p>加权下来约 0.30 分/轮，比全走 200B 的 0.294 分差不多，但复杂场景的成功率高 6 个百分点——这才是分层的目的，不是为了省钱，是为了把预算花在需要的地方。</p>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>加了 RAG，回答反而更差</td><td>检索到矛盾条款，模型挑错的</td><td>抽样看上下文里有没有新旧两版</td><td>按生效日期过滤元数据</td></tr><tr><td>Prompt 越写越长，效果没变好</td><td>指令互相冲突，模型挑一条执行</td><td>逐条删，看哪条有用</td><td>砍到 800 token 以内</td></tr><tr><td>微调后通用能力崩了</td><td>任务数据占比过高</td><td>训完跑通用评测集</td><td>混合 80/20 重训</td></tr><tr><td>蒸馏模型在边界样本上特别自信</td><td>学了老师的错误分布</td><td>看错误样本的置信度分布</td><td>10% 人工校验，加拒答样本</td></tr><tr><td>RAG 上线后 TTFT 破线</td><td>上下文预算没算</td><td>对比上线前后 TTFT p95</td><td>top-k 从 5 降到 3，或加重排压缩</td></tr><tr><td>换了模型，Prompt 全废</td><td>指令格式不通用</td><td>新模型上跑全量评测</td><td>Prompt 与模型一起评测，别分开</td></tr></tbody></table></div>
+<p>第一条最反直觉：RAG 不是"有总比没有好"。检索系统引入了一个新的失败点，而这个失败点用户看得见——模型会引用一条过时条款，说得头头是道。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>先 Prompt 再 RAG 再微调</td><td>知识每天变（如库存、价格）时，微调从一开始就错</td></tr><tr><td>RAG 上下文控制在 2,000 token</td><td>模型支持长上下文且 prefill 更快时，可以放宽</td></tr><tr><td>微调需要 5,000 条</td><td>任务极窄（二分类）时，1,000 条够</td></tr><tr><td>蒸馏只在 ≥20% 流量做</td><td>成本敏感且延迟要求极严时，10% 也可能值得</td></tr></tbody></table></div>
+<div class="orn"></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 验收：四个问题答得出来才算懂</h2>
+<ol><li>给定一条 badcase，能判断它属于"不知道"还是"不会"，并说出依据。</li><li>能算出加 2,000 token 上下文对 TTFT 的影响，并判断是否破线。</li><li>能说出微调之后发布单元变成了哪三件，为什么必须一起绑。</li><li>能判断一个任务该不该蒸馏，用哪三个条件。</li></ol>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为 RAG 是"接个向量库就行"，实际差在检索质量——分块、混合检索、重排三步少一步，召回率就掉 20 个点。</p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 延伸</h2>
+<ul><li>第 4 章：怎么证明换了手段之后确实变好了</li><li>第 6 章：RAG 的检索链路怎么搭（分块、embedding、重排的具体实现）</li><li>第 7 章：上下文工程——同样的检索结果，怎么排列才不被模型忽略</li></ul>
+<p>四条路的顺序不是偏好，是成本递增。结论是：能半天解决的，不要花两个月。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="04-model-selection-eval.html"><span>上一章</span><b>04 · 选型与能力评测</b></a><a class="nav-next" href="08-request-journey.html"><span>下一章</span><b>08 · 一次请求的完整旅程</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
