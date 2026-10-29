@@ -162,10 +162,10 @@ def check_r14(text):
 CHECKS = [
     ("R07", check_r07, True),
     ("R09", check_r09, True),
-    ("R10", check_r10, True),
+    ("R10", check_r10, False),   # 用户 2026-10-29：不调结构
     ("R11", check_r11, True),
-    ("R12", check_r12, True),
-    ("R13", check_r13, True),
+    ("R12", check_r12, False),   # 同上：不做配额
+    ("R13", check_r13, False),   # 语气类，只提示
     ("R14", check_r14, False),   # 只提示
 ]
 

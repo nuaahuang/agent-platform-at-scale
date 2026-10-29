@@ -227,30 +227,30 @@ blockquote p{margin:.4em 0}
     <article class="prose{{WIDE}}"><!-- style-exempt: 设计, 验收 -->
 # 附录 A · 模型层的物理：显存、带宽、算力
 <blockquote><p>迁移自 v1 <code>ch02-model-physics.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../MIGRATION.md">../MIGRATION.md</a>。</p></blockquote>
-<blockquote><p><strong>一句话结论</strong>：所有容量数字都来自三个公式——<strong>显存账本、KV 公式、Roofline</strong>。</p><p>会推这三个，你就不需要背任何"经验值"。</p></blockquote>
+<blockquote><p><strong>一句话结论</strong>：所有容量数字都来自三个公式——显存账本、KV 公式、Roofline。</p><p>会推这三个，你就不需要背任何"经验值"。</p></blockquote>
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：为什么"加卡"不一定变快</h2>
 <p>新手的第一反应是"慢了就加卡"。但真实情况是：</p>
-<ul><li>加卡后 <strong>TTFT（Time To First Token） 没降</strong>——因为瓶颈在排队，不在算力；</li><li>加卡后 <strong>吞吐没涨</strong>——因为瓶颈在显存带宽，不在 FLOPs；</li><li>加卡后 <strong>更慢了</strong>——因为 TP 通信开销超过了收益。</li></ul>
+<ul><li>加卡后 TTFT（Time To First Token） 没降——因为瓶颈在排队，不在算力；</li><li>加卡后 <strong>吞吐没涨</strong>——因为瓶颈在显存带宽，不在 FLOPs；</li><li>加卡后 <strong>更慢了</strong>——因为 TP 通信开销超过了收益。</li></ul>
 <p>要判断"该加什么"，必须先知道<strong>当前卡在哪一种资源上</strong>。这一章就是教你怎么判断。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 显存账本：640GB 里能装什么</h2>
 <p>以 8×H800（80GB/卡）为例：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>大小</th><th>说明</th></tr></thead><tbody><tr><td>模型权重</td><td><strong>200GB</strong></td><td>200B 参数 × 1 Byte（FP8）</td></tr><tr><td>KV Cache</td><td>~300GB</td><td>装会话的"记忆"</td></tr><tr><td>激活 / 临时</td><td>~60GB</td><td>中间结果、CUDA Graph</td></tr><tr><td>碎片 / 预留</td><td>~80GB</td><td>不能全用满</td></tr><tr><td><strong>合计</strong></td><td><strong>640GB</strong></td><td>正好一台 8 卡机</td></tr></tbody></table></div>
-<p><strong>关键认知</strong>：<strong>权重是固定的，KV 是弹性的。</strong>并发上不去，通常不是权重装不下，是 KV 装不下。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>大小</th><th>说明</th></tr></thead><tbody><tr><td>模型权重</td><td>200GB</td><td>200B 参数 × 1 Byte（FP8）</td></tr><tr><td>KV Cache</td><td>~300GB</td><td>装会话的"记忆"</td></tr><tr><td>激活 / 临时</td><td>~60GB</td><td>中间结果、CUDA Graph</td></tr><tr><td>碎片 / 预留</td><td>~80GB</td><td>不能全用满</td></tr><tr><td><strong>合计</strong></td><td>640GB</td><td>正好一台 8 卡机</td></tr></tbody></table></div>
+<p><strong>关键认知</strong>：权重是固定的，KV 是弹性的。并发上不去，通常不是权重装不下，是 KV 装不下。</p>
 <blockquote><p>参数量 ≠ 显存。FP8 是 1 Byte/参数，FP16 是 2 Byte，INT4 是 0.5 Byte。</p><p>"200B 模型要 400GB"只在 FP16 下成立。</p></blockquote>
 <div class="orn"></div>
 <h3>2.1 什么是 HBM</h3>
-<p><strong>HBM（High Bandwidth Memory，高带宽存储器）</strong>：把多层 DRAM 像盖楼一样 3D 堆叠，通过 <strong>TSV（硅通孔）</strong>穿层连接，再用一块<strong>硅中介层（interposer）和 GPU 封在同一个基板上</strong>。</p>
+<p>HBM（High Bandwidth Memory，高带宽存储器）：把多层 DRAM 像盖楼一样 3D 堆叠，通过 <strong>TSV（硅通孔）</strong>穿层连接，再用一块硅中介层（interposer）和 GPU 封在同一个基板上。</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>普通显存：GPU 芯片 —— PCB 走线 —— 显存颗粒（窄路）
 HBM：    GPU 芯片 ══ 硅中介层（超宽马路）══ 5–8 摞 DRAM 楼（就在隔壁）</code></pre></figure>
 <p>GPU 有上万个核心，数据喂不过来就全闲着。HBM 用"<strong>超多引脚的超宽总线</strong>"解决——每个 stack 是 1024 位，5 个 stack 就是 5120 位（普通显卡显存总线只有 256–384 位）。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th></th><th>HBM</th><th>GDDR6（游戏卡）</th><th>DDR5（主机内存）</th></tr></thead><tbody><tr><td>带宽</td><td><strong>3–8 TB/s</strong></td><td>0.5–1 TB/s</td><td>0.1–0.4 TB/s</td></tr><tr><td>容量</td><td>80–192 GB</td><td>12–24 GB</td><td>数百 GB–TB</td></tr><tr><td>位置</td><td>和 GPU 同封装</td><td>板卡旁边</td><td>主板上</td></tr><tr><td>价格</td><td>贵，受 CoWoS 封装产能限制</td><td>便宜</td><td>最便宜</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>HBM</th><th>GDDR6（游戏卡）</th><th>DDR5（主机内存）</th></tr></thead><tbody><tr><td>带宽</td><td>3–8 TB/s</td><td>0.5–1 TB/s</td><td>0.1–0.4 TB/s</td></tr><tr><td>容量</td><td>80–192 GB</td><td>12–24 GB</td><td>数百 GB–TB</td></tr><tr><td>位置</td><td>和 GPU 同封装</td><td>板卡旁边</td><td>主板上</td></tr><tr><td>价格</td><td>贵，受 CoWoS 封装产能限制</td><td>便宜</td><td>最便宜</td></tr></tbody></table></div>
 <p><strong>典型数字</strong>：H800/H100 = 80GB HBM3、3.35 TB/s；H200 = 141GB HBM3e、4.8 TB/s；B200 = 192GB、8 TB/s。</p>
 <p><strong>两个推论</strong>：</p>
-<ol><li><strong>权重和 KV 必须放进 HBM</strong>——PCIe 只有 64 GB/s，比 HBM 慢 50 倍，放外面 decode 立刻饿死；</li><li><strong>HBM 又贵又小</strong>，所以才要 FP8、GQA/MLA、PagedAttention——这些技术都在回答</li></ol>
-<p>   同一个问题：<strong>怎么在这 80GB 里塞下更多东西。</strong></p>
+<ol><li>权重和 KV 必须放进 HBM——PCIe 只有 64 GB/s，比 HBM 慢 50 倍，放外面 decode 立刻饿死；</li><li><strong>HBM 又贵又小</strong>，所以才要 FP8、GQA/MLA、PagedAttention——这些技术都在回答</li></ol>
+<p>   同一个问题：怎么在这 80GB 里塞下更多东西。</p>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. KV 公式：一个 token 占多少</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>KV_bytes_per_token = 2 × L × H_kv × d × bytes_per_elem</code></pre></figure>
@@ -259,8 +259,8 @@ HBM：    GPU 芯片 ══ 硅中介层（超宽马路）══ 5–8 摞 DRAM 
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2 × 64 × 4 × 128 × 2 = 131,072 B ≈ 128 KB/token
 工程取值：120 KB/token</code></pre></figure>
 <p>于是：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>上下文</th><th>单会话 KV</th><th>300GB 能装几条</th></tr></thead><tbody><tr><td>2K</td><td>0.24 GB</td><td>~1,250</td></tr><tr><td>8K</td><td><strong>0.96 GB</strong></td><td>~312</td></tr><tr><td>32K</td><td>3.84 GB</td><td>~78</td></tr><tr><td>128K</td><td>15.4 GB</td><td>~19</td></tr></tbody></table></div>
-<p><strong>这就是"长上下文很贵"的量化解释</strong>：上下文翻 4 倍，能装的会话数掉到 1/4。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>上下文</th><th>单会话 KV</th><th>300GB 能装几条</th></tr></thead><tbody><tr><td>2K</td><td>0.24 GB</td><td>~1,250</td></tr><tr><td>8K</td><td>0.96 GB</td><td>~312</td></tr><tr><td>32K</td><td>3.84 GB</td><td>~78</td></tr><tr><td>128K</td><td>15.4 GB</td><td>~19</td></tr></tbody></table></div>
+<p>上下文翻 4 倍，能装的会话数掉到 1/4。长上下文贵就贵在这里：上下文翻 4 倍，能装的会话数掉到 1/4。</p>
 <h3>3.1 补充：MHA / MQA / GQA / MLA——KV 头数为什么能变小</h3>
 <p>注意力里有三种头：<strong>Q 头</strong>（查询）、<strong>K 头</strong>（键）、<strong>V 头</strong>（值）。KV Cache 只存 K 和 V（Q 来自当前输入，不用存）。怎么分配这些头，直接决定 KV 大小：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>MHA（多头注意力）：Q1 Q2 Q3 Q4 各自配  K1 K2 K3 K4 / V1..V4   ← 32 Q 头 = 32 份 KV
@@ -268,8 +268,8 @@ MQA（多查询注意力）：Q1..Q8 共享        K1 / V1               ← 8 �
 GQA（分组查询注意力）：Q1 Q2 用 K1V1；Q3 Q4 用 K2V2；……       ← 4 个 Q 头共用 1 份
 MLA（DeepSeek）：低秩压缩 KV，比 GQA 再小 3–4 倍</code></pre></figure>
 <p>以"32 个 Q 头"为例：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>KV 头数 H_kv</th><th>KV/token</th><th>8K 上下文</th><th>300GB 装几条</th></tr></thead><tbody><tr><td>MHA</td><td>32</td><td>~1,024 KB</td><td>8 GB</td><td>~37</td></tr><tr><td><strong>GQA（本项目假设）</strong></td><td><strong>4</strong></td><td><strong>~128 KB</strong></td><td><strong>~1 GB</strong></td><td><strong>~312</strong></td></tr><tr><td>MQA</td><td>1</td><td>~32 KB</td><td>0.25 GB</td><td>~1,200</td></tr><tr><td>MLA</td><td>压缩后</td><td>~30–40 KB</td><td>0.24–0.31 GB</td><td>~1,000+</td></tr></tbody></table></div>
-<p><strong>为什么能共享</strong>：注意力是"Q 去查 K、按权重取 V"。多个 Q 头查同一套 K/V，仍然能从不同视角取信息，只是表达能力略降。Google 2023 的实验表明<strong>GQA 质量几乎追平 MHA，KV 却只剩 1/4–1/8</strong>；MQA 省得更多，但部分模型掉 1–3 pt。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>KV 头数 H_kv</th><th>KV/token</th><th>8K 上下文</th><th>300GB 装几条</th></tr></thead><tbody><tr><td>MHA</td><td>32</td><td>~1,024 KB</td><td>8 GB</td><td>~37</td></tr><tr><td><strong>GQA（本项目假设）</strong></td><td>4</td><td>~128 KB</td><td>~1 GB</td><td>~312</td></tr><tr><td>MQA</td><td>1</td><td>~32 KB</td><td>0.25 GB</td><td>~1,200</td></tr><tr><td>MLA</td><td>压缩后</td><td>~30–40 KB</td><td>0.24–0.31 GB</td><td>~1,000+</td></tr></tbody></table></div>
+<p><strong>为什么能共享</strong>：注意力是"Q 去查 K、按权重取 V"。多个 Q 头查同一套 K/V，仍然能从不同视角取信息，只是表达能力略降。Google 2023 的实验表明GQA 质量几乎追平 MHA，KV 却只剩 1/4–1/8；MQA 省得更多，但部分模型掉 1–3 pt。</p>
 <p><strong>注意</strong>：GQA 不只省显存，还<strong>省 decode 带宽</strong>——每生成一个 token 要读的 KV 变小了，所以 decode 直接变快。这是"改模型架构就能降推理成本"的典型例子。现在主流模型几乎都用 GQA（Llama 3：32 Q / 8 KV），DeepSeek 用更激进的 MLA。</p>
 <p><strong>MLA 为什么重要</strong>：DeepSeek 的 MLA 把 KV 压到 GQA 的 1/3–1/4，同样 300GB 能装的会话数直接翻 3–4 倍——<strong>模型架构决定了推理成本的上限</strong>。</p>
 <div class="orn"></div>
@@ -278,14 +278,14 @@ MLA（DeepSeek）：低秩压缩 KV，比 GQA 再小 3–4 倍</code></pre></fig
 <p>生成 1 个 token，要把"权重 + 所有在跑会话的 KV"从显存读一遍。</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>每步读取字节 ≈ 激活权重 + B × 单会话KV
 每步耗时     ≈ 读取字节 / HBM带宽</code></pre></figure>
-<p>H800 的 HBM 带宽是 <strong>3.35 TB/s</strong>，MoE 激活权重 30GB：</p>
-<blockquote><p><strong>B 就是 batch size（批大小）：一个 step 里同时处理多少个序列。</strong></p><p>GPU 几万个核心，一次只算一个用户根本喂不饱；把 B 个用户凑成一批，</p><p>权重读一次给 B 个人共用——这就是 batch 的意义。</p><p>- 训练：一个 batch 是一组样本，算完一起更新权重（典型几百到几千条）；</p><p>- 推理：一个 step 里<strong>正在同时生成</strong>的请求数（vLLM 动态变化，几十到几百）；</p><p>- 每 step 每个序列各出 1 个 token → <strong>每步共产出 B 个 token</strong>；</p><p>- B 越大越省（权重摊薄），但每步越慢（TPOT（Time Per Output Token） 变差）、KV 越占显存——上限由 KV 预算决定。</p></blockquote>
-<div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>每步读取</th><th>每步耗时</th><th>聚合吞吐</th></tr></thead><tbody><tr><td>1</td><td>30 GB</td><td>9.0 ms</td><td>~111 tok/s</td></tr><tr><td>64</td><td>30 + 61 GB</td><td>27 ms</td><td>~2,370 tok/s</td></tr><tr><td>256</td><td>30 + 246 GB</td><td>82 ms</td><td>~3,120 tok/s</td></tr><tr><td>∞</td><td>KV 主导</td><td>—</td><td><strong>上限 ≈ 3,350 / 0.96 ≈ 3,490 tok/s</strong></td></tr></tbody></table></div>
-<p><strong>一个 decode step 的五步</strong>（以生成第 5,002 个 token 为例）：</p>
+<p>H800 的 HBM 带宽是 3.35 TB/s，MoE 激活权重 30GB：</p>
+<blockquote><p>B 就是 batch size（批大小）：一个 step 里同时处理多少个序列。</p><p>GPU 几万个核心，一次只算一个用户根本喂不饱；把 B 个用户凑成一批，</p><p>权重读一次给 B 个人共用——这就是 batch 的意义。</p><p>- 训练：一个 batch 是一组样本，算完一起更新权重（典型几百到几千条）；</p><p>- 推理：一个 step 里<strong>正在同时生成</strong>的请求数（vLLM 动态变化，几十到几百）；</p><p>- 每 step 每个序列各出 1 个 token → 每步共产出 B 个 token；</p><p>- B 越大越省（权重摊薄），但每步越慢（TPOT（Time Per Output Token） 变差）、KV 越占显存——上限由 KV 预算决定。</p></blockquote>
+<div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>每步读取</th><th>每步耗时</th><th>聚合吞吐</th></tr></thead><tbody><tr><td>1</td><td>30 GB</td><td>9.0 ms</td><td>~111 tok/s</td></tr><tr><td>64</td><td>30 + 61 GB</td><td>27 ms</td><td>~2,370 tok/s</td></tr><tr><td>256</td><td>30 + 246 GB</td><td>82 ms</td><td>~3,120 tok/s</td></tr><tr><td>∞</td><td>KV 主导</td><td>—</td><td>上限 ≈ 3,350 / 0.96 ≈ 3,490 tok/s</td></tr></tbody></table></div>
+<p>一个 decode step 的五步（以生成第 5,002 个 token 为例）：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>做什么</th><th>数据量</th></tr></thead><tbody><tr><td>① 投影</td><td>算新 token 自己的 K₅₀₀₂/V₅₀₀₂（只算 1 个）</td><td>1 token</td></tr><tr><td>② Q·K</td><td>新 token 的 Q 乘<strong>全部历史的 K</strong>（1×5,002）</td><td>读 5,002 个 K</td></tr><tr><td>③ softmax·V</td><td>对<strong>全部历史 V</strong> 加权求和</td><td>读 5,002 个 V</td></tr><tr><td>④ 输出层</td><td>output projection + FFN → 新 token</td><td>2N FLOPs</td></tr><tr><td>⑤ 追加</td><td>K₅₀₀₂/V₅₀₀₂ 写进 Cache</td><td><strong>+120 KB</strong></td></tr></tbody></table></div>
-<ul><li><strong>计算</strong>只有 1 个 token 的量（恒定）；<strong>读取</strong>是全部历史（随上下文线性增长）；</li><li>历史 K/V <strong>不重算</strong>——自回归是因果的，旧 K/V 一旦算好永久有效。</li><li>每步<strong>新增 120KB，却要读 0.96GB</strong>（8K 时）：写一个人，读一整本书。</li></ul>
+<ul><li><strong>计算</strong>只有 1 个 token 的量（恒定）；<strong>读取</strong>是全部历史（随上下文线性增长）；</li><li>历史 K/V <strong>不重算</strong>——自回归是因果的，旧 K/V 一旦算好永久有效。</li><li>每步新增 120KB，却要读 0.96GB（8K 时）：写一个人，读一整本书。</li></ul>
 <p><strong>三个结论</strong>：</p>
-<p><strong>表里的数字怎么来的（以 batch=1 为例）</strong>：</p>
+<p>表里的数字怎么来的（以 batch=1 为例）：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>第 1 步：每步读多少字节    = 激活权重 + B × 单会话 KV
                           = 30 GB + 1 × 0.96 GB ≈ 31 GB（表中忽略了小数）
 
@@ -294,12 +294,12 @@ MLA（DeepSeek）：低秩压缩 KV，比 GQA 再小 3–4 倍</code></pre></fig
 
 第 3 步：一个 step 里，batch 中每个序列各生成 1 个 token → 共产出 B 个 token
         聚合吞吐 = B ÷ 每步耗时 = 1 ÷ 0.009 s ≈ 111 tok/s</code></pre></figure>
-<p><strong>关键区别：聚合吞吐 vs 单用户速度</strong></p>
-<div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>每步耗时</th><th>单用户速度 = 1/耗时</th><th>聚合吞吐 = B/耗时</th></tr></thead><tbody><tr><td>1</td><td>9.0 ms</td><td>111 tok/s</td><td>111 tok/s</td></tr><tr><td>64</td><td>27 ms</td><td><strong>37 tok/s</strong></td><td><strong>2,344 tok/s</strong></td></tr><tr><td>256</td><td>82 ms</td><td>12 tok/s</td><td>3,122 tok/s</td></tr></tbody></table></div>
+<p>关键区别：聚合吞吐 vs 单用户速度</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>每步耗时</th><th>单用户速度 = 1/耗时</th><th>聚合吞吐 = B/耗时</th></tr></thead><tbody><tr><td>1</td><td>9.0 ms</td><td>111 tok/s</td><td>111 tok/s</td></tr><tr><td>64</td><td>27 ms</td><td>37 tok/s</td><td>2,344 tok/s</td></tr><tr><td>256</td><td>82 ms</td><td>12 tok/s</td><td>3,122 tok/s</td></tr></tbody></table></div>
 <ul><li><strong>聚合吞吐</strong>：这块卡每秒总共吐出多少 token → 决定<strong>成本</strong>；</li><li><strong>单用户速度</strong>：某一个用户每 s 收到几个 token（= TPOT 的倒数）→ 决定<strong>体验</strong>。</li></ul>
-<p>batch 变大，聚合吞吐涨（权重被 64 个请求摊薄），但单用户速度反而掉——<strong>连续批处理就是在"成本"和"TPOT SLO（Service Level Objective）"之间找最大 batch</strong>。batch→∞ 时，KV 主导：<code>3350 ÷ 0.96 ≈ 3,490 tok/s</code> 就是聚合上限。</p>
-<blockquote><p>注：这是数量级模型（把整台机器当一块卡，忽略了 TP 切分、kernel 效率），</p><p>真实值再乘 30–50%。<strong>用它判断方向和上限，不用它定合同指标。</strong></p></blockquote>
-<ol><li><strong>batch 变大，吞吐上升，但会饱和</strong>——因为 KV 读取最终主导。</li><li><strong>吞吐上限 ≈ HBM 带宽 / 单会话 KV</strong>。想让上限翻倍，要么换带宽更高的卡，要么把 KV 变小（MLA/量化）。</li><li>上表是<strong>理论上限</strong>，真实要乘 <strong>30–50%</strong> 的效率系数（kernel、调度、通信开销）。</li></ol>
+<p>batch 变大，聚合吞吐涨（权重被 64 个请求摊薄），但单用户速度反而掉——连续批处理就是在"成本"和"TPOT SLO（Service Level Objective）"之间找最大 batch。batch→∞ 时，KV 主导：<code>3350 ÷ 0.96 ≈ 3,490 tok/s</code> 就是聚合上限。</p>
+<blockquote><p>注：这是数量级模型（把整台机器当一块卡，忽略了 TP 切分、kernel 效率），</p><p>真实值再乘 30–50%。用它判断方向和上限，不用它定合同指标。</p></blockquote>
+<ol><li>batch 变大，吞吐上升，但会饱和——因为 KV 读取最终主导。</li><li>吞吐上限 ≈ HBM 带宽 / 单会话 KV。想让上限翻倍，要么换带宽更高的卡，要么把 KV 变小（MLA/量化）。</li><li>上表是<strong>理论上限</strong>，真实要乘 30–50% 的效率系数（kernel、调度、通信开销）。</li></ol>
 <blockquote><p>这也解释了为什么"decode 加卡"有效但线性度差：TP 会把 KV 和权重切开，</p><p>但每一步都要 all-reduce，通信会吃掉一部分收益。</p></blockquote>
 <div class="orn"></div>
 </section>
@@ -320,34 +320,34 @@ MLA（DeepSeek）：低秩压缩 KV，比 GQA 再小 3–4 倍</code></pre></fig
        decode     拐点          prefill</code></pre></figure>
 <p><strong>一个公式</strong>：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>P = min(峰值算力, 峰值带宽 × AI)          AI = FLOPs ÷ 读取字节数</code></pre></figure>
-<ul><li><strong>斜屋顶</strong>：AI 低时，每搬 1 Byte 只能做几次运算，GPU 在等数据——<strong>带宽受限</strong>；</li><li><strong>平屋顶</strong>：AI 高时，数据喂得够快，算力跑满——<strong>算力受限</strong>；</li><li><strong>拐点（ridge point）= 峰值算力 ÷ 峰值带宽 = 1.98×10¹⁵ ÷ 3.35×10¹² = 590 FLOP/Byte</strong>。</li></ul>
+<ul><li><strong>斜屋顶</strong>：AI 低时，每搬 1 Byte 只能做几次运算，GPU 在等数据——<strong>带宽受限</strong>；</li><li><strong>平屋顶</strong>：AI 高时，数据喂得够快，算力跑满——<strong>算力受限</strong>；</li><li>拐点（ridge point）= 峰值算力 ÷ 峰值带宽 = 1.98×10¹⁵ ÷ 3.35×10¹² = 590 FLOP/Byte。</li></ul>
 <p>把两个阶段放上去：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>AI</th><th>位置</th><th>可达算力</th><th>结论</th></tr></thead><tbody><tr><td>Decode（batch 小）</td><td>≈ 2</td><td>斜屋顶</td><td>3.35T × 2 ≈ 6.7 TFLOPS</td><td>算力只用了 0.3%</td></tr><tr><td>Prefill T=5,000</td><td>≈ 2T = 10,000</td><td>平屋顶</td><td>接近 1,980 TFLOPS</td><td>算力受限</td></tr></tbody></table></div>
-<blockquote><p>这里两个常数的出处：<strong>2</strong> 见 §5.2——每个参数对每个 token 做"1 次乘 + 1 次加 = 2 FLOP"；</p><p><strong>3.35 TB/s</strong> 见 §2.1——H800 HBM3 显存的硬件带宽规格。两者都是"记账约定/硬件参数"，不是推导值。</p></blockquote>
+<blockquote><p>这里两个常数的出处：2 见 §5.2——每个参数对每个 token 做"1 次乘 + 1 次加 = 2 FLOP"；</p><p>3.35 TB/s 见 §2.1——H800 HBM3 显存的硬件带宽规格。两者都是"记账约定/硬件参数"，不是推导值。</p></blockquote>
 <p><strong>这就是 PD 分离的数学根因</strong>：两个工作负载在屋顶图上的位置相差 5,000 倍，根本不可能用同一套资源配置同时优化。</p>
 <p>类比：工厂的产能 = min(工人速度, 传送带速度)。AI 低时传送带是瓶颈（decode），AI 高时工人忙不过来（prefill）。屋顶线就是那张"先瓶颈谁"的诊断图。</p>
 <h3>5.1 先分清四个单位</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>写法</th><th>含义</th><th>量级</th><th>例子</th></tr></thead><tbody><tr><td><strong>FLOP</strong></td><td>一次浮点运算（一次乘或一次加）</td><td>1</td><td>一个 MAC = 2 FLOP</td></tr><tr><td><strong>FLOPs</strong></td><td>运算<strong>总数</strong>（复数，常被滥用）</td><td>次数</td><td>一次 prefill 要做 300 TFLOP</td></tr><tr><td><strong>FLOPS</strong></td><td>每秒运算次数（<strong>速度</strong>）</td><td>次/秒</td><td>H800 FP8：1.98 PFLOPS</td></tr><tr><td><strong>TFLOP / TFLOPS</strong></td><td>10¹² 次 / 10¹² 次每秒</td><td>万亿</td><td>单卡 FP16 约 1 TFLOPS 的千倍</td></tr><tr><td><strong>PFLOPS</strong></td><td>10¹⁵ 次每秒</td><td>千万亿</td><td>1.98 PFLOPS = 1.98×10¹⁵ 次/秒</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>写法</th><th>含义</th><th>量级</th><th>例子</th></tr></thead><tbody><tr><td>FLOP</td><td>一次浮点运算（一次乘或一次加）</td><td>1</td><td>一个 MAC = 2 FLOP</td></tr><tr><td>FLOPs</td><td>运算<strong>总数</strong>（复数，常被滥用）</td><td>次数</td><td>一次 prefill 要做 300 TFLOP</td></tr><tr><td>FLOPS</td><td>每秒运算次数（<strong>速度</strong>）</td><td>次/秒</td><td>H800 FP8：1.98 PFLOPS</td></tr><tr><td>TFLOP / TFLOPS</td><td>10¹² 次 / 10¹² 次每秒</td><td>万亿</td><td>单卡 FP16 约 1 TFLOPS 的千倍</td></tr><tr><td>PFLOPS</td><td>10¹⁵ 次每秒</td><td>千万亿</td><td>1.98 PFLOPS = 1.98×10¹⁵ 次/秒</td></tr></tbody></table></div>
 <p><strong>最容易踩的坑</strong>：</p>
-<ul><li><strong><code>TFLOP</code>（无 S）= 工作量</strong>，<code>TFLOPS</code>（有 S）= 速度。差一个 S，差一个"每秒"。</li><li>厂商参数表写"1.98 PFLOPS"是<strong>峰值速度</strong>；你算出来的"300 TFLOP"是<strong>工作量</strong>。</li></ul>
+<ul><li><code>TFLOP</code>（无 S）= 工作量，<code>TFLOPS</code>（有 S）= 速度。差一个 S，差一个"每秒"。</li><li>厂商参数表写"1.98 PFLOPS"是<strong>峰值速度</strong>；你算出来的"300 TFLOP"是<strong>工作量</strong>。</li></ul>
 <p>  两者相除才得到时间：<code>300 TFLOP ÷ (1.98 PFLOPS × 35%) ≈ 0.43 秒</code>。</p>
 <ul><li>FP8 的速度约是 FP16 的 <strong>2 倍</strong>；稀疏（2:4）还能再翻倍。看参数必须看精度。</li></ul>
 <h3>5.1.1 「稀疏」有三种，说的不是一回事</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>稀疏</th><th>在哪一层</th><th>含义</th><th>影响什么</th></tr></thead><tbody><tr><td><strong>结构化稀疏（2:4）</strong></td><td>硬件/权重</td><td>每 4 个权重里固定 2 个是 0，Tensor Core 跳过不算</td><td>峰值 FLOPS <strong>×2</strong>（参数表里的 "sparse" 指这个）</td></tr><tr><td><strong>MoE 条件计算</strong></td><td>模型架构</td><td>每个 token 只激活少数专家（30B / 200B）</td><td>单 token <strong>FLOPs 变小</strong>，但显存要装全部专家</td></tr><tr><td><strong>稀疏注意力</strong></td><td>算法</td><td>只算部分 token 对（滑窗/块稀疏）</td><td>长上下文 <strong>T² 项</strong>变小</td></tr></tbody></table></div>
-<p><strong>买卡时看到的"稀疏"= 第一种</strong>：H100/H800 参数表常写 "3,958 TFLOPS FP8 sparse"，对应 dense 是 1,979 TFLOPS。要享受这个 2 倍，权重必须<strong>剪枝成 2:4 模式</strong>并微调，不是"模型里有 0"就行。</p>
-<p><strong>设计 MoE 时说的"稀疏"= 第二种</strong>：它是<strong>条件计算</strong>——路由只让部分专家参与。好处是单 token 算力低；代价是<strong>显存装全部专家</strong>、<strong>专家并行要 all-to-all 通信</strong>。</p>
-<blockquote><p>一句话：<strong>2:4 稀疏省算力，MoE 稀疏省算力但费显存和网络。</strong> 两者不能叠加着白拿。</p></blockquote>
+<div class="table-wrap"><table class="table"><thead><tr><th>稀疏</th><th>在哪一层</th><th>含义</th><th>影响什么</th></tr></thead><tbody><tr><td><strong>结构化稀疏（2:4）</strong></td><td>硬件/权重</td><td>每 4 个权重里固定 2 个是 0，Tensor Core 跳过不算</td><td>峰值 FLOPS ×2（参数表里的 "sparse" 指这个）</td></tr><tr><td><strong>MoE 条件计算</strong></td><td>模型架构</td><td>每个 token 只激活少数专家（30B / 200B）</td><td>单 token <strong>FLOPs 变小</strong>，但显存要装全部专家</td></tr><tr><td><strong>稀疏注意力</strong></td><td>算法</td><td>只算部分 token 对（滑窗/块稀疏）</td><td>长上下文 <strong>T² 项</strong>变小</td></tr></tbody></table></div>
+<p>买卡时看到的"稀疏"= 第一种：H100/H800 参数表常写 "3,958 TFLOPS FP8 sparse"，对应 dense 是 1,979 TFLOPS。要享受这个 2 倍，权重必须<strong>剪枝成 2:4 模式</strong>并微调，不是"模型里有 0"就行。</p>
+<p>设计 MoE 时说的"稀疏"= 第二种：它是<strong>条件计算</strong>——路由只让部分专家参与。好处是单 token 算力低；代价是<strong>显存装全部专家</strong>、专家并行要 all-to-all 通信。</p>
+<blockquote><p>一句话：2:4 稀疏省算力，MoE 稀疏省算力但费显存和网络。 两者不能叠加着白拿。</p></blockquote>
 <h3>5.2 为什么是 <code>2 × N_active × T</code></h3>
 <p>一个线性层 <code>y = Wx</code>，<code>W</code> 有 <code>N</code> 个参数：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>每个 token 经过每个参数：1 次乘法 + 1 次加法 = 2 FLOP（一个 MAC）
 T 个 token            ：2 × N × T</code></pre></figure>
-<p><strong>所以那个 2 不是"两个矩阵"，是"乘一次、加一次"。</strong></p>
+<p>所以那个 2 不是"两个矩阵"，是"乘一次、加一次"。</p>
 <blockquote><p>严格计数是 <strong>2N−1</strong>（N 次乘法 + N−1 次加法），N 以十亿计时约定记 2N；</p><p>硬件上 1 条 FMA 指令完成乘加，但厂商 FLOPS 按 2 FLOP 记账，两边口径一致。</p><p>训练时还要加反向传播：前向 2N + 对输入梯度 2N + 对权重梯度 2N = <strong>6N/token（6ND）</strong>。</p><p>为什么反向两遍：线性层 <code>Y=XW</code>，前向已知 X 求 Y=XW；反向时已知上游梯度 dY，</p><p>要算 <strong>dX = dY·Wᵀ</strong>（梯度传给上一层）和 <strong>dW = Xᵀ·dY</strong>（更新本层权重），</p><p>两个不同的矩阵乘，各约 2N FLOP。</p><p>推理时 dW/dX 都不需要，只留前向 2N——这也是为什么训练还要额外存激活（供反向用）。</p></blockquote>
 <p><strong>AI 不是恒等于 2</strong>。一般式 <code>AI = 2N·B ÷ (N字节 + B × 单会话KV)</code>：B=1、权重主导时 AI≈2；B=64 时 AI≈42；prefill 时 AI=2T（T=5000→10,000）；FP16 时减半。2 只是"FP8 + decode + 小 batch + 权重主导"这一特例。</p>
 <p>MoE 里每个 token 只走激活的专家，所以只用 <code>N_active</code>（30B），不是总参数 200B。</p>
-<p><strong>注意：2N 不含注意力打分（它没有权重矩阵）。</strong> 先分清"KV 的计算"有两种：</p>
-<ul><li>① 投影 K/V：<code>K=XW_K, V=XW_V</code>——带权重的线性层，<strong>已含在 2N 内</strong>；</li><li>② 打分取信：<code>QKᵀ</code> 和 <code>softmax·V</code>——<strong>不带权重，不在 2N 内</strong>。</li><li>（把 K/V 存进 Cache 本身不耗 FLOPs，只耗显存和带宽。）</li></ul>
-<div class="table-wrap"><table class="table"><thead><tr><th></th><th>注意力 FLOPs（L=64, d=7168）</th><th>数值</th><th>占线性层比例</th></tr></thead><tbody><tr><td>Prefill（全部 T 个 token）</td><td><code>4·L·T²·d</code></td><td>T=5k：46 TF</td><td>15%（不是 &lt;1%，不可忽略）</td></tr><tr><td></td><td></td><td>T=32k：1,879 TF</td><td><strong>98%（长上下文注意力反超 FFN）</strong></td></tr><tr><td>Decode（每 token，只算新 Q 对历史）</td><td><code>4·L·T·d</code></td><td>T=8k：14.7 GF</td><td>相对 2N=60 GF 约 <strong>+24%</strong></td></tr></tbody></table></div>
+<p>注意：2N 不含注意力打分（它没有权重矩阵）。 先分清"KV 的计算"有两种：</p>
+<ul><li>① 投影 K/V：<code>K=XW_K, V=XW_V</code>——带权重的线性层，<strong>已含在 2N 内</strong>；</li><li>② 打分取信：<code>QKᵀ</code> 和 <code>softmax·V</code>——不带权重，不在 2N 内。</li><li>（把 K/V 存进 Cache 本身不耗 FLOPs，只耗显存和带宽。）</li></ul>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>注意力 FLOPs（L=64, d=7168）</th><th>数值</th><th>占线性层比例</th></tr></thead><tbody><tr><td>Prefill（全部 T 个 token）</td><td><code>4·L·T²·d</code></td><td>T=5k：46 TF</td><td>15%（不是 &lt;1%，不可忽略）</td></tr><tr><td></td><td></td><td>T=32k：1,879 TF</td><td>98%（长上下文注意力反超 FFN）</td></tr><tr><td>Decode（每 token，只算新 Q 对历史）</td><td><code>4·L·T·d</code></td><td>T=8k：14.7 GF</td><td>相对 2N=60 GF 约 <strong>+24%</strong></td></tr></tbody></table></div>
 <p>推论：长上下文 prefill 的 T² 项会主导算力，所以有 FlashAttention（<strong>不减少 FLOPs，只减少 HBM 读写</strong>）和稀疏/滑动窗口注意力（真正减少 FLOPs）。decode 即使多算 24% FLOPs，瓶颈仍是读 KV 的带宽，结论不变。</p>
 <p>Prefill 要处理整个输入（5,000 token），计算量：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>FLOPs ≈ 2 × N_active × T</code></pre></figure>
@@ -366,17 +366,17 @@ T 个 token            ：2 × N × T</code></pre></figure>
 考虑 MFU 35%：
       = 0.0152 ÷ 0.35 = 0.043 秒</code></pre></figure>
 <p>单位怎么消掉：<code>次 ÷ (次/秒) = 秒</code>。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>输入 T</th><th>FLOPs</th><th>折算</th><th>单卡 100%</th><th>单卡 35% MFU</th></tr></thead><tbody><tr><td>500</td><td>3.0×10¹³</td><td>30 TFLOP</td><td>0.015 s</td><td>0.043 s</td></tr><tr><td>5,000</td><td>3.0×10¹⁴</td><td>300 TFLOP</td><td>0.152 s</td><td><strong>0.433 s</strong></td></tr><tr><td>32,000</td><td>1.9×10¹⁵</td><td>1,920 TFLOP</td><td>0.97 s</td><td>2.77 s</td></tr></tbody></table></div>
-<p><strong>单 token 成本 = 2N = 60 GFLOP</strong>（30B 激活）。</p>
-<blockquote><p>第 01 章说 prefill 约 300ms，这里算出 433ms——差额来自 <strong>70% 前缀命中</strong>：</p><p>实际只算 1,500 token（约 130ms），再加固定开销。<strong>数字对不上时，先查假设，不要怀疑公式。</strong></p></blockquote>
+<div class="table-wrap"><table class="table"><thead><tr><th>输入 T</th><th>FLOPs</th><th>折算</th><th>单卡 100%</th><th>单卡 35% MFU</th></tr></thead><tbody><tr><td>500</td><td>3.0×10¹³</td><td>30 TFLOP</td><td>0.015 s</td><td>0.043 s</td></tr><tr><td>5,000</td><td>3.0×10¹⁴</td><td>300 TFLOP</td><td>0.152 s</td><td>0.433 s</td></tr><tr><td>32,000</td><td>1.9×10¹⁵</td><td>1,920 TFLOP</td><td>0.97 s</td><td>2.77 s</td></tr></tbody></table></div>
+<p>单 token 成本 = 2N = 60 GFLOP（30B 激活）。</p>
+<blockquote><p>第 01 章说 prefill 约 300ms，这里算出 433ms——差额来自 <strong>70% 前缀命中</strong>：</p><p>实际只算 1,500 token（约 130ms），再加固定开销。数字对不上时，先查假设，不要怀疑公式。</p></blockquote>
 <h3>5.4 MFU：把"峰值"换成"实际"</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>MFU = 实际达到的 FLOP/s ÷ 硬件峰值 FLOP/s</code></pre></figure>
-<p>上表的 "35%" 就是假设 MFU = 0.35。它回答一个问题：<strong>买来的算力，真正用上了几成？</strong></p>
+<p>上表的 "35%" 就是假设 MFU = 0.35。它回答一个问题：买来的算力，真正用上了几成？</p>
 <p><strong>为什么到不了 100%</strong>：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>损耗来源</th><th>说明</th></tr></thead><tbody><tr><td>显存等待</td><td>算得再快，数据没搬过来也要等</td></tr><tr><td>通信</td><td>TP/EP 的 all-reduce / all-to-all 期间算力空转</td></tr><tr><td>kernel 效率</td><td>小算子、非矩阵运算跑不满 Tensor Core</td></tr><tr><td>调度</td><td>batch 不满、长短请求混跑</td></tr></tbody></table></div>
 <p><strong>典型值</strong>（工程经验，不是定律）：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>MFU 大致范围</th></tr></thead><tbody><tr><td>大模型训练</td><td>35–50%</td></tr><tr><td>Prefill（长输入、大 batch）</td><td>30–50%</td></tr><tr><td>Decode（逐 token）</td><td><strong>MFU 很低，通常 &lt;10%</strong></td></tr></tbody></table></div>
-<p><strong>Decode 不要看 MFU</strong>：它是<strong>带宽受限</strong>，算力闲置是正常的。decode 该看 <strong>MBU（Model Bandwidth Utilization）= 实际带宽 ÷ 峰值带宽</strong>，目标 60–80%，比 MFU 更有指导意义。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>MFU 大致范围</th></tr></thead><tbody><tr><td>大模型训练</td><td>35–50%</td></tr><tr><td>Prefill（长输入、大 batch）</td><td>30–50%</td></tr><tr><td>Decode（逐 token）</td><td>MFU 很低，通常 &lt;10%</td></tr></tbody></table></div>
+<p><strong>Decode 不要看 MFU</strong>：它是<strong>带宽受限</strong>，算力闲置是正常的。decode 该看 MBU（Model Bandwidth Utilization）= 实际带宽 ÷ 峰值带宽，目标 60–80%，比 MFU 更有指导意义。</p>
 <p><strong>怎么实测 MFU</strong>：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>MFU = (吞吐 tok/s × 2 × N_active) ÷ 峰值 FLOP/s</code></pre></figure>
 <p>例：实测 1,200 tok/s、N_active=30B、峰值 1.98 PFLOPS：<code>1200 × 6×10¹⁰ ÷ 1.98×10¹⁵ ≈ 3.6%</code>——这是 decode 的正常水平，不是故障。</p>
@@ -388,7 +388,7 @@ T 个 token            ：2 × N × T</code></pre></figure>
 <ul><li><code>2T &gt; 590</code> → <strong>T &gt; 295</strong> 时，prefill 进入<strong>算力受限</strong>；</li><li><code>2T &lt; 590</code> → 短输入时，prefill 也是<strong>带宽受限</strong>。</li></ul>
 <p><strong>PD 分离的根本原因就在这里</strong>：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>Prefill</th><th>Decode</th></tr></thead><tbody><tr><td>瓶颈</td><td>算力（长输入）</td><td>带宽（KV 读取）</td></tr><tr><td>并行策略</td><td>TP / EP，追求算力</td><td>大 batch，追求带宽利用率</td></tr><tr><td>扩缩容</td><td>秒级、突发</td><td>分钟级、平稳</td></tr></tbody></table></div>
-<p><strong>混在一起跑，就是在用同一个资源配置去满足两种相反的负载。</strong></p>
+<p>混在一起跑，就是在用同一个资源配置去满足两种相反的负载。</p>
 <h3>5.5 全流程串讲：prefill 与 decode 怎么接力</h3>
 <p>一次请求（输入 5,000 token，输出 350 token）的内部时间线：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>用户发来 prompt（5,000 token，一次到达）
@@ -412,22 +412,22 @@ T 个 token            ：2 × N × T</code></pre></figure>
 <p><strong>串起来的三条工程结论</strong>：</p>
 <ol><li><strong>PD 分离</strong>：两种相反的负载必须拆——prefill 池配算力、decode 池配大显存带宽；</li></ol>
 <p>   两池之间传 KV（RDMA（Remote Direct Memory Access）），传 0.96GB 只需 20ms，远小于重算的 300ms，所以值得。</p>
-<ol><li><strong>Chunked prefill</strong>：不分离时，5,000 token 的 prefill 会独占 GPU 几十毫秒，</li></ol>
+<ol><li>Chunked prefill：不分离时，5,000 token 的 prefill 会独占 GPU 几十毫秒，</li></ol>
 <p>   decode 请求的 TPOT 会抖；把 prefill 切成小块和 decode 请求混批，平滑 TPOT。</p>
-<ol><li><strong>前缀缓存 / GQA / MLA</strong>：全部作用在<strong>让 KV 更少、更可复用</strong>上——</li></ol>
+<ol><li>前缀缓存 / GQA / MLA：全部作用在让 KV 更少、更可复用上——</li></ol>
 <p>   prefill 少算（命中率 70% 时只算 1,500 token），decode 少读（KV 压缩到 1/4）。</p>
-<p><strong>一个反直觉点</strong>：prefill 也要读 30GB 权重，但 5,000 token 摊下来每 token 权重成本 = 30GB/5000 = 6MB；decode 每 token 读 30GB 权重 + 越来越长的 KV。所以<strong>同样一个 token，decode 比 prefill"贵"在访存，不在算力</strong>。</p>
+<p><strong>一个反直觉点</strong>：prefill 也要读 30GB 权重，但 5,000 token 摊下来每 token 权重成本 = 30GB/5000 = 6MB；decode 每 token 读 30GB 权重 + 越来越长的 KV。所以同样一个 token，decode 比 prefill"贵"在访存，不在算力。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 记住三个数字</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>数字</th><th>含义</th><th>用途</th></tr></thead><tbody><tr><td><strong>120 KB/token</strong></td><td>KV 单价</td><td>算并发容量</td></tr><tr><td><strong>590 FLOP/Byte</strong></td><td>H800 FP8 拐点</td><td>判断算力/带宽受限</td></tr><tr><td><strong>3.35 TB/s</strong></td><td>HBM 带宽</td><td>算 decode 上限</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>数字</th><th>含义</th><th>用途</th></tr></thead><tbody><tr><td>120 KB/token</td><td>KV 单价</td><td>算并发容量</td></tr><tr><td>590 FLOP/Byte</td><td>H800 FP8 拐点</td><td>判断算力/带宽受限</td></tr><tr><td>3.35 TB/s</td><td>HBM 带宽</td><td>算 decode 上限</td></tr></tbody></table></div>
 <p>这三个数字在手，任何"这模型要多少卡"的问题都能现场推。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 三个误区</h2>
-<p><strong>误区 1：参数量 × 2 = 显存。</strong>只在 FP16 成立。FP8 减半，INT4 再减半，MoE 还要加专家并行的副本开销。</p>
-<p><strong>误区 2：batch 越大吞吐越高。</strong>到 KV 主导时饱和；再大只会把 p99 拉长、把显存挤爆。</p>
-<p><strong>误区 3：TP 能线性加速。</strong>8 卡 TP 实测通常只有 3–5 倍，通信和效率会吃掉剩余部分。</p>
+<p>误区 1：参数量 × 2 = 显存。只在 FP16 成立。FP8 减半，INT4 再减半，MoE 还要加专家并行的副本开销。</p>
+<p>误区 2：batch 越大吞吐越高。到 KV 主导时饱和；再大只会把 p99 拉长、把显存挤爆。</p>
+<p>误区 3：TP 能线性加速。8 卡 TP 实测通常只有 3–5 倍，通信和效率会吃掉剩余部分。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>7.5 失败模式：五个算错的地方</h2>

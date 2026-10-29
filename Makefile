@@ -1,6 +1,6 @@
 PY ?= python3
 
-.PHONY: help labs serve check style style-strict voice contract html open clean
+.PHONY: help labs serve check style style-strict tone contract html open clean
 
 help:
 	@echo "make style   检查硬底线（CI 用）"
@@ -8,8 +8,8 @@ help:
 	@echo "make open    生成 HTML 并在浏览器打开"
 	@echo "make labs    跑全部实验脚本"
 	@echo "make serve   起 walking skeleton 网关 (8080)"
-	@echo "make check   语法 + 硬底线 + 人味体检 + 契约核对"
-	@echo "make voice   人味体检（只报告）"
+	@echo "make check   语法 + 硬底线 + 语气清单 + 契约核对"
+	@echo "make tone    语气清单（人工读）"
 	@echo "make contract 契约核对（有 ❌ 则退出码 1）"
 
 labs:
@@ -31,7 +31,7 @@ open: html
 serve:
 	$(PY) platform/gateway.py --port 8080
 
-voice:
+tone:
 	$(PY) tools/check_voice.py
 
 contract:
@@ -40,7 +40,7 @@ contract:
 check:
 	$(PY) -m compileall -q labs platform && echo "syntax OK"
 	$(PY) tools/check_style.py
-	@$(PY) tools/check_voice.py >/dev/null && echo "voice: 报告已生成，详见 make voice"
+	@$(PY) tools/check_voice.py >/dev/null && echo "tone: 报告已生成，详见 make tone"
 	@$(PY) tools/check_contract.py >/dev/null 2>&1 || echo "contract: 有 ❌，详见 make contract"
 
 clean:

@@ -231,7 +231,7 @@ blockquote p{margin:.4em 0}
 <p>一个典型的重构事故，几乎每个团队都会走一遍：</p>
 <blockquote><p>团队按成熟电商架构设计了 Agent 平台：无状态服务 + 水平扩展 + Redis 缓存 + MQ 削峰 + 网关限流。</p><p>上线两周后，五个问题同时爆发。</p></blockquote>
 <div class="table-wrap"><table class="table"><thead><tr><th>设计</th><th>预期</th><th>实际</th><th>根因</th></tr></thead><tbody><tr><td>无状态 + 水平扩展</td><td>加机器就扩容</td><td>扩 10% 要 10 分钟，期间流量已经涨完</td><td>GPU 扩容有加载成本</td></tr><tr><td>Redis 缓存回答</td><td>命中率 60%+</td><td>命中率 8%</td><td>用户问题几乎不重复</td></tr><tr><td>MQ 削峰</td><td>峰值排队，谷时消化</td><td>堆了 10 万条，GPU 还是 7000 QPS</td><td>算力不能"存起来"</td></tr><tr><td>网关限流</td><td>保护后端</td><td>短请求占满额度，长请求全排队</td><td>瓶颈是 token 不是 QPS</td></tr><tr><td>失败重试 3 次</td><td>提高成功率</td><td>一次抖动变成雪崩</td><td>重试成本是 prefill 全量</td></tr></tbody></table></div>
-<p><strong>五个问题指向同一件事</strong>：AI 服务不是"另一种 Web 服务"，它是<strong>有状态的、按 token 计费的、排队不可缓冲的计算服务</strong>。</p>
+<p><strong>五个问题指向同一件事</strong>：AI 服务不是"另一种 Web 服务"，它是有状态的、按 token 计费的、排队不可缓冲的计算服务。</p>
 <p>这一章不给结论，给<strong>判据</strong>——让你拿到任何一个经典模式，能自己判断它属于哪一档。</p>
 <div class="orn"></div>
 </section>
@@ -247,18 +247,18 @@ blockquote p{margin:.4em 0}
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 判定表：13 个经典模式</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>经典模式</th><th>判定</th><th>为什么</th><th>怎么改</th></tr></thead><tbody><tr><td><strong>无状态水平扩展</strong></td><td><strong>变形</strong></td><td>GPU 有状态：KV、前缀树都在显存</td><td>路由亲和 + 会话粘性</td></tr><tr><td><strong>连接池</strong></td><td>复用</td><td>到引擎的 gRPC 池仍然必要</td><td>容量按 KV 显存算，不按连接数</td></tr><tr><td><strong>多级缓存</strong></td><td><strong>变形</strong></td><td>缓存的是 KV 不是响应</td><td>前缀缓存，命中率 85% vs 8%</td></tr><tr><td><strong>MQ 削峰</strong></td><td><strong>失效</strong></td><td>算力不能"先存后算"</td><td>只能准入控制 + 拒绝</td></tr><tr><td><strong>限流</strong></td><td><strong>变形</strong></td><td>瓶颈是 token/s，不是 QPS</td><td>双维度：QPS + token/s</td></tr><tr><td><strong>熔断</strong></td><td>复用</td><td>语义没变</td><td>阈值按 token 与在飞数设</td></tr><tr><td><strong>降级</strong></td><td><strong>变形</strong></td><td>降级目标是"更小的模型/规则"</td><td>L0–L5 阶梯（第 35 章）</td></tr><tr><td><strong>多活 / 单元化</strong></td><td><strong>变形</strong></td><td>KV 不跨区传输</td><td>多 cell，会话内闭环</td></tr><tr><td><strong>分库分表</strong></td><td>复用</td><td>数据模型没变</td><td>按 tenant 分片 + 时间分区</td></tr><tr><td><strong>幂等</strong></td><td>复用+</td><td>工具调用有副作用，比写接口更关键</td><td>幂等键 + 副作用日志</td></tr><tr><td><strong>灰度发布</strong></td><td><strong>扩展</strong></td><td>变成三套版本：模型 / Prompt / 工具</td><td>版本矩阵（第 36 章）</td></tr><tr><td><strong>压测</strong></td><td><strong>变形</strong></td><td>必须按长度分布打</td><td>开环 + 生产分布（第 12 章）</td></tr><tr><td><strong>重试</strong></td><td><strong>慎用</strong></td><td>重试要重跑 prefill</td><td>重试预算 + 只重试可重试错误</td></tr></tbody></table></div>
-<p><strong>判定为"复用"的只有 4 个</strong>（连接池、熔断、分库分表、幂等）。剩下 9 个全部要改——这个比例本身就是结论：<strong>传统经验能直接用的部分不到三分之一</strong>。</p>
+<p><strong>判定为"复用"的只有 4 个</strong>（连接池、熔断、分库分表、幂等）。剩下 9 个全部要改——这个比例本身就是结论：传统经验能直接用的部分不到三分之一。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 逐项改法：怎么做、做到什么标准、还要新建什么</h2>
-<p>表里每一行都回答四个问题：<strong>怎么改 / 改到多少算合格 / 要新建什么 / 新件自己有什么标准</strong>。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>模式</th><th>改法（怎么做）</th><th>达标线</th><th>新增件</th><th>新增件达标线</th></tr></thead><tbody><tr><td><strong>无状态</strong></td><td>按 <code>(tenant, session)</code> 一致性哈希；路由表存 Redis，实例 5 s 心跳；实例故障时回退冷实例 + 事件重放</td><td>亲和命中 ≥95%；路由收敛 ≤5 s；迁移后 TTFT（Time To First Token） ≤2 s</td><td>路由表、会话迁移协议、预热副本</td><td>路由表 99.99%；迁移成功率 99.9%；预热副本 ≤5% 成本</td></tr><tr><td><strong>连接池</strong></td><td>池大小按"在飞请求数"定，不按连接数；每实例独立池</td><td>等待队列 ≤5%；连接复用率 ≥90%</td><td>池水位指标</td><td>排队等待 p95 ≤5 ms</td></tr><tr><td><strong>多级缓存</strong></td><td>缓存对象换成 <strong>KV block</strong>；稳定前缀（系统提示 + 工具 schema）固定放最前；租户哈希加盐</td><td>前缀命中 ≥85%；缓存 ≤30% 显存；跨租户 <strong>0</strong> 共享</td><td>前缀模板管理、驱逐策略、命中率看板</td><td>命中率跌 5 pt 告警；驱逐后 TTFT 回退 ≤200 ms</td></tr><tr><td><strong>MQ 削峰</strong></td><td>不再"先存后算"，改<strong>入口准入</strong>：有界队列（≤2× 在飞）+ 快速拒绝</td><td>拒绝 ≤50 ms；队列 ≤2× 在飞；goodput 走平</td><td>拒绝语义（429 + Retry-After）、队列深度指标</td><td>1.5× 过载时 goodput ≥90%</td></tr><tr><td><strong>限流</strong></td><td>三维：QPS + token/s + inflight；租户配额可借调</td><td>长请求消耗 token 配额；p99/p50 ≤3</td><td>token 滑动窗口计数、配额中心</td><td>计数误差 &lt;0.1%；配额变更 ≤10 s 生效</td></tr><tr><td><strong>熔断</strong></td><td>语义不变，阈值换成 token 速率与在飞数</td><td>熔断判定 ≤1 s；误熔断 &lt;0.01%</td><td>熔断器状态机</td><td>半开探测成功率 ≥95% 才恢复</td></tr><tr><td><strong>降级</strong></td><td>L0–L5 阶梯，阈值自动触发（见第 35 章）</td><td>触发 ≤10 s；恢复 ≤60 s</td><td>降级开关、触发阈值、自动恢复</td><td>误降级率 &lt;0.1%</td></tr><tr><td><strong>多活</strong></td><td>改<strong>多 cell</strong>，按用户哈希分；cell 内闭环，跨 cell 只异步同步</td><td>单 cell 99.9%；cell 故障不扩散</td><td>cell 路由、异步同步管道</td><td>同步延迟 ≤5 s；cell 水位 ≤70%</td></tr><tr><td><strong>分库分表</strong></td><td>按 tenant 分片 + 时间分区，与业务库同构</td><td>单分片 ≤5,000 万行；0 跨分片查询</td><td>分片路由</td><td>扩容不停机；双写校验 100% 一致</td></tr><tr><td><strong>幂等</strong></td><td>幂等键 + 副作用台账；工具调用强制幂等</td><td>重复调用 <strong>0</strong> 副作用</td><td>去重表、副作用台账</td><td>键 TTL 24 h；去重判定 ≤5 ms</td></tr><tr><td><strong>灰度</strong></td><td>模型 / Prompt / 工具 schema 三套版本组成一个 <strong>release set</strong></td><td>每个组合都有评测覆盖</td><td>版本矩阵、契约测试、影子对比</td><td>黄金用例 50 条 100% 通过；影子差异 &lt;2%</td></tr><tr><td><strong>压测</strong></td><td>开环 Poisson + 生产长度分布（见第 12 章）</td><td>客户端不瓶颈；报告六字段齐</td><td>流量回放、压测平台</td><td>与生产分布 KL 散度 &lt;0.1</td></tr><tr><td><strong>重试</strong></td><td>只重试白名单错误；每租户预算 1%；指数退避</td><td>重试率 &lt;1%；放大系数 &lt;1.1×</td><td>重试预算计数、错误码分类表</td><td>预算耗尽后 100% 快速失败</td></tr><tr><td><strong>扩容</strong></td><td>预测式定时扩 + 预热池（见第 33 章）</td><td>用户无感；预热成本 ≤10%</td><td>预测模型、P2P 权重分发</td><td>预测误差 &lt;15%；加载 ≤3 min</td></tr></tbody></table></div>
+<p>表里每一行都回答四个问题：怎么改 / 改到多少算合格 / 要新建什么 / 新件自己有什么标准。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模式</th><th>改法（怎么做）</th><th>达标线</th><th>新增件</th><th>新增件达标线</th></tr></thead><tbody><tr><td><strong>无状态</strong></td><td>按 <code>(tenant, session)</code> 一致性哈希；路由表存 Redis，实例 5 s 心跳；实例故障时回退冷实例 + 事件重放</td><td>亲和命中 ≥95%；路由收敛 ≤5 s；迁移后 TTFT（Time To First Token） ≤2 s</td><td>路由表、会话迁移协议、预热副本</td><td>路由表 99.99%；迁移成功率 99.9%；预热副本 ≤5% 成本</td></tr><tr><td><strong>连接池</strong></td><td>池大小按"在飞请求数"定，不按连接数；每实例独立池</td><td>等待队列 ≤5%；连接复用率 ≥90%</td><td>池水位指标</td><td>排队等待 p95 ≤5 ms</td></tr><tr><td><strong>多级缓存</strong></td><td>缓存对象换成 KV block；稳定前缀（系统提示 + 工具 schema）固定放最前；租户哈希加盐</td><td>前缀命中 ≥85%；缓存 ≤30% 显存；跨租户 0 共享</td><td>前缀模板管理、驱逐策略、命中率看板</td><td>命中率跌 5 pt 告警；驱逐后 TTFT 回退 ≤200 ms</td></tr><tr><td><strong>MQ 削峰</strong></td><td>不再"先存后算"，改<strong>入口准入</strong>：有界队列（≤2× 在飞）+ 快速拒绝</td><td>拒绝 ≤50 ms；队列 ≤2× 在飞；goodput 走平</td><td>拒绝语义（429 + Retry-After）、队列深度指标</td><td>1.5× 过载时 goodput ≥90%</td></tr><tr><td><strong>限流</strong></td><td>三维：QPS + token/s + inflight；租户配额可借调</td><td>长请求消耗 token 配额；p99/p50 ≤3</td><td>token 滑动窗口计数、配额中心</td><td>计数误差 &lt;0.1%；配额变更 ≤10 s 生效</td></tr><tr><td><strong>熔断</strong></td><td>语义不变，阈值换成 token 速率与在飞数</td><td>熔断判定 ≤1 s；误熔断 &lt;0.01%</td><td>熔断器状态机</td><td>半开探测成功率 ≥95% 才恢复</td></tr><tr><td><strong>降级</strong></td><td>L0–L5 阶梯，阈值自动触发（见第 35 章）</td><td>触发 ≤10 s；恢复 ≤60 s</td><td>降级开关、触发阈值、自动恢复</td><td>误降级率 &lt;0.1%</td></tr><tr><td><strong>多活</strong></td><td>改<strong>多 cell</strong>，按用户哈希分；cell 内闭环，跨 cell 只异步同步</td><td>单 cell 99.9%；cell 故障不扩散</td><td>cell 路由、异步同步管道</td><td>同步延迟 ≤5 s；cell 水位 ≤70%</td></tr><tr><td><strong>分库分表</strong></td><td>按 tenant 分片 + 时间分区，与业务库同构</td><td>单分片 ≤5,000 万行；0 跨分片查询</td><td>分片路由</td><td>扩容不停机；双写校验 100% 一致</td></tr><tr><td><strong>幂等</strong></td><td>幂等键 + 副作用台账；工具调用强制幂等</td><td>重复调用 0 副作用</td><td>去重表、副作用台账</td><td>键 TTL 24 h；去重判定 ≤5 ms</td></tr><tr><td><strong>灰度</strong></td><td>模型 / Prompt / 工具 schema 三套版本组成一个 release set</td><td>每个组合都有评测覆盖</td><td>版本矩阵、契约测试、影子对比</td><td>黄金用例 50 条 100% 通过；影子差异 &lt;2%</td></tr><tr><td><strong>压测</strong></td><td>开环 Poisson + 生产长度分布（见第 12 章）</td><td>客户端不瓶颈；报告六字段齐</td><td>流量回放、压测平台</td><td>与生产分布 KL 散度 &lt;0.1</td></tr><tr><td><strong>重试</strong></td><td>只重试白名单错误；每租户预算 1%；指数退避</td><td>重试率 &lt;1%；放大系数 &lt;1.1×</td><td>重试预算计数、错误码分类表</td><td>预算耗尽后 100% 快速失败</td></tr><tr><td><strong>扩容</strong></td><td>预测式定时扩 + 预热池（见第 33 章）</td><td>用户无感；预热成本 ≤10%</td><td>预测模型、P2P 权重分发</td><td>预测误差 &lt;15%；加载 ≤3 min</td></tr></tbody></table></div>
 <p><strong>怎么用这张表</strong>：先看"达标线"这一列——如果某项现在达不到，它就是你接下来一个季度的技术债清单。</p>
 <p>其中三个"新增件"必须自建，市面上没有现成的。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 从指标到自动动作：五层控制环</h2>
-<p>§4 的达标线不是拿来"看看"的——<strong>每一条都应该能被系统自己感知并处置</strong>。但"感知"和"自动处置"之间隔着四道关，任何一道没做对，自动化都会变成灾难。</p>
+<p>§4 的达标线不是拿来"看看"的——每一条都应该能被系统自己感知并处置。但"感知"和"自动处置"之间隔着四道关，任何一道没做对，自动化都会变成灾难。</p>
 <h3>5.1 一个指标要走完四道关</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>采集 ──▶ 聚合 ──▶ 判定 ──▶ 执行
   ▲                          │
@@ -266,7 +266,7 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>关卡</th><th>要解决什么</th><th>常见错误</th><th>达标线</th></tr></thead><tbody><tr><td><strong>采集</strong></td><td>在哪打点、带什么标签</td><td>只在网关打，引擎内部是黑盒</td><td>每请求 ≥6 个标签；采集开销 &lt;1%</td></tr><tr><td><strong>聚合</strong></td><td>用什么窗口、什么分位</td><td>只用平均值</td><td>1 s / 10 s / 1 m / 5 m 四档；p50/p95/p99</td></tr><tr><td><strong>判定</strong></td><td>阈值、趋势还是预算</td><td>单点越线就动作</td><td>连续 3 个窗口；滞回带 20%</td></tr><tr><td><strong>执行</strong></td><td>选对动作 + 限速</td><td>一律扩容</td><td>动作预算：每小时 ≤6 次</td></tr></tbody></table></div>
 <p><strong>采集这一关最重要</strong>：如果"亲和命中"这个数在路由层没有打点，它就只是一句口号，永远无法自动化。</p>
 <h3>5.2 关键：指标要分类，动作要匹配</h3>
-<p>这是整套自动化的核心洞察——<strong>不是所有指标都该用"扩容"来响应</strong>。</p>
+<p>这是整套自动化的核心洞察——不是所有指标都该用"扩容"来响应。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>指标类型</th><th>例子</th><th>正确动作</th><th>错误的动作</th><th>为什么错</th></tr></thead><tbody><tr><td><strong>容量型</strong></td><td>队列深度、TTFT p95、KV 水位</td><td>扩容 / 缩容</td><td>降级</td><td>降级只是掩盖，容量还是不够</td></tr><tr><td><strong>正确性型</strong></td><td>亲和命中率、跨租户共享、对账差</td><td>修配置 / 切流 / 回滚</td><td>扩容</td><td><strong>命中率与卡数无关</strong></td></tr><tr><td><strong>成本型</strong></td><td>每轮 token、每秒成本</td><td>降级 / 调参</td><td>扩容</td><td>越扩越贵</td></tr><tr><td><strong>依赖型</strong></td><td>下游工具错误率、DB 延迟</td><td>熔断 / 降级</td><td>扩容</td><td>问题不在你这边</td></tr></tbody></table></div>
 <p><strong>举例</strong>：亲和命中率从 95% 掉到 60%，正确动作是检查路由表是否被重启清空、哈希键是否变了；此时扩容 100 张卡，命中率一点不会涨。</p>
 <blockquote><p>判断方法：问一句"这个指标变差，是因为资源不够吗？"</p><p>不是，就别用扩容解决。</p></blockquote>
@@ -275,7 +275,7 @@ blockquote p{margin:.4em 0}
 <p><strong>L3 和 L4 必须分开</strong>：决策是"该怎么办"，执行是"怎么安全地办"。合并在一起，就会出现"决策说扩 50 台，执行一口气拉起 50 台把存储打爆"。</p>
 <h3>5.4 一个完整例子：TTFT p95 从 600 ms 涨到 1200 ms</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>层</th><th>发生了什么</th></tr></thead><tbody><tr><td>T+0</td><td>L0</td><td>网关与引擎同时上报 TTFT，标签含 <code>tenant / model / cell</code></td></tr><tr><td>T+30 s</td><td>L1</td><td>1 m 窗口 p95 = 1180 ms，越过 800 ms</td></tr><tr><td>T+90 s</td><td>L2</td><td>连续 3 个窗口越线，且错误预算燃烧率 3.2×（&gt;2× 告警线）</td></tr><tr><td>T+95 s</td><td>L3</td><td>决策：<strong>先判别类型</strong>——查 token/s 是否超配额。发现长请求占比从 5%→22%，判定为"配额型过载"</td></tr><tr><td>T+100 s</td><td>L4</td><td>动作 1：对超配额租户限流（不动容量）；动作 2：预热池 +2 实例（3 min 后可用）</td></tr><tr><td>T+160 s</td><td>L1</td><td>复测 p95 = 820 ms，仍在临界</td></tr><tr><td>T+165 s</td><td>L3</td><td>动作 3：触发 L1 降级（关投机解码），单用户变慢但吞吐 +12%</td></tr><tr><td>T+220 s</td><td>L2</td><td>p95 = 640 ms，恢复；燃烧率回落到 0.4×</td></tr><tr><td>T+10 min</td><td>L3</td><td>稳定后<strong>自动撤销降级</strong>（这是最容易漏的一步）</td></tr><tr><td>全程</td><td>L5</td><td>记一条：<code>原因=长请求激增 动作=限流+扩容+降级 结果=恢复@220s</code></td></tr></tbody></table></div>
-<p><strong>这个例子里扩容只是三个动作之一</strong>。只会上扩的系统，遇到长请求激增会越扩越糟。</p>
+<p>这个例子里扩容只是三个动作之一。只会上扩的系统，遇到长请求激增会越扩越糟。</p>
 <h3>5.5 自动化的三条纪律</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>纪律</th><th>内容</th><th>违反的后果</th></tr></thead><tbody><tr><td><strong>先观察两周</strong></td><td>人工盯两周，确认规则不误报，再开自动执行</td><td>规则一上线就震荡</td></tr><tr><td><strong>每个动作可回滚</strong></td><td>扩容可缩、降级可撤、切流可切回</td><td>出了错只能重启</td></tr><tr><td><strong>动作预算</strong></td><td>每小时 ≤6 次，防震荡</td><td>扩了缩、缩了扩，抖动放大</td></tr></tbody></table></div>
 <p><strong>震荡是最常见的失败</strong>：扩容阈值 80%、缩容阈值 79%，系统会整夜开开关关。解法是滞回——扩容 80%、缩容 40%，中间 40 个点不动。</p>
@@ -305,7 +305,7 @@ def on_first_token(req, elapsed_ms, hit_route):
                      &quot;reason&quot;: req.fallback_reason or &quot;none&quot;})</code></pre></figure>
 <p><strong>标签规范</strong>（这一条决定系统能不能扩展）：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>允许</th><th>禁止</th></tr></thead><tbody><tr><td>tenant_id、model、cell、version、status</td><td>session_id、request_id、user_id（基数爆炸）</td></tr><tr><td>枚举值 ≤50 个</td><td>自由文本、URL 路径</td></tr></tbody></table></div>
-<p>基数失控的典型症状：Prometheus 内存一路涨到 OOM。<strong>一条规则：标签值的集合必须能枚举完。</strong></p>
+<p>基数失控的典型症状：Prometheus 内存一路涨到 OOM。一条规则：标签值的集合必须能枚举完。</p>
 <h3>5.8 L2/L3：判定与决策</h3>
 <p><strong>判定</strong>用多窗口燃烧率（Google SRE Workbook 的标准做法）：</p>
 <figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code># 日均 SLO 99.9% → 错误预算 0.1%
@@ -378,23 +378,23 @@ func classify(m Snapshot) Class {
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>申请机器 → 开机 → 拉镜像 → 加载 200 GB 权重 → 预热 → 可服务
   30 s      3-5 min   1 min      2-3 min      30 s    ≈ 7-10 min</code></pre></figure>
 <p>而且扩的不是"1 张卡"，是 <strong>TP8 = 8 卡一个实例</strong>——因为 200B 模型的权重切不开到单卡。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>耗时</th><th>能优化吗</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>用预留池</td></tr><tr><td>镜像拉取</td><td>30–60 s</td><td>预置镜像</td></tr><tr><td><strong>权重加载 200 GB</strong>（200B FP8）</td><td>2–3 min</td><td>P2P 分发、本地 NVMe 缓存</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>冷启动预热脚本</td></tr><tr><td><strong>合计</strong></td><td><strong>7–10 min</strong></td><td>最优可压到 3–4 min</td></tr></tbody></table></div>
-<p>推论：<strong>容量是阶梯，不是滑杆</strong>。2512 卡扩 10% 是 251 卡 ≈ 31 个 TP8 实例，一次性要加载 31 × 200 GB = 6.2 TB——存储带宽会先成为瓶颈。</p>
-<blockquote><p>这就是第 33 章要讲"预热池"的原因：<strong>你不可能等它扩，只能提前准备好。</strong></p></blockquote>
-<p><strong>慢的物理原因不在这里，在下一层</strong>：为什么必须整卡 8 张、为什么镜像 8–15 GB、为什么驱动不能进容器——这些是 K8s 与 GPU 运行时决定的，展开见 <strong>第 32 章</strong>。本章只记结论：<strong>容量是阶梯</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>耗时</th><th>能优化吗</th></tr></thead><tbody><tr><td>节点开机（云上）</td><td>3–5 min</td><td>用预留池</td></tr><tr><td>镜像拉取</td><td>30–60 s</td><td>预置镜像</td></tr><tr><td><strong>权重加载 200 GB</strong>（200B FP8）</td><td>2–3 min</td><td>P2P 分发、本地 NVMe 缓存</td></tr><tr><td>预热（跑几个请求）</td><td>30 s</td><td>冷启动预热脚本</td></tr><tr><td><strong>合计</strong></td><td>7–10 min</td><td>最优可压到 3–4 min</td></tr></tbody></table></div>
+<p>推论：容量是阶梯，不是滑杆。2512 卡扩 10% 是 251 卡 ≈ 31 个 TP8 实例，一次性要加载 31 × 200 GB = 6.2 TB——存储带宽会先成为瓶颈。</p>
+<blockquote><p>这就是第 33 章要讲"预热池"的原因：你不可能等它扩，只能提前准备好。</p></blockquote>
+<p>慢的物理原因不在这里，在下一层：为什么必须整卡 8 张、为什么镜像 8–15 GB、为什么驱动不能进容器——这些是 K8s 与 GPU 运行时决定的，展开见 <strong>第 32 章</strong>。本章只记结论：<strong>容量是阶梯</strong>。</p>
 <h3>8.2 案例二：一次重试有多贵</h3>
 <p>传统服务重试：CPU 空闲时成本接近 0。</p>
-<p>LLM 重试：<strong>要把整段上下文重新 prefill 一遍</strong>。</p>
+<p>LLM 重试：要把整段上下文重新 prefill 一遍。</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一次 8000 token 的 prefill ≈ 0.4 GPU·秒（按 20,000 tok/s/GPU）</code></pre></figure>
 <p>现在算一笔账：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>重试请求占比</th><th>额外 GPU</th><th>后果</th></tr></thead><tbody><tr><td>健康</td><td>0.1%</td><td>2.8 张</td><td>无感</td></tr><tr><td>轻微抖动</td><td>1%</td><td><strong>28 张</strong></td><td>吃掉一个机柜</td></tr><tr><td>故障中（重试 3 次）</td><td>全部重试 3 次</td><td><strong>+200%</strong></td><td>雪崩</td></tr></tbody></table></div>
-<p><strong>1% 的重试 = 28 张卡。</strong> 这就是为什么第 24 章要把"重试预算"写进契约：重试不是免费的，它按 prefill 全价收费。</p>
+<p>1% 的重试 = 28 张卡。 这就是为什么第 24 章要把"重试预算"写进契约：重试不是免费的，它按 prefill 全价收费。</p>
 <p>更进一步：<strong>重试会和降级打架</strong>。过载时你降级到小模型，客户端超时重试，重试打到已经降级的池子，池子更慢，超时更多——正反馈直到崩溃。</p>
 <h3>8.3 案例三：为什么限流放在网关会失效</h3>
-<p>网关看到的是 QPS，GPU 的瓶颈是 <strong>token/s</strong>。</p>
+<p>网关看到的是 QPS，GPU 的瓶颈是 token/s。</p>
 <p>假设 7000 QPS 里有 5% 是长文档：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>请求类型</th><th>占比</th><th>每请求 token</th><th>贡献 token/s</th></tr></thead><tbody><tr><td>普通对话</td><td>95%</td><td>800</td><td>5,320,000</td></tr><tr><td>长文档分析</td><td>5%</td><td>32,000</td><td>11,200,000</td></tr></tbody></table></div>
-<p><strong>5% 的请求贡献了 68% 的算力消耗。</strong> 但按 QPS 限流，它们只占 5% 的额度。</p>
+<p>5% 的请求贡献了 68% 的算力消耗。 但按 QPS 限流，它们只占 5% 的额度。</p>
 <p>后果：</p>
 <ol><li>长请求"合法地"占用了 40 倍的算力；</li><li>短请求把额度吃满后，长请求开始排队，TTFT 从 800 ms 涨到 12 s；</li><li>你以为是"容量不够"，其实是"额度分配错了"。</li></ol>
 <p>正确做法是<strong>双维度限流</strong>：</p>
@@ -418,7 +418,7 @@ func classify(m Snapshot) Class {
 跨区专线 10 Gbps ≈ 1.25 GB/s → 光传输就要 3.1 秒</code></pre></figure>
 <p>而且不只是"慢"：会话一旦迁到另一个实例，<strong>前缀缓存全部失效</strong>，下一个请求要重新 prefill 32K token，TTFT 从 600 ms 变成 4 s。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>代价</th></tr></thead><tbody><tr><td>全局多活</td><td>每次迁移 3.84 GB，p99 +3 s，缓存全废</td></tr><tr><td><strong>多 cell</strong></td><td>每个 cell 独立闭环，会话不迁移；故障时该 cell 用户受影响</td></tr></tbody></table></div>
-<p>结论：<strong>放弃"全局多活"，改"多 cell + 单 cell 高可用"</strong>。可用性的说法也要改：不是"整体 99.9%"，而是"单 cell 99.9%，cell 间故障不扩散"。</p>
+<p>结论：放弃"全局多活"，改"多 cell + 单 cell 高可用"。可用性的说法也要改：不是"整体 99.9%"，而是"单 cell 99.9%，cell 间故障不扩散"。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 照抄会死的七件事</h2>
@@ -430,7 +430,7 @@ func classify(m Snapshot) Class {
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>扩容永远慢一步</td><td>把 GPU 当无状态服务</td><td>扩容耗时 vs 流量爬坡时间</td><td>预热池 + 预测式（33 章）</td></tr><tr><td>缓存不命中还占内存</td><td>缓存对象选错</td><td>命中率 &lt;20%</td><td>缓存 KV 不缓存响应</td></tr><tr><td>削峰削不动</td><td>算力不可存储</td><td>MQ 堆积且 GPU 饱和</td><td>准入控制替代排队（25 章）</td></tr><tr><td>长请求饿死短请求</td><td>单一维度限流</td><td>p99 与 p50 差距拉大</td><td>token 维度限流</td></tr><tr><td>抖动变雪崩</td><td>重试放大</td><td>重试率突增</td><td>重试预算 + 熔断</td></tr><tr><td>灰度后质量下降</td><td>版本矩阵没维护</td><td>只有主观反馈</td><td>三套版本强绑定（36 章）</td></tr><tr><td>越重试越崩</td><td>重试与降级互相激化</td><td>重试率随错误率同步上升</td><td>重试预算 + 降级期间禁重试</td></tr></tbody></table></div>
-<p>最后一条是个正反馈环：过载 → 降级 → 更慢 → 超时 → 重试 → 更过载。<strong>打破它只有一个办法：让重试本身也有预算，用完了就不再试。</strong></p>
+<p>最后一条是个正反馈环：过载 → 降级 → 更慢 → 超时 → 重试 → 更过载。打破它只有一个办法：让重试本身也有预算，用完了就不再试。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 验收：怎么证明这张判定表用对了</h2>

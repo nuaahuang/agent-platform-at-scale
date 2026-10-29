@@ -6,7 +6,7 @@
 > ③ 为什么换一张卡就可能要重写？
 > ④ 自己的团队该不该写 kernel？
 
-> **本章是第 10 章的展开，不是必读**。主线读法可以跳过，
+> 本章是第 10 章的展开，不是必读。主线读法可以跳过，
 > 但只要你需要回答"为什么同样的卡我们只有别人 1/3 吞吐"，就必须读。
 
 ---
@@ -35,10 +35,10 @@ attention 与 GEMM 的 kernel 写得好不好，端到端吞吐能差 **2–3 �
 |---|---|---|---|
 | **层（layer）** | 一组算子的组合 | 一个 Transformer block | 模型结构 |
 | **算子（operator）** | 数学语义上的一个操作 | `matmul`、`softmax`、`rmsnorm`、`topk` | 框架（ATen 等） |
-| **kernel** | 算子在某硬件上的**具体实现** | `cuBLAS gemm`、`flash_mla_with_kvcache` | kernel 作者 |
+| kernel | 算子在某硬件上的**具体实现** | `cuBLAS gemm`、`flash_mla_with_kvcache` | kernel 作者 |
 | **指令** | GPU 线程执行的机器指令 | `HMMA`（半精度矩阵乘加）、`LDGSTS`（全局→共享异步拷贝）、`TMA`（张量内存加速器） | 编译器/架构 |
 
-关键区别：**算子是不变的语义，kernel 是可变的实现。**
+关键区别：算子是不变的语义，kernel 是可变的实现。
 
 ```
 model.forward()            ← 层
@@ -82,7 +82,7 @@ torch.matmul
 
 而 TPOT（Time Per Output Token） 预算是 25 ms——**光下发就吃掉 12%**，还没开始算。
 
-这就是 **CUDA Graph** 存在的理由：把整条 kernel 序列录成一张图，一次提交，
+这就是 CUDA Graph 存在的理由：把整条 kernel 序列录成一张图，一次提交，
 重复下发归零。代价是**形状必须固定**，所以变长 batch 要用 padding 或 masked 方案
 （DeepGEMM 的 masked grouped GEMM 就是为此而生）。
 
@@ -118,9 +118,9 @@ Grid                     一次 kernel 启动
 | 怎么切 grid？ | 每个 `(请求, 头)` 一个 CTA |
 | 每个 CTA 搬什么进 shared memory？ | 一个 KV block（16 token × 576 维） |
 | 怎么并行？ | warp 内按 16×16 分块做 QK^T |
-| 怎么处理长序列？ | **online softmax**：边算边更新 running max/sum |
+| 怎么处理长序列？ | online softmax：边算边更新 running max/sum |
 
-**shared memory 是稀缺资源**：H800/H100 每个 SM 只有 228 KB。
+shared memory 是稀缺资源：H800/H100 每个 SM 只有 228 KB。
 一个 CTA 要 200 KB，那这个 SM 同时只能跑一个 CTA——占用率直接掉到下限。
 
 **访存合并**是第二个坎：一个 warp 的 32 个线程如果读地址连续，一次事务搞定；
@@ -134,11 +134,11 @@ Grid                     一次 kernel 启动
 | 技术栈 | 代表 | 门槛 | 能达到的峰值 | 可移植性 |
 |---|---|---|---|---|
 | **CUDA C++** | 大多数生产 kernel | 极高 | 90%+ | 只 NVIDIA |
-| **CUTLASS / CuTe** | DeepGEMM 起点、cuBLAS 同源 | 高 | 90%+ | 只 NVIDIA，按架构模板化 |
+| CUTLASS / CuTe | DeepGEMM 起点、cuBLAS 同源 | 高 | 90%+ | 只 NVIDIA，按架构模板化 |
 | **PTX / SASS 手写** | 少量极致优化 | 极高 | 接近 100% | 绑死具体架构（PTX 是 NVIDIA 虚拟指令集，SASS 是 GPU 真正执行的机器码） |
-| **DSL：Triton** | PyTorch 生态、FlashInfer | 中 | 70%–90% | NVIDIA/AMD |
-| **DSL：TileLang** | DeepInfer、昇腾适配 | 中 | 70%–95% | CUDA 与昇腾双后端 |
-| **Ascend C** | 昇腾原生算子 | 中高 | 依算子 | 只昇腾 |
+| DSL：Triton | PyTorch 生态、FlashInfer | 中 | 70%–90% | NVIDIA/AMD |
+| DSL：TileLang | DeepInfer、昇腾适配 | 中 | 70%–95% | CUDA 与昇腾双后端 |
+| Ascend C | 昇腾原生算子 | 中高 | 依算子 | 只昇腾 |
 
 **趋势是**：新项目用 DSL 起步，遇到热点再下沉到 CUDA/CUTLASS。
 DeepInfer 就是这个组合——`tilelang_ops` 写通用部分，FlashMLA/DeepGEMM 写极致部分。
@@ -147,7 +147,7 @@ DeepInfer 就是这个组合——`tilelang_ops` 写通用部分，FlashMLA/Deep
 
 ## 6. 融合的收益与代价
 
-FlashMLA 把 **Q-norm、Q-RoPE、attention、O-RoPE、转 FP8** 五个算子融成一个 kernel：
+FlashMLA 把 Q-norm、Q-RoPE、attention、O-RoPE、转 FP8 五个算子融成一个 kernel：
 
 ```python
 out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)
@@ -159,7 +159,7 @@ out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)
 代价很硬：**权重要提前重排**。README 要求先调 `permute_q_b_proj`、`permute_wv_proj`
 把权重和 scale 改成 kernel 要求的布局。一旦换了 kernel，权重格式就得跟着变。
 
-> 这是全书反复出现的模式：**性能优化会把"数据布局"变成契约**。
+> 这是全书反复出现的模式：性能优化会把"数据布局"变成契约。
 > 你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。
 
 ---
@@ -172,8 +172,8 @@ MoE 的传统流程是四步、四次 kernel、两次跨卡：
 dispatch(EP) → GEMM1 → SwiGLU → GEMM2 → combine(EP)
 ```
 
-DeepGEMM 的 **Mega MoE** 把它合成一个 kernel：dispatch、linear1、linear2、SwiGLU、combine
-全部融进去，用对称内存（symmetric memory）让 **NVLink 通信与 tensor core 计算重叠**。
+DeepGEMM 的 Mega MoE 把它合成一个 kernel：dispatch、linear1、linear2、SwiGLU、combine
+全部融进去，用对称内存（symmetric memory）让 NVLink 通信与 tensor core 计算重叠。
 
 ```python
 y = deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)
@@ -194,7 +194,7 @@ kernel 是按 **SM 架构**编译的，架构一换，指令集、tensor core �
 | DeepInfer 只支持 SM100 与昇腾 950 | 2026.10 | Hopper 不在列表 |
 | 昇腾 950 稀疏注意力 | 2026.09.30 | prefill 410 TFLOPS（峰值 95%）、decode 360（83%） |
 
-**选硬件时先看 kernel 支持矩阵，再看纸面算力。**
+选硬件时先看 kernel 支持矩阵，再看纸面算力。
 一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。
 
 ---
@@ -215,7 +215,7 @@ kernel 是按 **SM 架构**编译的，架构一换，指令集、tensor core �
 | [NCCL](https://github.com/NVIDIA/nccl) | 见仓库 | 集合通信 | 所有人 | ★★★ 底层实现 |
 
 **怎么挑**：先用 Triton/FlashInfer 把功能跑通，热点再用 CUTLASS/FlashMLA 级别的库，
-最后才考虑自己写。**顺序反了会浪费半年。**
+最后才考虑自己写。顺序反了会浪费半年。
 
 ---
 

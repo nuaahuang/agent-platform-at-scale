@@ -226,16 +226,16 @@ blockquote p{margin:.4em 0}
   <main class="content">
     <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">10</div><div class="ch-kicker">推理工程</div><h1>推理引擎：PagedAttention 与连续批处理</h1><div class="ch-rule"></div></header>
 <blockquote><p>迁移自 v1 <code>ch03-inference-engine.md</code>。文中引用"第 N 章"为 <strong>v1 旧编号</strong>，与 v3 的对应关系见 <a href="../../MIGRATION.md">../../MIGRATION.md</a>。</p></blockquote>
-<blockquote><p><strong>一句话结论</strong>：推理引擎不负责"算"（kernel 负责算），它负责一件操作系统做的事——</p><p><strong>把有限的 HBM 安全、高效、不浪费地分配给成百上千个长短不一的会话。</strong></p><p>三大技术：连续批处理、PagedAttention、前缀缓存。</p></blockquote>
+<blockquote><p><strong>一句话结论</strong>：推理引擎不负责"算"（kernel 负责算），它负责一件操作系统做的事——</p><p>把有限的 HBM 安全、高效、不浪费地分配给成百上千个长短不一的会话。</p><p>三大技术：连续批处理、PagedAttention、前缀缓存。</p></blockquote>
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：没有引擎会怎样</h2>
 <p>回到第 02 章的约束：</p>
-<ul><li>一块节点 300GB KV 预算，一个 8K 会话要 0.96GB；</li><li>会话长短差异巨大（200–8000 token）；</li><li>请求随机到达、随时结束；</li><li>decode 是带宽游戏，<strong>GPU 空转一秒就是钱烧掉一秒</strong>。</li></ul>
+<ul><li>一块节点 300GB KV 预算，一个 8K 会话要 0.96GB；</li><li>会话长短差异巨大（200–8000 token）；</li><li>请求随机到达、随时结束；</li><li>decode 是带宽游戏，GPU 空转一秒就是钱烧掉一秒。</li></ul>
 <p>如果让每个请求独占一块显存、自己跑自己的，会出现两个浪费：</p>
 <ol><li><strong>padding 浪费</strong>：一个 batch 要等长，5000 token 的请求和 200 token 的请求凑一批，短的补 4800 个空位——算力浪费在空气上；</li><li><strong>全队等最慢</strong>：batch 里 31 个请求生成完了，1 个还没结束，31 个位置全陪着等。</li></ol>
 <p>推理引擎就是来消灭这两个浪费的。</p>
 <h3>1.1 为什么"等长"是硬性要求</h3>
-<p>根本原因：<strong>GPU 只会算稠密矩形矩阵，不接受参差不齐的行。</strong></p>
+<p>根本原因：GPU 只会算稠密矩形矩阵，不接受参差不齐的行。</p>
 <p>一次矩阵乘 <code>X·W</code>，输入 X 必须是 <code>[B, T, d]</code> 的完整长方体：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>batch:  [请求A 5000 token]
         [请求B  200 token]      ← 这一行只有 200，剩下 4800 个位置是什么？
@@ -245,16 +245,16 @@ GPU 要求：每行都是 5000 → B 的请求后面补 4800 个占位符（padd
         [BB                   PPP]   P = padding
         [CCCC                 PPP]</code></pre></figure>
 <p>三个技术原因：</p>
-<ol><li><strong>显存是连续的矩形块</strong>：kernel 按固定步长寻址，第 2 行第 201 个位置必须存在，否则索引错乱；</li><li><strong>SIMT 并行要求整齐</strong>：上万个线程同拍执行同一条指令（SIMD），线程 1 算第 300 个 token、线程 2 却没有第 300 个 token，无法对齐执行；</li><li><strong>padding 不只是浪费算力</strong>：注意力里还要用 <strong>attention mask</strong> 屏蔽这些假 token，防止它们污染 softmax——多一步逻辑。</li></ol>
+<ol><li><strong>显存是连续的矩形块</strong>：kernel 按固定步长寻址，第 2 行第 201 个位置必须存在，否则索引错乱；</li><li><strong>SIMT 并行要求整齐</strong>：上万个线程同拍执行同一条指令（SIMD），线程 1 算第 300 个 token、线程 2 却没有第 300 个 token，无法对齐执行；</li><li>padding 不只是浪费算力：注意力里还要用 attention mask 屏蔽这些假 token，防止它们污染 softmax——多一步逻辑。</li></ol>
 <p><strong>浪费有多大</strong>：5000 和 200 凑一批，有效算力利用率 = (5000+200) / (5000×2) = 52%，接近一半烧在空气上。</p>
 <p>工程上的四种对策：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>对策</th><th>做法</th><th>局限</th></tr></thead><tbody><tr><td><strong>Padding + mask</strong></td><td>补到本批最长</td><td>长短混批时浪费</td></tr><tr><td><strong>Bucketing（分桶）</strong></td><td>相近长度凑一批（256 桶、512 桶…）</td><td>桶有碎片，prefill 常用</td></tr><tr><td><strong>Varlen / FlashAttention</strong></td><td>拼成一维序列 + 偏移量，物理紧凑逻辑分条</td><td>需要专用 kernel 支持</td></tr><tr><td><strong>连续批处理（本章 §2）</strong></td><td>decode 每 step 重组，且每个请求每步只出 1 token——decode 阶段天然等长（都是 1），padding 问题消失</td><td>引擎核心技术</td></tr></tbody></table></div>
-<p>注意区分：<strong>decode 每个请求每步都只处理 1 个 token，batch 内天然等长</strong>，不需要 padding；真正的等长难题在 <strong>prefill</strong>（输入长短不一），所以才有 bucketing、chunked prefill 和 varlen kernel。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>对策</th><th>做法</th><th>局限</th></tr></thead><tbody><tr><td><strong>Padding + mask</strong></td><td>补到本批最长</td><td>长短混批时浪费</td></tr><tr><td><strong>Bucketing（分桶）</strong></td><td>相近长度凑一批（256 桶、512 桶…）</td><td>桶有碎片，prefill 常用</td></tr><tr><td>Varlen / FlashAttention</td><td>拼成一维序列 + 偏移量，物理紧凑逻辑分条</td><td>需要专用 kernel 支持</td></tr><tr><td><strong>连续批处理（本章 §2）</strong></td><td>decode 每 step 重组，且每个请求每步只出 1 token——decode 阶段天然等长（都是 1），padding 问题消失</td><td>引擎核心技术</td></tr></tbody></table></div>
+<p>注意区分：decode 每个请求每步都只处理 1 个 token，batch 内天然等长，不需要 padding；真正的等长难题在 prefill（输入长短不一），所以才有 bucketing、chunked prefill 和 varlen kernel。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 连续批处理（Continuous Batching）</h2>
-<p><strong>规则只有一条：每个 decode step（约 25ms）结束后，重组一次 batch。</strong></p>
-<blockquote><p><strong>25ms 哪来的？</strong> 它就是 TPOT（每 token 生成间隔），由第 02 章的带宽账决定：</p><p>```</p><p>每步耗时 = (激活权重 30GB + B × 单会话KV 0.96GB) ÷ 3.35 TB/s</p><p>B=32  → 60.7GB ÷ 3.35TB/s ≈ 18ms</p><p>B=64  → 91.4GB ÷ 3.35TB/s ≈ 27ms   ← 我们的典型工作点</p><p>B=128 → 152.9GB ÷ 3.35TB/s ≈ 46ms</p><p>```</p><p>即"约 25ms"= B≈64、8K 上下文时的每步访存时间（理论值，真实乘效率系数）。</p><p><strong>它不是常数，而是一个被选中的工作点</strong>：SLO（Service Level Objective） 定 TPOT ≤ 50ms，</p><p>调度器就把 batch 顶到满足该红线的最大值（约 120–130），25ms 是留了余量的典型值。</p><p>用户体验上：25ms/token ≈ 40 tok/s ≈ 每秒约 60 个汉字，快于人眼阅读。</p><p>batch 越大 step 越慢（字蹦得越慢），所以"聚合吞吐 vs TPOT"是调度器的核心权衡。</p></blockquote>
+<p>规则只有一条：每个 decode step（约 25ms）结束后，重组一次 batch。</p>
+<blockquote><p>25ms 哪来的？ 它就是 TPOT（每 token 生成间隔），由第 02 章的带宽账决定：</p><p>```</p><p>每步耗时 = (激活权重 30GB + B × 单会话KV 0.96GB) ÷ 3.35 TB/s</p><p>B=32  → 60.7GB ÷ 3.35TB/s ≈ 18ms</p><p>B=64  → 91.4GB ÷ 3.35TB/s ≈ 27ms   ← 我们的典型工作点</p><p>B=128 → 152.9GB ÷ 3.35TB/s ≈ 46ms</p><p>```</p><p>即"约 25ms"= B≈64、8K 上下文时的每步访存时间（理论值，真实乘效率系数）。</p><p>它不是常数，而是一个被选中的工作点：SLO（Service Level Objective） 定 TPOT ≤ 50ms，</p><p>调度器就把 batch 顶到满足该红线的最大值（约 120–130），25ms 是留了余量的典型值。</p><p>用户体验上：25ms/token ≈ 40 tok/s ≈ 每秒约 60 个汉字，快于人眼阅读。</p><p>batch 越大 step 越慢（字蹦得越慢），所以"聚合吞吐 vs TPOT"是调度器的核心权衡。</p></blockquote>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>step 1:  [A 已到][B 已到][C 已到]            → 算 A B C
 step 2:  [A][B][C][D 刚到]                   → 算 A B C D   ← D 直接插队
 step 3:  [A][C][D]                           → B 完成了，移出
@@ -267,10 +267,10 @@ step 4:  [A][C][D][E][F]                     → E F 补进来</code></pre></fig
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. KV 怎么分配：先看实验</h2>
 <p>三个策略，300GB 预算、2000 个长短不一的会话（<a href="../../labs/paging_lab.py"><code>paging_lab.py</code></a>）：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>策略</th><th>并发会话</th><th>浪费率</th><th>问题</th></tr></thead><tbody><tr><td>A 每个会话预留 8192 长度</td><td><strong>298</strong></td><td><strong>73.7%</strong></td><td>怕它变长，先把位置占满</td></tr><tr><td>B 按需连续分配（理想）</td><td>1,153</td><td>0%</td><td>真实中做不到（见下）</td></tr><tr><td>C <strong>分页，block=16 token</strong></td><td><strong>1,151</strong></td><td><strong>0.4%</strong></td><td>PagedAttention 的做法</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>策略</th><th>并发会话</th><th>浪费率</th><th>问题</th></tr></thead><tbody><tr><td>A 每个会话预留 8192 长度</td><td>298</td><td>73.7%</td><td>怕它变长，先把位置占满</td></tr><tr><td>B 按需连续分配（理想）</td><td>1,153</td><td>0%</td><td>真实中做不到（见下）</td></tr><tr><td>C 分页，block=16 token</td><td>1,151</td><td>0.4%</td><td>PagedAttention 的做法</td></tr></tbody></table></div>
 <p><strong>为什么 B 只在纸上成立</strong>：</p>
 <ul><li>显存是"一块连续空间"，会话一个挨一个放。会话结束留下空洞——<strong>外部碎片</strong>；</li><li>会话变长，后面没空间，得<strong>整体搬移</strong>（memcpy），搬一次几 GB，线上直接卡顿；</li><li>共享前缀（系统提示）要复制 KV，没法只存一份。</li></ul>
-<p><strong>操作系统在 1960 年代就解决过这个问题</strong>：虚拟内存分页。vLLM 把它原封不动搬进来。</p>
+<p>操作系统在 1960 年代就解决过这个问题：虚拟内存分页。vLLM 把它原封不动搬进来。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. PagedAttention：给 KV 也装一套虚拟内存</h2>
@@ -278,7 +278,7 @@ step 4:  [A][C][D][E][F]                     → E F 补进来</code></pre></fig
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>逻辑地址：会话 A 的 KV 序列 → [block 0][block 1][block 2]...（连续的逻辑编号）
                                       │        │        │
 物理地址：block table 映射 → 物理块 #7、#23、#2（显存里可以不连续）</code></pre></figure>
-<ul><li>每个物理 <strong>block 固定 16 个 token 的 KV</strong>（vLLM 默认 16，SGLang 类似）；</li><li>block table = 进程页表；KV 按需申请 block，<strong>写满一块才申请下一块</strong>；</li><li>会话结束，block 归还池子，谁都能用——<strong>无外部碎片</strong>；</li><li>浪费只有"最后一块没写满"，每会话 &lt; 16 token，实测 0.4%（内部碎片）。</li></ul>
+<ul><li>每个物理 block 固定 16 个 token 的 KV（vLLM 默认 16，SGLang 类似）；</li><li>block table = 进程页表；KV 按需申请 block，<strong>写满一块才申请下一块</strong>；</li><li>会话结束，block 归还池子，谁都能用——<strong>无外部碎片</strong>；</li><li>浪费只有"最后一块没写满"，每会话 &lt; 16 token，实测 0.4%（内部碎片）。</li></ul>
 <h3>4.2 一个 block 多大</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>120 KB/token × 16 = 约 1.9 MB/block
 一个 8K 会话 = 512 blocks ≈ 0.96 GB</code></pre></figure>
@@ -287,12 +287,12 @@ step 4:  [A][C][D][E][F]                     → E F 补进来</code></pre></fig
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>分支 X: [7][23][2]→[新块 9]
 分支 Y: [7][23][2]→[新块 10]
               ↑ 前三个块共享，引用计数 = 2</code></pre></figure>
-<p>谁要写共享块，先复制再改——<strong>Copy-on-Write</strong>。系统提示这种公共前缀，所有会话也只存一份。</p>
+<p>谁要写共享块，先复制再改——Copy-on-Write。系统提示这种公共前缀，所有会话也只存一份。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. Chunked Prefill：让两种负载共乘一班车</h2>
 <p>问题：一个 5000 token 的 prefill 要独占 GPU 约 150–400ms，期间在 decode 的请求全部等住，TPOT 出现尖刺。</p>
-<p>解法：<strong>把 prefill 切成 chunk</strong>（比如每块 512–2048 token），和 decode 请求混进同一个 step：</p>
+<p>解法：把 prefill 切成 chunk（比如每块 512–2048 token），和 decode 请求混进同一个 step：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>step: [decode A][decode B][prefill C 的第 1 块 512 token]
 step: [decode A][decode B][prefill C 的第 2 块]
 ...</code></pre></figure>
@@ -303,9 +303,9 @@ step: [decode A][decode B][prefill C 的第 2 块]
 <div class="orn"></div>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 前缀缓存：block 哈希</h2>
-<ul><li>每个 block 的内容 = f(前一个 block 哈希, 本 block token)；</li><li>算出哈希，去全局哈希表查：<strong>命中 → block table 直接指过去，prefill 跳过这些 token</strong>；</li><li>平台 Agent 的系统提示 + 工具 Schema（约 2.5K token）每会话相同——</li></ul>
+<ul><li>每个 block 的内容 = f(前一个 block 哈希, 本 block token)；</li><li>算出哈希，去全局哈希表查：命中 → block table 直接指过去，prefill 跳过这些 token；</li><li>平台 Agent 的系统提示 + 工具 Schema（约 2.5K token）每会话相同——</li></ul>
 <p>  命中率 70% 就是这么来的，对应容量模型里 prefill 卡数少 60%。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th></th><th>vLLM</th><th>SGLang</th></tr></thead><tbody><tr><td>结构</td><td>block 哈希表（块级复用）</td><td><strong>RadixAttention 基数树</strong>（token 级复用，命中率更高）</td></tr><tr><td>适合</td><td>通用</td><td>多轮 Agent、长公共前缀</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>vLLM</th><th>SGLang</th></tr></thead><tbody><tr><td>结构</td><td>block 哈希表（块级复用）</td><td>RadixAttention 基数树（token 级复用，命中率更高）</td></tr><tr><td>适合</td><td>通用</td><td>多轮 Agent、长公共前缀</td></tr></tbody></table></div>
 <p>详见 <a href="../vllm-vs-sglang.md">vllm-vs-sglang.md</a>。</p>
 <h3>6.1 RadixAttention 原理：把所有请求存成一棵前缀树</h3>
 <p><strong>核心思想</strong>：每个请求的 token 序列是树上的一条路径；<strong>公共前缀只存一份 KV</strong>，节点可以按 token 粒度分叉（不是按 block）。</p>
@@ -319,10 +319,10 @@ step: [decode A][decode B][prefill C 的第 2 块]
 <p>新请求进来，沿树找<strong>最长匹配前缀</strong>：命中的 token 跳过 prefill，只算后缀并把新枝挂上树。演示 <a href="../../labs/radix_lab.py"><code>radix_lab.py</code></a>（3 用户 × 3 轮）：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>朴素 KV 总量：720 份 → 基数树实际存：220 份，节省 69%
 命中率：同用户第 2 轮起 75–80%，跨用户首请求也有 67%（共享系统提示）</code></pre></figure>
-<p><strong>和 vLLM block 哈希的区别</strong>：</p>
+<p>和 vLLM block 哈希的区别：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>block 哈希</th><th>RadixAttention 基数树</th></tr></thead><tbody><tr><td>复用粒度</td><td>整个 block（16 token）</td><td><strong>单个 token</strong>（边可以任意长）</td></tr><tr><td>部分命中</td><td>一个 token 不同，整块作废</td><td>从分叉点精确复用</td></tr><tr><td>结构</td><td>扁平哈希表</td><td>树，天然表达前缀关系</td></tr><tr><td>淘汰</td><td>块 LRU</td><td>从叶子 LRU 回收（引用计数）</td></tr><tr><td>典型强项</td><td>通用场景</td><td>Agent 多轮、few-shot 模板、树搜索</td></tr></tbody></table></div>
 <p>代价：树结构在 CPU 侧维护，高 QPS 下锁竞争和树管理有开销；收益大小取决于<strong>前缀到底有多公共</strong>——零公共前缀的随机请求，两者都省不了。</p>
-<p><strong>和 PagedAttention 的关系（别混）</strong>：PagedAttention 管"KV 在显存里怎么摆"（分页），RadixAttention 管"哪段 KV 可以复用"（前缀树）；SGLang 两者都用——<strong>树决定复用关系，分页决定物理存放。</strong></p>
+<p>和 PagedAttention 的关系（别混）：PagedAttention 管"KV 在显存里怎么摆"（分页），RadixAttention 管"哪段 KV 可以复用"（前缀树）；SGLang 两者都用——树决定复用关系，分页决定物理存放。</p>
 <h3>6.2 SGLang 的分页怎么设计，如何与基数树串起来</h3>
 <p>SGLang 的内存层是<strong>三级结构</strong>（自顶向下：复用关系 → 逻辑索引 → 物理页）：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>① RadixCache（基数树）
@@ -359,20 +359,20 @@ step: [decode A][decode B][prefill C 的第 2 块]
 <div class="table-wrap"><table class="table"><thead><tr><th>设计</th><th>说明</th></tr></thead><tbody><tr><td><strong>KV 不可变</strong></td><td>一个 token 的 KV 算出来后永不改变（权重固定即确定），所以共享是<strong>只读共享</strong>，分叉就申请新页——主路径不需要 copy-on-write</td></tr><tr><td><strong>两级间接寻址</strong></td><td>树只管 token 序列的复用关系，不关心物理位置；物理位置由页表决定。树重组/换页互不影响</td></tr><tr><td><strong>层级缓存 HiCache</strong></td><td>被淘汰的热前缀可下沉到 CPU 内存/SSD，下次命中先搬回（类似 OS 的内存↔磁盘换页）</td></tr></tbody></table></div>
 <p><strong>与 vLLM 对照</strong>：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>vLLM</th><th>SGLang</th></tr></thead><tbody><tr><td>复用结构</td><td>block 内容哈希表</td><td>基数树（token 精确前缀，边可任意长）</td></tr><tr><td>物理层</td><td>分页 block + block table</td><td>分页 pool + TokenToKVPool 页表</td></tr><tr><td>共享粒度</td><td>block（16 tok）</td><td>token（逻辑层），物理仍按页</td></tr><tr><td>淘汰保护</td><td>引用计数</td><td>引用计数 + 叶子 LRU + HiCache</td></tr></tbody></table></div>
-<p>一句话：<strong>树是"复用地图"，页表是"物理地址簿"，分页大张量是"仓库"——三者用一次 match→建页表→算后缀→提交挂枝的流程串起来。</strong></p>
+<p>树记复用关系，页表记物理位置，分页大张量存数据。一次请求走完 match→建页表→算后缀→提交挂枝四步，三者就串起来了。</p>
 <h3>6.3 树的作用域：什么时候有几棵树</h3>
-<p><strong>答案：一个引擎实例（一个模型）一棵逻辑树，不是全局一棵。</strong></p>
-<div class="table-wrap"><table class="table"><thead><tr><th>边界</th><th>树的情况</th><th>原因</th></tr></thead><tbody><tr><td>不同模型</td><td><strong>各自独立的树</strong></td><td>权重不同，同一段 token 的 KV 也不同，复用无意义</td></tr><tr><td>同模型 TP=8</td><td><strong>一棵逻辑树</strong>（树在 CPU 侧的调度器里），KV 物理页分片在 8 张卡上</td><td>匹配只看 token 序列，与卡无关；页表再把索引翻译到各卡分片</td></tr><tr><td>不同实例/Pod</td><td><strong>各有各的树，默认不共享</strong></td><td>树是进程内内存结构；这正是要做 KV-aware 路由的原因</td></tr><tr><td>多租户</td><td>物理上一棵树，前缀在根处自然分叉；强隔离要求则按租户拆实例</td><td>KV 不可变且需精确匹配，跨租户不会"误中"；但合规场景物理隔离</td></tr><tr><td>模型版本更新</td><td><strong>整棵树作废重建</strong></td><td>权重变了，全部旧 KV 失效（缓存版本号必须和模型版本绑定）</td></tr></tbody></table></div>
+<p>答案：一个引擎实例（一个模型）一棵逻辑树，不是全局一棵。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>边界</th><th>树的情况</th><th>原因</th></tr></thead><tbody><tr><td>不同模型</td><td><strong>各自独立的树</strong></td><td>权重不同，同一段 token 的 KV 也不同，复用无意义</td></tr><tr><td>同模型 TP=8</td><td><strong>一棵逻辑树</strong>（树在 CPU 侧的调度器里），KV 物理页分片在 8 张卡上</td><td>匹配只看 token 序列，与卡无关；页表再把索引翻译到各卡分片</td></tr><tr><td>不同实例/Pod</td><td>各有各的树，默认不共享</td><td>树是进程内内存结构；这正是要做 KV-aware 路由的原因</td></tr><tr><td>多租户</td><td>物理上一棵树，前缀在根处自然分叉；强隔离要求则按租户拆实例</td><td>KV 不可变且需精确匹配，跨租户不会"误中"；但合规场景物理隔离</td></tr><tr><td>模型版本更新</td><td><strong>整棵树作废重建</strong></td><td>权重变了，全部旧 KV 失效（缓存版本号必须和模型版本绑定）</td></tr></tbody></table></div>
 <p><strong>跨实例想共享怎么办</strong>（第 04/11 章展开）：</p>
 <ol><li><strong>路由层亲和</strong>：同系统提示/同租户的请求固定路由到同一实例——把"共享"问题变成"路由"问题；</li><li><strong>分布式 KV 传输</strong>：Mooncake / NIXL / LMCache 这类 connector 把前缀 KV 在实例间搬运，</li></ol>
 <p>   SGLang 的 HiCache 还可以把被淘汰的前缀下沉到 CPU 内存/磁盘；</p>
 <ol><li><strong>PD 分离场景</strong>：prefill 实例树上的 KV 传给 decode 实例（两实例各有树，传的是 KV 数据本身）。</li></ol>
 <blockquote><p>树节点只存 token 索引和引用关系（CPU 内存，几 MB 级），真正的 KV 在 GPU pool。</p><p>所以"多棵树"很便宜，跨机"共享树"很贵——这决定了业界选择"本地树 + 路由亲和 + 显式传输"，</p><p>而不是做一棵全局分布式树。</p></blockquote>
 <h3>6.4 一个实例对应几张卡</h3>
-<p><strong>1 个引擎实例 = 1 个并行组 = TP × PP 张卡</strong>；扩容靠多副本（数据并行），不靠做大单实例。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>权重</th><th>单实例卡数</th><th>约束</th></tr></thead><tbody><tr><td>8B FP16</td><td>16GB</td><td>1 卡（可一卡多实例/MIG）</td><td></td></tr><tr><td>70B FP16</td><td>140GB</td><td>TP=2–4</td><td></td></tr><tr><td><strong>200B MoE FP8（本项目）</strong></td><td>200GB</td><td><strong>TP=8（一台 H800）</strong></td><td>≥3 卡装权重，NVLink 域 8 卡</td></tr><tr><td>DeepSeek 671B FP8</td><td>670GB</td><td><strong>16–32 卡</strong>（TP=8 × EP 跨机 RDMA（Remote Direct Memory Access））</td><td>MoE 专家并行必须跨机</td></tr></tbody></table></div>
-<p><strong>卡数下限 = 权重装得下；上限 = 通信不拖后腿</strong>：H800 NVLink 域只有 8 卡（跨机退到 IB）；GB200 NVL72 才把域扩到 72 卡。</p>
-<p>不做超大实例的三个原因：all-reduce ring 随卡数变长；故障域大（重载权重几分钟）；弹性粒度粗（闲 10% 就是几十张卡白烧）。所以线上是"几十个 8 卡副本 + 前缀亲和路由"，每副本各有自己的基数树——<strong>扩容 = 复制"8 卡 + 一棵树"。</strong></p>
+<p>1 个引擎实例 = 1 个并行组 = TP × PP 张卡；扩容靠多副本（数据并行），不靠做大单实例。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>权重</th><th>单实例卡数</th><th>约束</th></tr></thead><tbody><tr><td>8B FP16</td><td>16GB</td><td>1 卡（可一卡多实例/MIG）</td><td></td></tr><tr><td>70B FP16</td><td>140GB</td><td>TP=2–4</td><td></td></tr><tr><td>200B MoE FP8（本项目）</td><td>200GB</td><td><strong>TP=8（一台 H800）</strong></td><td>≥3 卡装权重，NVLink 域 8 卡</td></tr><tr><td>DeepSeek 671B FP8</td><td>670GB</td><td><strong>16–32 卡</strong>（TP=8 × EP 跨机 RDMA（Remote Direct Memory Access））</td><td>MoE 专家并行必须跨机</td></tr></tbody></table></div>
+<p>卡数下限 = 权重装得下；上限 = 通信不拖后腿：H800 NVLink 域只有 8 卡（跨机退到 IB）；GB200 NVL72 才把域扩到 72 卡。</p>
+<p>不做超大实例的三个原因：all-reduce ring 随卡数变长；故障域大（重载权重几分钟）；弹性粒度粗（闲 10% 就是几十张卡白烧）。所以线上是"几十个 8 卡副本 + 前缀亲和路由"，每副本各有自己的基数树——扩容 = 复制"8 卡 + 一棵树"。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 一个 step 里，调度器在决策什么</h2>
@@ -383,50 +383,50 @@ step: [decode A][decode B][prefill C 的第 2 块]
 ④ 执行 kernel（attention 时按 block table 取 KV）
 ⑤ 回收：完成的请求释放 block，引用计数减一
 ⑥ 统计：waiting/running、KV 使用率、抢占次数（全部暴露成指标）</code></pre></figure>
-<p><strong>你在第 01 章看到的 <code>vllm:num_requests_waiting</code> 和 <code>gpu_cache_usage_perc</code>，就是 ②③ 的输出。</strong>KEDA（Kubernetes Event-driven Autoscaling） 按这两个数扩缩容——调度器的内部状态直接决定了基础设施的行为。</p>
+<p>你在第 01 章看到的 <code>vllm:num_requests_waiting</code> 和 <code>gpu_cache_usage_perc</code>，就是 ②③ 的输出。KEDA（Kubernetes Event-driven Autoscaling） 按这两个数扩缩容——调度器的内部状态直接决定了基础设施的行为。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 三个误区</h2>
-<p><strong>误区 1：vLLM 的"连续批处理"靠 GPU 多线程。</strong>错。GPU 本身就是批量并行；连续批处理是<strong>调度器在 CPU 侧每步重组请求集合</strong>，是软件调度创新。</p>
-<p><strong>误区 2：PagedAttention 是一种新的注意力算法（数学不同）。</strong>错。注意力的数学完全不变，变的是 <strong>KV 的内存管理方式</strong>——访存地址从"连续读"变成"按 block table 读"。</p>
-<p><strong>误区 3：开了前缀缓存就不花钱。</strong>缓存只省 prefill 的算力；命中的 KV 照样占显存、decode 照样读。<strong>缓存命中率是容量和显存的权衡，不是免费午餐。</strong></p>
+<p>误区 1：vLLM 的"连续批处理"靠 GPU 多线程。错。GPU 本身就是批量并行；连续批处理是调度器在 CPU 侧每步重组请求集合，是软件调度创新。</p>
+<p>误区 2：PagedAttention 是一种新的注意力算法（数学不同）。错。注意力的数学完全不变，变的是 <strong>KV 的内存管理方式</strong>——访存地址从"连续读"变成"按 block table 读"。</p>
+<p>误区 3：开了前缀缓存就不花钱。缓存只省 prefill 的算力；命中的 KV 照样占显存、decode 照样读。缓存命中率是容量和显存的权衡，不是免费午餐。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 业界对照：DeepInfer 如何解同一组问题</h2>
-<blockquote><p><strong>本节是外部事实，全部带出处</strong>，与本书的教学案例（200B MoE / H800 / 32K）不是同一个系统。</p><p>读法：先看它和你已经理解的机制<strong>哪里一样、哪里不一样</strong>，不要直接把它的数字搬进我们的容量模型。</p></blockquote>
-<p>2026 年 10 月 20 日，DeepSeek 把支撑其生产服务的推理框架 <strong>DeepInfer</strong> 开源（Apache-2.0，<a href="https://github.com/deepseek-ai/DeepInfer">GitHub</a>、<a href="https://pypi.org/project/deepinfer/">PyPI</a>）。它只支持一个模型：<strong>DeepSeek-V4.1-Flash</strong>（1M 上下文，MIT 许可，<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017">模型卡</a>）。</p>
+<blockquote><p>本节是外部事实，全部带出处，与本书的教学案例（200B MoE / H800 / 32K）不是同一个系统。</p><p>读法：先看它和你已经理解的机制哪里一样、哪里不一样，不要直接把它的数字搬进我们的容量模型。</p></blockquote>
+<p>2026 年 10 月 20 日，DeepSeek 把支撑其生产服务的推理框架 DeepInfer 开源（Apache-2.0，<a href="https://github.com/deepseek-ai/DeepInfer">GitHub</a>、<a href="https://pypi.org/project/deepinfer/">PyPI</a>）。它只支持一个模型：DeepSeek-V4.1-Flash（1M 上下文，MIT 许可，<a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017">模型卡</a>）。</p>
 <p>它对本章八个机制的答案，横向对比如下：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>本章机制</th><th>DeepInfer 的实现</th><th>关键差异 / 代价</th></tr></thead><tbody><tr><td>连续批处理</td><td><strong>异步调度</strong>：CPU 组批与 GPU 执行重叠，默认开启</td><td>消除"组批气泡"；代价是调度状态机复杂度上升</td></tr><tr><td>Chunked Prefill</td><td><strong>SWA bounded replay</strong>：prefill 只重放有界后缀，默认保留 140 token</td><td>官方称 prefill 计算量近乎减半；<strong>只在滑动窗口注意力下成立</strong></td></tr><tr><td>前缀缓存</td><td>未开源（KV 管理与内部基础设施耦合）</td><td>说明"缓存"不是引擎单体能做干净的</td></tr><tr><td>投机解码</td><td><strong>DSpark</strong>：草稿模型一次提 5 个 token + 置信度调度验证</td><td>每步验证 token 数 −30%，吞吐 +4%–7%</td></tr><tr><td>专家并行</td><td>MoE EP + <strong>EPLB（Expert Parallel Load Balancer）</strong>（专家负载均衡）</td><td>直接针对 all-to-all 热点</td></tr><tr><td>可复现性</td><td><strong>batch-invariant</strong> + 确定性采样（仅 NVIDIA）</td><td>换 batch 组合结果不变，评测与回放才可比</td></tr><tr><td>结构化输出</td><td>正则 / JSON Schema / EBNF 约束</td><td>把"格式对"从提示词问题变成解码问题</td></tr><tr><td>引擎底座</td><td>最初基于 <strong>vLLM</strong> 构建，后自研 kernel</td><td>连头部团队也是"先站在 vLLM 上，再换心脏"</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>本章机制</th><th>DeepInfer 的实现</th><th>关键差异 / 代价</th></tr></thead><tbody><tr><td>连续批处理</td><td><strong>异步调度</strong>：CPU 组批与 GPU 执行重叠，默认开启</td><td>消除"组批气泡"；代价是调度状态机复杂度上升</td></tr><tr><td>Chunked Prefill</td><td>SWA bounded replay：prefill 只重放有界后缀，默认保留 140 token</td><td>官方称 prefill 计算量近乎减半；<strong>只在滑动窗口注意力下成立</strong></td></tr><tr><td>前缀缓存</td><td>未开源（KV 管理与内部基础设施耦合）</td><td>说明"缓存"不是引擎单体能做干净的</td></tr><tr><td>投机解码</td><td>DSpark：草稿模型一次提 5 个 token + 置信度调度验证</td><td>每步验证 token 数 −30%，吞吐 +4%–7%</td></tr><tr><td>专家并行</td><td>MoE EP + EPLB（Expert Parallel Load Balancer）（专家负载均衡）</td><td>直接针对 all-to-all 热点</td></tr><tr><td>可复现性</td><td>batch-invariant + 确定性采样（仅 NVIDIA）</td><td>换 batch 组合结果不变，评测与回放才可比</td></tr><tr><td>结构化输出</td><td>正则 / JSON Schema / EBNF 约束</td><td>把"格式对"从提示词问题变成解码问题</td></tr><tr><td>引擎底座</td><td>最初基于 vLLM 构建，后自研 kernel</td><td>连头部团队也是"先站在 vLLM 上，再换心脏"</td></tr></tbody></table></div>
 <h3>9.1 DSpark：把"猜几个"变成"猜几个值得验"</h3>
-<p>第 10 章我们在 §1 就说过 decode 是带宽受限。投机解码用"小模型猜、大模型验"换速度，但朴素做法有个隐形成本：<strong>猜得越多，验证越浪费</strong>——高并发下，验证 token 占的是本该给别人 decode 的 batch 容量。</p>
+<p>第 10 章我们在 §1 就说过 decode 是带宽受限。投机解码用"小模型猜、大模型验"换速度，但朴素做法有个隐形成本：猜得越多，验证越浪费——高并发下，验证 token 占的是本该给别人 decode 的 batch 容量。</p>
 <p>DSpark 的两处改动（<a href="https://arxiv.org/abs/2607.05147">论文</a>）：</p>
 <ol><li><strong>半自回归草稿</strong>：并行骨干 + 轻量顺序模块，补上块内依赖，缓解"越往后接受率越低"的衰减；</li><li><strong>置信度调度验证</strong>：按前缀存活概率 × 引擎吞吐画像，给每个请求动态决定验多长。</li></ol>
 <p>生产数据（DeepSeek 自述）：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>结果</th></tr></thead><tbody><tr><td>每步需验证的草稿 token</td><td><strong>−30%</strong></td></tr><tr><td>生产负载吞吐</td><td><strong>+4%–7%</strong></td></tr><tr><td>单用户生成速度（对齐吞吐，对比 MTP-1）</td><td><strong>+60%–85%</strong></td></tr></tbody></table></div>
-<p>注意最后两行的区别：<strong>吞吐只涨了几个点，但用户体感快了 60% 以上</strong>。这是投机解码真正的价值——它买的不是总吞吐，是<strong>在同样吞吐下的交互性</strong>。这正好呼应第 1 章的 SLO 分层：TPOT 属于体验层，吞吐属于成本层，两者不是一回事。</p>
+<p>注意最后两行的区别：吞吐只涨了几个点，但用户体感快了 60% 以上。这是投机解码真正的价值——它买的不是总吞吐，是<strong>在同样吞吐下的交互性</strong>。这正好呼应第 1 章的 SLO 分层：TPOT 属于体验层，吞吐属于成本层，两者不是一回事。</p>
 <h3>9.2 SWA bounded replay：为什么它能砍掉一半 prefill</h3>
 <p>标准做法（§5）是把长 prefill 切片，和 decode 混跑。DeepInfer 走另一条路：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>常规：   [──────────────── 5000 token 全部重算 ────────────────]
 SWA：    [ 丢弃 ][ 只重算最后 140 token ]</code></pre></figure>
 <p>前提是模型用<strong>滑动窗口注意力</strong>：只有最后 W 个 token 参与注意力，更早的位置已经被窗口滑出。既然它们不影响结果，就没必要重算——只需保证保留的后缀覆盖"窗口 + 最大回溯长度"。</p>
 <p>官方 README 的默认配置是 <code>KEEP_TOKENS=140</code>（<code>compact</code> 模式）；媒体报道写作"最后 128 个 token"，两者略有出入，<strong>以 README 为准</strong>。</p>
-<p><strong>这就是"模型结构决定引擎优化空间"的最好例子</strong>：同样的 prefill 问题，稠密全注意力只能切片，滑动窗口可以直接截断。第 06 章讲压缩时会再回到这一点。</p>
+<p>这就是"模型结构决定引擎优化空间"的最好例子：同样的 prefill 问题，稠密全注意力只能切片，滑动窗口可以直接截断。第 06 章讲压缩时会再回到这一点。</p>
 <h3>9.3 它没开源的三块，恰好是本书的三章</h3>
 <p>DeepInfer 的 README 明确写了"完整服务还需要、但本次未包含"：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>缺的部分</th><th>对应本书</th><th>为什么不开源</th></tr></thead><tbody><tr><td>KV cache 系统</td><td>第 27 章 存储选型</td><td>与内部基础设施强耦合</td></tr><tr><td>VE/Prefill/Decode 分离</td><td>第 11 章 PD 分离</td><td>需要跨机传输与调度配合</td></tr><tr><td>DP 副本间的负载均衡</td><td>第 25 章 准入控制</td><td>依赖全局视图</td></tr></tbody></table></div>
-<p><strong>这恰好说明一件事：引擎（engine）不等于服务（service）。</strong>引擎解决"一次前向怎么算得快"，服务解决"一万个请求怎么排队、放哪、坏了怎么办"。本书把后者拆成 Part VII–IX，就是这个原因。</p>
-<p>它的最小高效部署是 <strong>64 GPU prefill + 64 GPU decode</strong>，P:D ≈ 1:1——和我们第 11 章算出来的 909:700 ≈ 1.3:1 同一个量级，这是相互印证的。</p>
+<p>这恰好说明一件事：引擎（engine）不等于服务（service）。引擎解决"一次前向怎么算得快"，服务解决"一万个请求怎么排队、放哪、坏了怎么办"。本书把后者拆成 Part VII–IX，就是这个原因。</p>
+<p>它的最小高效部署是 64 GPU prefill + 64 GPU decode，P:D ≈ 1:1——和我们第 11 章算出来的 909:700 ≈ 1.3:1 同一个量级，这是相互印证的。</p>
 <h3>9.4 边界：哪些数字不能抄</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>DeepInfer / V4.1 的事实</th><th>我们的教学案例</th><th>能不能类比</th></tr></thead><tbody><tr><td>1M 上下文 + 极限 KV 压缩</td><td>32K 上下文，KV 120 KB/token</td><td>❌ 每 token 显存完全不同</td></tr><tr><td>SM100（Blackwell）/ 昇腾 950</td><td>H800 / H200</td><td>❌ Hopper 不在其支持列表</td></tr><tr><td>155 万亿 token/日（单集群）</td><td>0.8 万亿 token/日</td><td>⚠️ 差约 190 倍，只能看趋势</td></tr><tr><td>非高峰每卡时收入 38 美元</td><td>单卡成本 7.3 元/时</td><td>⚠️ 收入 vs 成本，口径不同</td></tr></tbody></table></div>
 <p>最后一行特别值得停一下：38 美元/卡时 ≈ 273 元，是我们单卡成本（7.3 元/时）的 <strong>37 倍</strong>。但它是<strong>收入</strong>、且对应旗舰模型定价，不是毛利，也不能反推"我们也能卖这么贵"。第 17 章讲定价时会专门拆这个口径。</p>
 <h3>9.5 一句话</h3>
-<blockquote><p>同一个问题（prefill 太贵、decode 太慢、batch 不可复现），</p><p>DeepSeek 的答案是"改模型结构 + 自研 kernel + 只在自家硬件上极致优化"；</p><p>本书的答案是"通用硬件 + 标准协议 + 可替换组件"。</p><p><strong>两条路都对，取决于你有多少卡、多少人和多少时间。</strong></p></blockquote>
+<blockquote><p>同一个问题（prefill 太贵、decode 太慢、batch 不可复现），</p><p>DeepSeek 的答案是"改模型结构 + 自研 kernel + 只在自家硬件上极致优化"；</p><p>本书的答案是"通用硬件 + 标准协议 + 可替换组件"。</p><p>两条路都对，取决于你有多少卡、多少人和多少时间。</p></blockquote>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. Kernel 层：本章只留结论</h2>
 <p>引擎的第五层是 kernel——算子在 GPU 上的具体实现。它不在引擎仓库里，而是以独立库（FlashMLA / DeepGEMM / DeepEP）的形式被依赖。</p>
 <p>三个必须记住的结论：</p>
-<ol><li><strong>一次 decode step 约 750 次 kernel 启动 ≈ 3 ms</strong>，占 TPOT 预算 25 ms 的 12%；</li><li><strong>融合省的是 HBM 往返，代价是权重布局变成契约</strong>；</li><li><strong>kernel 78% 峰值 ≠ 模型 35% MFU</strong>，中间 43 个点丢在调度与通信里。</li></ol>
+<ol><li>一次 decode step 约 750 次 kernel 启动 ≈ 3 ms，占 TPOT 预算 25 ms 的 12%；</li><li>融合省的是 HBM 往返，代价是权重布局变成契约；</li><li>kernel 78% 峰值 ≠ 模型 35% MFU，中间 43 个点丢在调度与通信里。</li></ol>
 <p>完整的解剖、五种技术栈、开源地图与调优方法，见 <strong>第 10A 章</strong>。</p>
 <div class="orn"></div>
 </section>

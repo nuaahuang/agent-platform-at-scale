@@ -230,7 +230,7 @@ blockquote p{margin:.4em 0}
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：三个数字决定这个系统能不能做</h2>
 <p>任何"亿级 Agent 平台"的方案评审，本质上只问三件事：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>答错的后果</th><th>本章给什么</th></tr></thead><tbody><tr><td>要多少卡</td><td>买多了烧钱，买少了上线即熔断</td><td>2512 卡的完整推导</td></tr><tr><td>能不能扛住</td><td>SLO 崩了，用户流失</td><td>三层 SLO 与违约形态</td></tr><tr><td>赚不赚钱</td><td>规模越大亏得越多</td><td>0.52 分/轮的成本结构</td></tr></tbody></table></div>
-<p><strong>先算账，再画架构图。</strong> 反过来做的方案，90% 会在第一次大促时被推翻——因为它不知道自己离悬崖有多远。</p>
+<p>先算账，再画架构图。 反过来做的方案，90% 会在第一次大促时被推翻——因为它不知道自己离悬崖有多远。</p>
 <p>三个常见死法，本章逐一拆掉：</p>
 <ol><li>拿"平均 QPS"买卡 → 峰值直接熔断；</li><li>拿"连接数"买卡 → 多买 88 倍；</li><li>只算 GPU 不算存储带宽 → 预算超支 30%。</li></ol>
 <div class="orn"></div>
@@ -243,18 +243,18 @@ blockquote p{margin:.4em 0}
 <p>所以 SLO 必须<strong>同时写清"谁让步"</strong>：默认顺序是 <strong>成本 &lt; 体验 &lt; 可用性</strong>，即宁可多花钱也不能不可用，但宁可慢一点也不能超预算。这个顺序要写进 ADR，否则每次故障复盘都会变成扯皮。</p>
 <h3>2.1 先把四个词定死：SLI（Service Level Indicator） / SLO / SLA（Service Level Agreement） / 错误预算</h3>
 <p>这四行业最常混用的词，本书用法如下——后面 39 章不再重复解释。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>词</th><th>是什么</th><th>本书的例子</th><th>常见误用</th></tr></thead><tbody><tr><td><strong>SLI</strong><br><em>Service Level Indicator</em>（指标）</td><td>实际测出来的数</td><td>TTFT p95 = 780 ms</td><td>把"目标"当指标</td></tr><tr><td><strong>SLO</strong><br><em>Service Level Objective</em>（目标）</td><td>对 SLI 的内部目标值</td><td>TTFT p95 ≤ 800 ms</td><td>写成"尽量快"</td></tr><tr><td><strong>SLA</strong><br><em>Service Level Agreement</em>（承诺）</td><td>对外合同，违约要赔</td><td>月可用性 ≥ 99.9%，否则赔 10% 月费</td><td>拿 SLO 当 SLA 对外承诺</td></tr><tr><td><strong>错误预算</strong><br><em>Error Budget</em></td><td>允许失败的额度 = 1 − SLO</td><td>99.9% → 每月 43.2 分钟 / 1,810 万次失败</td><td>当成"可以随便用"</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>词</th><th>是什么</th><th>本书的例子</th><th>常见误用</th></tr></thead><tbody><tr><td>SLI<br><em>Service Level Indicator</em>（指标）</td><td>实际测出来的数</td><td>TTFT p95 = 780 ms</td><td>把"目标"当指标</td></tr><tr><td>SLO<br><em>Service Level Objective</em>（目标）</td><td>对 SLI 的内部目标值</td><td>TTFT p95 ≤ 800 ms</td><td>写成"尽量快"</td></tr><tr><td>SLA<br><em>Service Level Agreement</em>（承诺）</td><td>对外合同，违约要赔</td><td>月可用性 ≥ 99.9%，否则赔 10% 月费</td><td>拿 SLO 当 SLA 对外承诺</td></tr><tr><td><strong>错误预算</strong><br><em>Error Budget</em></td><td>允许失败的额度 = 1 − SLO</td><td>99.9% → 每月 43.2 分钟 / 1,810 万次失败</td><td>当成"可以随便用"</td></tr></tbody></table></div>
 <p>错误预算的算法（以本系统为例）：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>月总请求 = 7000 QPS × 2,592,000 s = 1.81e10 次
 允许失败 = 1.81e10 × 0.1%            = 1,810 万次
 允许不可用 = 30 天 × 24 h × 0.1%     = 43.2 分钟</code></pre></figure>
-<p><strong>错误预算的用法是"刹车"，不是"额度"</strong>：本月烧掉 60%，就该冻结非必要发布，而不是"还剩 40% 可以继续激进"。这一点决定了第 36 章灰度发布的节奏。</p>
+<p>错误预算的用法是"刹车"，不是"额度"：本月烧掉 60%，就该冻结非必要发布，而不是"还剩 40% 可以继续激进"。这一点决定了第 36 章灰度发布的节奏。</p>
 <p>常用可用性换算，背下来比查表快：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>SLO</th><th>每月不可用</th><th>每年不可用</th></tr></thead><tbody><tr><td>99%</td><td>7.2 小时</td><td>3.65 天</td></tr><tr><td>99.9%</td><td>43.2 分钟</td><td>8.76 小时</td></tr><tr><td>99.95%</td><td>21.6 分钟</td><td>4.38 小时</td></tr><tr><td>99.99%</td><td>4.32 分钟</td><td>52.6 分钟</td></tr></tbody></table></div>
 <h3>2.2 为什么是 800ms / 50ms / 9s</h3>
-<p><strong>先把一件事说清楚：这是三条独立约束，不是一条公式。</strong></p>
+<p>先把一件事说清楚：这是三条独立约束，不是一条公式。</p>
 <div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>目标</th><th>独立依据</th><th>破了会怎样</th></tr></thead><tbody><tr><td>TTFT</td><td>≤ 800 ms</td><td>人类感知"即时响应"上限约 1 s</td><td>用户以为没反应，重复点击</td></tr><tr><td>TPOT</td><td>≤ 50 ms</td><td>中文阅读速度约 20 字/秒，每字 50 ms</td><td>流式输出一顿一顿，像卡住</td></tr><tr><td>端到端</td><td>≤ 9 s</td><td>单轮任务的耐心上限（含思考与工具调用）</td><td>用户中途退出</td></tr></tbody></table></div>
-<p>三个数管三件不同的事：<strong>"多久开始"、"流不流畅"、"什么时候结束"</strong>。它们各自独立，任一条破了都是事故，不能拿"另外两条还不错"来抵。</p>
+<p>三个数管三件不同的事："多久开始"、"流不流畅"、"什么时候结束"。它们各自独立，任一条破了都是事故，不能拿"另外两条还不错"来抵。</p>
 <h3>2.3 为什么端到端不能由前两项乘出来</h3>
 <p>一个直觉的写法是：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>端到端 = TTFT + 输出长度 × TPOT
@@ -263,20 +263,20 @@ blockquote p{margin:.4em 0}
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>p95(端到端) ≠ p95(TTFT) + p95(decode)</code></pre></figure>
 <p>TTFT 最慢的那 5% 请求，和 TPOT 最慢的那 5% 请求，<strong>大概率不是同一批</strong>。真要把两个分布合成端到端分布，得做卷积；工程上没人这么算，直接实测。</p>
 <p>正确用法是把这个式子当<strong>量级校验</strong>，而不是推导：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>组合</th><th>TTFT</th><th>输出 token</th><th>TPOT</th><th>端到端</th></tr></thead><tbody><tr><td>典型一轮（p50）</td><td>500 ms</td><td>150</td><td>20 ms</td><td>3.5 s</td></tr><tr><td>长回答（p95 组合）</td><td>800 ms</td><td>300</td><td>27 ms</td><td><strong>8.9 s</strong></td></tr><tr><td>若两项 p95 同时发生</td><td>800 ms</td><td>350</td><td>50 ms</td><td>18.3 s（真实中不存在）</td></tr></tbody></table></div>
-<p>表格第二行说明：<strong>9 秒对应的组合是"TTFT 打满 + 300 token + 每 token 27 ms"</strong>。50 ms 的 TPOT 约束比 27 ms 更严——它是用来防单步卡顿的<strong>独立护栏</strong>，不是端到端公式里的那个系数。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>组合</th><th>TTFT</th><th>输出 token</th><th>TPOT</th><th>端到端</th></tr></thead><tbody><tr><td>典型一轮（p50）</td><td>500 ms</td><td>150</td><td>20 ms</td><td>3.5 s</td></tr><tr><td>长回答（p95 组合）</td><td>800 ms</td><td>300</td><td>27 ms</td><td>8.9 s</td></tr><tr><td>若两项 p95 同时发生</td><td>800 ms</td><td>350</td><td>50 ms</td><td>18.3 s（真实中不存在）</td></tr></tbody></table></div>
+<p>表格第二行说明：9 秒对应的组合是"TTFT 打满 + 300 token + 每 token 27 ms"。50 ms 的 TPOT 约束比 27 ms 更严——它是用来防单步卡顿的<strong>独立护栏</strong>，不是端到端公式里的那个系数。</p>
 <blockquote><p><strong>常见错误</strong>：为了"验证"9 秒，拿 350 × 50 ms 去算，算出 18.3 秒，然后怀疑数据错了。</p><p>两个 p95 不能相乘。要么用同一分位的实测值，要么只做量级判断。</p></blockquote>
 <div class="orn"></div>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 三个口径：62 万、2.5 万、7000</h2>
 <p>同一套业务，能算出三个差 89 倍的"并发"。混用是架构评审最常见的翻车点。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>口径</th><th>公式</th><th>数值</th><th>用来定什么</th></tr></thead><tbody><tr><td><strong>同时在线</strong></td><td>DAU × 1.5 会话 × 600 s ÷ 86400 × 3</td><td><strong>62 万</strong></td><td>连接数、网关容量、内存</td></tr><tr><td><strong>在飞请求</strong></td><td>QPS × 端到端时长</td><td><strong>2.5 万</strong>（3.5 s）/ 6.3 万（9 s）</td><td>KV 显存、并发会话</td></tr><tr><td><strong>峰值 QPS</strong></td><td>日轮次 × 12% ÷ 3600 × 1.4</td><td><strong>7000</strong></td><td>算力、GPU 卡数</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>口径</th><th>公式</th><th>数值</th><th>用来定什么</th></tr></thead><tbody><tr><td><strong>同时在线</strong></td><td>DAU × 1.5 会话 × 600 s ÷ 86400 × 3</td><td><strong>62 万</strong></td><td>连接数、网关容量、内存</td></tr><tr><td><strong>在飞请求</strong></td><td>QPS × 端到端时长</td><td><strong>2.5 万</strong>（3.5 s）/ 6.3 万（9 s）</td><td>KV 显存、并发会话</td></tr><tr><td><strong>峰值 QPS</strong></td><td>日轮次 × 12% ÷ 3600 × 1.4</td><td>7000</td><td>算力、GPU 卡数</td></tr></tbody></table></div>
 <h3>3.1 三个数为什么差这么多</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>62 万在线  ──(只有 4% 在真正发请求)──▶  2.5 万在飞
 2.5 万在飞 ──(每个请求活 3.5 秒)──────▶  7000 QPS</code></pre></figure>
 <ul><li><strong>在线 ≠ 请求</strong>：大部分人挂着不说话；</li><li><strong>请求 ≠ QPS</strong>：一个请求持续 3.5 秒，所以 QPS = 在飞 ÷ 3.5；</li><li><strong>QPS ≠ 峰值</strong>：12% 的日轮次挤在 1 小时里，还要再乘 1.4 的突发系数。</li></ul>
-<p><strong>拿 62 万去买 GPU，会多买 89 倍。</strong> 这个错误在真实项目里出现过不止一次——因为它看起来"最保守"。</p>
+<p>拿 62 万去买 GPU，会多买 89 倍。 这个错误在真实项目里出现过不止一次——因为它看起来"最保守"。</p>
 <h3>3.2 12% 和 1.4 是哪来的</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>系数</th><th>含义</th><th>典型值</th><th>怎么校准</th></tr></thead><tbody><tr><td>12%</td><td>峰值 1 小时占日轮次比例</td><td>10%–15%</td><td>看埋点：峰值小时轮次 ÷ 日轮次</td></tr><tr><td>1.4</td><td>峰值小时内的突发系数</td><td>1.3–1.6</td><td>峰值分钟 QPS ÷ 峰值小时均值</td></tr><tr><td>3</td><td>在线人数 ÷ DAU</td><td>2–4</td><td>会话时长 ÷ 86400 × 日活系数</td></tr></tbody></table></div>
 <p>三个系数都<strong>必须用自家埋点校准</strong>，抄别人的会差 30% 以上。</p>
@@ -290,7 +290,7 @@ blockquote p{margin:.4em 0}
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>峰值小时轮次 = 1.5e8 × 12%        = 1.8e7 轮
 平均峰值 QPS = 1.8e7 ÷ 3600 s     = 5000 轮/s
 峰值 QPS     = 5000 × 1.4         = 7000 轮/s</code></pre></figure>
-<p>注意这里除以 <strong>3600</strong>（一小时），不是 86400——因为 12% 是"集中在一小时"的比例。</p>
+<p>注意这里除以 3600（一小时），不是 86400——因为 12% 是"集中在一小时"的比例。</p>
 <h3>4.3 第三步：Prefill 算力</h3>
 <p>只有<strong>未命中缓存</strong>的输入才需要真算：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>峰值 prefill token/s = 7000 × 5000 × (1 − 70%) = 10.5e6 tok/s
@@ -315,11 +315,11 @@ Prefill 卡 = 6.3e17 ÷ 6.93e14 = 909 张</code></pre></figure>
 <h3>4.6 全链条速查</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>公式</th><th>结果</th></tr></thead><tbody><tr><td>日轮次</td><td>20e6 × 1.5 × 5</td><td>1.5e8</td></tr><tr><td>峰值 QPS</td><td>1.5e8 × 0.12 ÷ 3600 × 1.4</td><td>7000</td></tr><tr><td>Prefill tok/s</td><td>7000 × 5000 × 0.3</td><td>10.5e6</td></tr><tr><td>Prefill 卡</td><td>tok/s × 6e10 ÷ 6.93e14</td><td>909</td></tr><tr><td>Decode 卡</td><td>7000 × 350 ÷ 3500</td><td>700</td></tr><tr><td>含冗余</td><td>(909+700) × 1.3 × 1.2</td><td>2512</td></tr></tbody></table></div>
 <h3>4.7 备选估法：自上而下（从预算反推规模）</h3>
-<p>上面是自下而上。反过来问同样重要：<strong>给我 3 个亿，能撑多大？</strong></p>
+<p>上面是自下而上。反过来问同样重要：给我 3 个亿，能撑多大？</p>
 <p>从上表能提炼两个常数：</p>
-<ul><li><strong>固定成本 ≈ 1.23 亿/年</strong>（训练 0.33 + 存储带宽 0.90），与 DAU 无关；</li><li><strong>边际成本 ≈ 0.08 亿/年 每百万 DAU</strong>（5m→30m 区间实测斜率 0.08–0.081）。</li></ul>
+<ul><li>固定成本 ≈ 1.23 亿/年（训练 0.33 + 存储带宽 0.90），与 DAU 无关；</li><li>边际成本 ≈ 0.08 亿/年 每百万 DAU（5m→30m 区间实测斜率 0.08–0.081）。</li></ul>
 <div class="table-wrap"><table class="table"><thead><tr><th>年预算</th><th>可支撑 DAU</th><th>单轮成本</th></tr></thead><tbody><tr><td>1.55 亿</td><td>400 万</td><td>1.42 分</td></tr><tr><td>2.03 亿</td><td>1,000 万</td><td>0.74 分</td></tr><tr><td>2.83 亿</td><td>2,000 万</td><td>0.52 分</td></tr><tr><td>3.6 亿</td><td>3,000 万</td><td>0.44 分</td></tr><tr><td>5.2 亿</td><td>5,000 万</td><td>0.38 分</td></tr></tbody></table></div>
-<p>这张表解释了一个残酷的事实：<strong>预算低于 1.23 亿时，连固定成本都盖不住</strong>，做多大都是亏。所以"先做小规模验证"在重资产平台上是伪命题——要么一次做到千万级，要么别自建（用 API）。</p>
+<p>这张表解释了一个残酷的事实：预算低于 1.23 亿时，连固定成本都盖不住，做多大都是亏。所以"先做小规模验证"在重资产平台上是伪命题——要么一次做到千万级，要么别自建（用 API）。</p>
 <p>用 <code>labs/calc.py</code> 可一键复算；改任意参数立刻看到卡数变化。</p>
 <figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code>python3 labs/calc.py
 python3 labs/calc.py --ctx 8000        # 上下文翻倍会怎样
@@ -329,34 +329,34 @@ python3 labs/calc.py --hit 0.5         # 命中率掉到 50%</code></pre></figur
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 钱：0.52 分/轮的构成</h2>
 <h3>5.1 一个节点的年成本</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>计算</th><th>年成本</th></tr></thead><tbody><tr><td>服务器折旧</td><td>¥120 万 ÷ 3 年</td><td>¥400,000</td></tr><tr><td>电费</td><td>6 kW × 8760 h × ¥0.6 × 1.25(PUE)</td><td>¥39,420</td></tr><tr><td>机位</td><td>¥6,000/月 × 12</td><td>¥72,000</td></tr><tr><td><strong>合计</strong></td><td></td><td><strong>¥511,420 / 节点</strong></td></tr></tbody></table></div>
-<p>注意：<strong>电费只占 7.7%</strong>。常见的误解是 AI 集群是"电老虎"，其实在当前电价下，折旧才是大头（78%）。这直接决定了降本优先级：<strong>先提利用率，再谈省电</strong>。</p>
+<p>注意：<strong>电费只占 7.7%</strong>。常见的误解是 AI 集群是"电老虎"，其实在当前电价下，折旧才是大头（78%）。这直接决定了降本优先级：先提利用率，再谈省电。</p>
 <h3>5.2 年成本拆解</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>卡/量</th><th>年成本</th><th>占比</th></tr></thead><tbody><tr><td>推理 GPU</td><td>2512 卡 = 314 节点</td><td>1.61 亿</td><td>56.7%</td></tr><tr><td>训练 GPU</td><td>512 卡 = 64 节点</td><td>0.33 亿</td><td>11.6%</td></tr><tr><td>存储 + CDN + DB</td><td>—</td><td>0.90 亿</td><td>31.7%</td></tr><tr><td><strong>合计</strong></td><td></td><td><strong>2.83 亿</strong></td><td>100%</td></tr></tbody></table></div>
 <p><strong>存储带宽占 31.7%</strong>，这是"只算 GPU"的方案最容易漏掉的一块。</p>
 <h3>5.3 三个单位成本，分母不同差 15 倍</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>口径</th><th>公式</th><th>数值</th></tr></thead><tbody><tr><td>每轮</td><td>2.83e8 ÷ (1.5e8 × 365)</td><td><strong>0.517 分</strong></td></tr><tr><td>每 DAU 每天</td><td>2.83e8 ÷ 365 ÷ 2e7</td><td><strong>3.88 分</strong></td></tr><tr><td>每百万<strong>总</strong> token</td><td>2.83e8 ÷ 365 ÷ 8.0e5 M</td><td><strong>0.97 元</strong></td></tr><tr><td>每百万<strong>输出</strong> token（全成本）</td><td>2.83e8 ÷ 1.92e7 M</td><td><strong>14.8 元</strong></td></tr><tr><td>每百万<strong>输出</strong> token（仅推理）</td><td>1.61e8 ÷ 1.92e7 M</td><td><strong>8.37 元</strong></td></tr></tbody></table></div>
-<p><strong>同一个系统，"每百万 token"能算出 0.97 和 14.8 两个数，差 15 倍</strong>——因为前者分母是输入+输出（5350 token），后者只有输出（350 token）。</p>
-<p>对外报价用输出口径，对内核算用总口径。<strong>混用会导致定价直接亏 15 倍</strong>，这是 Token 经济章的起点（第 15–17 章）。</p>
+<p>同一个系统，"每百万 token"能算出 0.97 和 14.8 两个数，差 15 倍——因为前者分母是输入+输出（5350 token），后者只有输出（350 token）。</p>
+<p>对外报价用输出口径，对内核算用总口径。混用会导致定价直接亏 15 倍，这是 Token 经济章的起点（第 15–17 章）。</p>
 <h3>5.4 毛利：定价 1 分/轮时</h3>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>年收入 = 1.5e8 × 365 × 0.01 元 = 5.475 亿
 年成本 = 2.83 亿
 毛利   = 2.645 亿 → 毛利率 48.3%</code></pre></figure>
-<p>毛利率 48% 看起来健康，但这是 <strong>2000 万 DAU 的规模效应</strong>撑起来的，下一节会看到小规模时它会变成负数。</p>
+<p>毛利率 48% 看起来健康，但这是 2000 万 DAU 的规模效应撑起来的，下一节会看到小规模时它会变成负数。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 敏感性：哪个假设最危险</h2>
 <h3>6.1 缓存命中率（最危险的杠杆）</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>命中率</th><th>总卡</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>30%</td><td>4,408</td><td>4.05 亿</td><td>0.74 分</td></tr><tr><td>50%</td><td>3,456</td><td>3.44 亿</td><td>0.63 分</td></tr><tr><td><strong>70%</strong></td><td><strong>2,512</strong></td><td><strong>2.83 亿</strong></td><td><strong>0.52 分</strong></td></tr><tr><td>85%</td><td>1,808</td><td>2.38 亿</td><td>0.44 分</td></tr><tr><td>95%</td><td>1,336</td><td>2.08 亿</td><td>0.38 分</td></tr></tbody></table></div>
-<p>命中率从 70% 掉到 30%，<strong>卡数涨 75%，成本涨 43%</strong>。而命中率是最容易被产品改动悄悄打掉的东西——换一个 Prompt 模板、在系统提示里加个时间戳，前缀就全废了。</p>
-<p><strong>这就是为什么前缀缓存必须当成 SLO 来监控，而不是当成优化项。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>命中率</th><th>总卡</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>30%</td><td>4,408</td><td>4.05 亿</td><td>0.74 分</td></tr><tr><td>50%</td><td>3,456</td><td>3.44 亿</td><td>0.63 分</td></tr><tr><td>70%</td><td>2,512</td><td><strong>2.83 亿</strong></td><td><strong>0.52 分</strong></td></tr><tr><td>85%</td><td>1,808</td><td>2.38 亿</td><td>0.44 分</td></tr><tr><td>95%</td><td>1,336</td><td>2.08 亿</td><td>0.38 分</td></tr></tbody></table></div>
+<p>命中率从 70% 掉到 30%，卡数涨 75%，成本涨 43%。而命中率是最容易被产品改动悄悄打掉的东西——换一个 Prompt 模板、在系统提示里加个时间戳，前缀就全废了。</p>
+<p>这就是为什么前缀缓存必须当成 SLO 来监控，而不是当成优化项。</p>
 <h3>6.2 上下文长度</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>平均输入</th><th>总卡</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>2,000</td><td>1,664</td><td>2.29 亿</td><td>0.42 分</td></tr><tr><td>5,000</td><td>2,512</td><td>2.83 亿</td><td>0.52 分</td></tr><tr><td>8,000</td><td>3,368</td><td>3.38 亿</td><td>0.62 分</td></tr><tr><td>16,000</td><td>5,632</td><td>4.83 亿</td><td>0.88 分</td></tr></tbody></table></div>
 <p>上下文从 5K 翻到 16K，<strong>卡数涨 124%</strong>。这是"支持 32K 上下文"这个需求在报价单上的真实价格——产品提需求时通常不知道。</p>
 <h3>6.3 规模效应：为什么 2000 万 DAU 是个坎</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>DAU</th><th>总卡</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>500 万</td><td>632</td><td>1.63 亿</td><td><strong>1.19 分</strong></td></tr><tr><td>1,000 万</td><td>1,256</td><td>2.03 亿</td><td>0.74 分</td></tr><tr><td><strong>2,000 万</strong></td><td><strong>2,512</strong></td><td><strong>2.83 亿</strong></td><td><strong>0.52 分</strong></td></tr><tr><td>3,000 万</td><td>3,768</td><td>3.64 亿</td><td>0.44 分</td></tr><tr><td>5,000 万</td><td>6,280</td><td>5.24 亿</td><td>0.38 分</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>DAU</th><th>总卡</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>500 万</td><td>632</td><td>1.63 亿</td><td><strong>1.19 分</strong></td></tr><tr><td>1,000 万</td><td>1,256</td><td>2.03 亿</td><td>0.74 分</td></tr><tr><td><strong>2,000 万</strong></td><td>2,512</td><td><strong>2.83 亿</strong></td><td><strong>0.52 分</strong></td></tr><tr><td>3,000 万</td><td>3,768</td><td>3.64 亿</td><td>0.44 分</td></tr><tr><td>5,000 万</td><td>6,280</td><td>5.24 亿</td><td>0.38 分</td></tr></tbody></table></div>
 <p>原因：<strong>固定成本被摊薄</strong>。训练 512 卡（0.33 亿）+ 存储带宽（0.90 亿）合计 1.23 亿，与 DAU 无关。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>DAU</th><th>固定成本占比</th><th>单轮成本</th></tr></thead><tbody><tr><td>500 万</td><td>75%</td><td>1.19 分</td></tr><tr><td>2,000 万</td><td>43%</td><td>0.52 分</td></tr><tr><td>5,000 万</td><td>23%</td><td>0.38 分</td></tr></tbody></table></div>
-<p><strong>500 万 DAU 时，按 1 分/轮定价是亏的</strong>（成本 1.19 分）。这就是为什么这类平台必须做大规模——不是野心，是算术。</p>
+<p>500 万 DAU 时，按 1 分/轮定价是亏的（成本 1.19 分）。这就是为什么这类平台必须做大规模——不是野心，是算术。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 失败模式：这些数字会怎么骗你</h2>
@@ -371,7 +371,7 @@ python3 labs/calc.py --hit 0.5         # 命中率掉到 50%</code></pre></figur
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 收口</h2>
-<p><strong>这三个数字不是估算，是这个系统的物理边界</strong>：</p>
+<p>这三个数字不是估算，是这个系统的物理边界：</p>
 <ul><li>2512 张卡由 7000 QPS、5000 上下文、70% 命中率唯一决定；</li><li>0.52 分/轮由 314 个节点的折旧、电费、机位唯一决定；</li><li>毛利 48% 只在 2000 万 DAU 成立，规模一缩就变负。</li></ul>
 <p>后面 39 章的所有设计，都是在守这三个数——或者，在解释为什么必须改它们。</p>
 </section></article>

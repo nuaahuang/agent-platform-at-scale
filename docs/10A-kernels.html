@@ -226,7 +226,7 @@ blockquote p{margin:.4em 0}
   <main class="content">
     <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">10A</div><div class="ch-kicker">推理工程</div><h1>Kernel 层：算子如何变成每秒千次运算</h1><div class="ch-rule"></div></header>
 <aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>kernel 到底是什么，和"算子"差在哪一层？</li><li>用什么写？有哪些开源件可以直接用？</li><li>为什么换一张卡就可能要重写？</li><li>自己的团队该不该写 kernel？</li></ol></aside>
-<blockquote><p><strong>本章是第 10 章的展开，不是必读</strong>。主线读法可以跳过，</p><p>但只要你需要回答"为什么同样的卡我们只有别人 1/3 吞吐"，就必须读。</p></blockquote>
+<blockquote><p>本章是第 10 章的展开，不是必读。主线读法可以跳过，</p><p>但只要你需要回答"为什么同样的卡我们只有别人 1/3 吞吐"，就必须读。</p></blockquote>
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：同一张 H800，吞吐能差 3 倍</h2>
 <p>第 10 章讲了引擎的四种机制：连续批处理、PagedAttention、chunked prefill、前缀缓存。但机制只决定"谁先算"，不决定"算得多快"。</p>
@@ -236,8 +236,8 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四个概念：层、算子、kernel、指令</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>概念</th><th>是什么</th><th>例子</th><th>谁定义</th></tr></thead><tbody><tr><td><strong>层（layer）</strong></td><td>一组算子的组合</td><td>一个 Transformer block</td><td>模型结构</td></tr><tr><td><strong>算子（operator）</strong></td><td>数学语义上的一个操作</td><td><code>matmul</code>、<code>softmax</code>、<code>rmsnorm</code>、<code>topk</code></td><td>框架（ATen 等）</td></tr><tr><td><strong>kernel</strong></td><td>算子在某硬件上的<strong>具体实现</strong></td><td><code>cuBLAS gemm</code>、<code>flash_mla_with_kvcache</code></td><td>kernel 作者</td></tr><tr><td><strong>指令</strong></td><td>GPU 线程执行的机器指令</td><td><code>HMMA</code>（半精度矩阵乘加）、<code>LDGSTS</code>（全局→共享异步拷贝）、<code>TMA</code>（张量内存加速器）</td><td>编译器/架构</td></tr></tbody></table></div>
-<p>关键区别：<strong>算子是不变的语义，kernel 是可变的实现。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>概念</th><th>是什么</th><th>例子</th><th>谁定义</th></tr></thead><tbody><tr><td><strong>层（layer）</strong></td><td>一组算子的组合</td><td>一个 Transformer block</td><td>模型结构</td></tr><tr><td><strong>算子（operator）</strong></td><td>数学语义上的一个操作</td><td><code>matmul</code>、<code>softmax</code>、<code>rmsnorm</code>、<code>topk</code></td><td>框架（ATen 等）</td></tr><tr><td>kernel</td><td>算子在某硬件上的<strong>具体实现</strong></td><td><code>cuBLAS gemm</code>、<code>flash_mla_with_kvcache</code></td><td>kernel 作者</td></tr><tr><td><strong>指令</strong></td><td>GPU 线程执行的机器指令</td><td><code>HMMA</code>（半精度矩阵乘加）、<code>LDGSTS</code>（全局→共享异步拷贝）、<code>TMA</code>（张量内存加速器）</td><td>编译器/架构</td></tr></tbody></table></div>
+<p>关键区别：算子是不变的语义，kernel 是可变的实现。</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>model.forward()            ← 层
   └─ F.linear(x, w)        ← 层内一步
       └─ aten::matmul      ← 算子（语义，与硬件无关）
@@ -257,7 +257,7 @@ blockquote p{margin:.4em 0}
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>单 token step ≈ 60 层 × 12.5 ≈ 750 次 kernel 启动
 750 × 4 μs ≈ 3 ms</code></pre></figure>
 <p>而 TPOT（Time Per Output Token） 预算是 25 ms——<strong>光下发就吃掉 12%</strong>，还没开始算。</p>
-<p>这就是 <strong>CUDA Graph</strong> 存在的理由：把整条 kernel 序列录成一张图，一次提交，重复下发归零。代价是<strong>形状必须固定</strong>，所以变长 batch 要用 padding 或 masked 方案（DeepGEMM 的 masked grouped GEMM 就是为此而生）。</p>
+<p>这就是 CUDA Graph 存在的理由：把整条 kernel 序列录成一张图，一次提交，重复下发归零。代价是<strong>形状必须固定</strong>，所以变长 batch 要用 padding 或 masked 方案（DeepGEMM 的 masked grouped GEMM 就是为此而生）。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一个 kernel 的内部结构</h2>
@@ -270,28 +270,28 @@ blockquote p{margin:.4em 0}
 <p>它是 GPU 上<strong>资源分配的单位</strong>——shared memory 按 CTA 分配，所以：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>约束</th><th>数值（H800/H100）</th><th>后果</th></tr></thead><tbody><tr><td>每 CTA 最多线程</td><td>1024</td><td>再大要拆</td></tr><tr><td>每 SM 最多线程</td><td>2048（64 warp）</td><td>一个 CTA 占满，其他进不来</td></tr><tr><td>每 SM shared memory</td><td>228 KB</td><td>CTA 要 200 KB → 单 SM 只能跑 1 个</td></tr><tr><td>SM 总数</td><td>132</td><td>决定并行上限</td></tr></tbody></table></div>
 <p>写 kernel 就是在回答四个问题：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>典型答案（paged attention）</th></tr></thead><tbody><tr><td>怎么切 grid？</td><td>每个 <code>(请求, 头)</code> 一个 CTA</td></tr><tr><td>每个 CTA 搬什么进 shared memory？</td><td>一个 KV block（16 token × 576 维）</td></tr><tr><td>怎么并行？</td><td>warp 内按 16×16 分块做 QK^T</td></tr><tr><td>怎么处理长序列？</td><td><strong>online softmax</strong>：边算边更新 running max/sum</td></tr></tbody></table></div>
-<p><strong>shared memory 是稀缺资源</strong>：H800/H100 每个 SM 只有 228 KB。一个 CTA 要 200 KB，那这个 SM 同时只能跑一个 CTA——占用率直接掉到下限。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>典型答案（paged attention）</th></tr></thead><tbody><tr><td>怎么切 grid？</td><td>每个 <code>(请求, 头)</code> 一个 CTA</td></tr><tr><td>每个 CTA 搬什么进 shared memory？</td><td>一个 KV block（16 token × 576 维）</td></tr><tr><td>怎么并行？</td><td>warp 内按 16×16 分块做 QK^T</td></tr><tr><td>怎么处理长序列？</td><td>online softmax：边算边更新 running max/sum</td></tr></tbody></table></div>
+<p>shared memory 是稀缺资源：H800/H100 每个 SM 只有 228 KB。一个 CTA 要 200 KB，那这个 SM 同时只能跑一个 CTA——占用率直接掉到下限。</p>
 <p><strong>访存合并</strong>是第二个坎：一个 warp 的 32 个线程如果读地址连续，一次事务搞定；如果散着读，就变成 32 次。PagedAttention 之所以用 16 token 一块，部分原因就是让这个 16×576 的块在内存里连续。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 用什么写：五种技术栈</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>技术栈</th><th>代表</th><th>门槛</th><th>能达到的峰值</th><th>可移植性</th></tr></thead><tbody><tr><td><strong>CUDA C++</strong></td><td>大多数生产 kernel</td><td>极高</td><td>90%+</td><td>只 NVIDIA</td></tr><tr><td><strong>CUTLASS / CuTe</strong></td><td>DeepGEMM 起点、cuBLAS 同源</td><td>高</td><td>90%+</td><td>只 NVIDIA，按架构模板化</td></tr><tr><td><strong>PTX / SASS 手写</strong></td><td>少量极致优化</td><td>极高</td><td>接近 100%</td><td>绑死具体架构（PTX 是 NVIDIA 虚拟指令集，SASS 是 GPU 真正执行的机器码）</td></tr><tr><td><strong>DSL：Triton</strong></td><td>PyTorch 生态、FlashInfer</td><td>中</td><td>70%–90%</td><td>NVIDIA/AMD</td></tr><tr><td><strong>DSL：TileLang</strong></td><td>DeepInfer、昇腾适配</td><td>中</td><td>70%–95%</td><td>CUDA 与昇腾双后端</td></tr><tr><td><strong>Ascend C</strong></td><td>昇腾原生算子</td><td>中高</td><td>依算子</td><td>只昇腾</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>技术栈</th><th>代表</th><th>门槛</th><th>能达到的峰值</th><th>可移植性</th></tr></thead><tbody><tr><td><strong>CUDA C++</strong></td><td>大多数生产 kernel</td><td>极高</td><td>90%+</td><td>只 NVIDIA</td></tr><tr><td>CUTLASS / CuTe</td><td>DeepGEMM 起点、cuBLAS 同源</td><td>高</td><td>90%+</td><td>只 NVIDIA，按架构模板化</td></tr><tr><td><strong>PTX / SASS 手写</strong></td><td>少量极致优化</td><td>极高</td><td>接近 100%</td><td>绑死具体架构（PTX 是 NVIDIA 虚拟指令集，SASS 是 GPU 真正执行的机器码）</td></tr><tr><td>DSL：Triton</td><td>PyTorch 生态、FlashInfer</td><td>中</td><td>70%–90%</td><td>NVIDIA/AMD</td></tr><tr><td>DSL：TileLang</td><td>DeepInfer、昇腾适配</td><td>中</td><td>70%–95%</td><td>CUDA 与昇腾双后端</td></tr><tr><td>Ascend C</td><td>昇腾原生算子</td><td>中高</td><td>依算子</td><td>只昇腾</td></tr></tbody></table></div>
 <p><strong>趋势是</strong>：新项目用 DSL 起步，遇到热点再下沉到 CUDA/CUTLASS。DeepInfer 就是这个组合——<code>tilelang_ops</code> 写通用部分，FlashMLA/DeepGEMM 写极致部分。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 融合的收益与代价</h2>
-<p>FlashMLA 把 <strong>Q-norm、Q-RoPE、attention、O-RoPE、转 FP8</strong> 五个算子融成一个 kernel：</p>
+<p>FlashMLA 把 Q-norm、Q-RoPE、attention、O-RoPE、转 FP8 五个算子融成一个 kernel：</p>
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>out_fp8, out_sf, max_logits, lse = fused_norm_rope_attn_rope_cast.prefill(...)</code></pre></figure>
 <p>收益不只是省 4 次启动，更重要的是<strong>省掉中间结果的 HBM 往返</strong>：每层少写读 2 次 <code>[batch, heads, 512]</code> 的 bf16 tensor——在 decode 这种带宽受限场景下就是净赚。</p>
 <p>代价很硬：<strong>权重要提前重排</strong>。README 要求先调 <code>permute_q_b_proj</code>、<code>permute_wv_proj</code>把权重和 scale 改成 kernel 要求的布局。一旦换了 kernel，权重格式就得跟着变。</p>
-<blockquote><p>这是全书反复出现的模式：<strong>性能优化会把"数据布局"变成契约</strong>。</p><p>你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。</p></blockquote>
+<blockquote><p>这是全书反复出现的模式：性能优化会把"数据布局"变成契约。</p><p>你优化的是 kernel，被锁定的是权重格式、checkpoint 格式、甚至训练侧。</p></blockquote>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 通信也是算子</h2>
 <p>MoE 的传统流程是四步、四次 kernel、两次跨卡：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>dispatch(EP) → GEMM1 → SwiGLU → GEMM2 → combine(EP)</code></pre></figure>
-<p>DeepGEMM 的 <strong>Mega MoE</strong> 把它合成一个 kernel：dispatch、linear1、linear2、SwiGLU、combine全部融进去，用对称内存（symmetric memory）让 <strong>NVLink 通信与 tensor core 计算重叠</strong>。</p>
+<p>DeepGEMM 的 Mega MoE 把它合成一个 kernel：dispatch、linear1、linear2、SwiGLU、combine全部融进去，用对称内存（symmetric memory）让 NVLink 通信与 tensor core 计算重叠。</p>
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>y = deep_gemm.fp8_fp4_mega_moe(y, l1, l2, buffer)</code></pre></figure>
 <p>意义在于：MoE 推理的瓶颈本来不是算力，是 all-to-all 的等待。把通信藏进 kernel，等于把"等"变成"顺便做"。</p>
 <div class="orn"></div>
@@ -299,12 +299,12 @@ blockquote p{margin:.4em 0}
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 硬件绑定：为什么换卡要重写</h2>
 <p>kernel 是按 <strong>SM 架构</strong>编译的，架构一换，指令集、tensor core 形状、shared memory 大小都可能变。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>事实</th><th>时间</th><th>含义</th></tr></thead><tbody><tr><td>FlashMLA 移除 Hopper 支持</td><td>2026.09.30</td><td>只留 SM100/SM103，KV 格式也变了</td></tr><tr><td>DeepInfer 只支持 SM100 与昇腾 950</td><td>2026.10</td><td>Hopper 不在列表</td></tr><tr><td>昇腾 950 稀疏注意力</td><td>2026.09.30</td><td>prefill 410 TFLOPS（峰值 95%）、decode 360（83%）</td></tr></tbody></table></div>
-<p><strong>选硬件时先看 kernel 支持矩阵，再看纸面算力。</strong>一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。</p>
+<p>选硬件时先看 kernel 支持矩阵，再看纸面算力。一张算力更强但没有 kernel 的卡，实际吞吐可能不如一张"弱"卡。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 开源地图：谁在维护什么</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>项目</th><th>许可证</th><th>定位</th><th>适合谁</th><th>学习价值</th></tr></thead><tbody><tr><td><a href="https://github.com/deepseek-ai/FlashMLA">FlashMLA</a></td><td>MIT</td><td>MLA / 稀疏注意力 kernel</td><td>用 MLA 类模型</td><td>★★★★★ 读 attention 优化</td></tr><tr><td><a href="https://github.com/deepseek-ai/DeepGEMM">DeepGEMM</a></td><td>MIT</td><td>FP8/FP4 GEMM、Mega MoE</td><td>需要 FP8 推理</td><td>★★★★★ 代码极简，注释讲原理</td></tr><tr><td><a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a></td><td>MIT</td><td>EP 通信 kernel</td><td>MoE 大规模部署</td><td>★★★★ 通信-计算重叠</td></tr><tr><td><a href="https://github.com/Dao-AILab/flash-attention">flash-attention</a></td><td>BSD-3</td><td>通用注意力</td><td>所有人</td><td>★★★★★ 入门必读</td></tr><tr><td><a href="https://github.com/flashinfer-ai/flashinfer">FlashInfer</a></td><td>Apache-2.0</td><td>推理算子集合</td><td>自建推理服务</td><td>★★★★ 覆盖面广</td></tr><tr><td><a href="https://github.com/NVIDIA/cutlass">CUTLASS</a></td><td>BSD-3</td><td>GEMM 模板库</td><td>写 GEMM 的人</td><td>★★★★ 门槛高但正统</td></tr><tr><td><a href="https://github.com/triton-lang/triton">Triton</a></td><td>MIT</td><td>GPU DSL</td><td>想快速试验</td><td>★★★★★ 上手最快</td></tr><tr><td><a href="https://github.com/tile-ai/tilelang">TileLang</a></td><td>见仓库</td><td>tile 级 DSL</td><td>多后端（含昇腾）</td><td>★★★★ 新范式</td></tr><tr><td><a href="https://github.com/vllm-project/vllm/tree/main/csrc">vLLM <code>csrc/</code></a></td><td>Apache-2.0</td><td>引擎内 kernel</td><td>已在用 vLLM</td><td>★★★★ 工程完整度</td></tr><tr><td><a href="https://github.com/NVIDIA/nccl">NCCL</a></td><td>见仓库</td><td>集合通信</td><td>所有人</td><td>★★★ 底层实现</td></tr></tbody></table></div>
-<p><strong>怎么挑</strong>：先用 Triton/FlashInfer 把功能跑通，热点再用 CUTLASS/FlashMLA 级别的库，最后才考虑自己写。<strong>顺序反了会浪费半年。</strong></p>
+<p><strong>怎么挑</strong>：先用 Triton/FlashInfer 把功能跑通，热点再用 CUTLASS/FlashMLA 级别的库，最后才考虑自己写。顺序反了会浪费半年。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 怎么学：四级路径</h2>

@@ -230,17 +230,17 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：为什么先看"一条请求"</h2>
 <p>大多数架构图死在两个地方：</p>
-<ul><li>画了 30 个方框，但<strong>说不清一条请求按什么顺序穿过它们</strong>；</li><li>能说出"用了 K8s、Kafka、Redis"，但<strong>说不出哪一跳最慢、哪一跳最贵</strong>。</li></ul>
+<ul><li>画了 30 个方框，但说不清一条请求按什么顺序穿过它们；</li><li>能说出"用了 K8s、Kafka、Redis"，但说不出哪一跳最慢、哪一跳最贵。</li></ul>
 <p>所以第一章不画大图，只跟一条请求走一遍。</p>
 <p><strong>场景</strong>（虚构示例）：用户说"我上周买的耳机想退货，但已经拆封了，能退吗"。这是一次典型的多轮售后咨询。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 机制：12 跳</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>跳</th><th>做什么</th><th>典型耗时</th><th>p95</th></tr></thead><tbody><tr><td>1</td><td>CDN / GSLB</td><td>就近接入、TLS 握手</td><td>10ms</td><td>30ms</td></tr><tr><td>2</td><td>接入网关</td><td>路由、限流、鉴权</td><td>3ms</td><td>10ms</td></tr><tr><td>3</td><td>配额 / 风控</td><td>查额度、黑名单</td><td>2ms</td><td>8ms</td></tr><tr><td>4</td><td>Agent Runtime</td><td>选 Agent、加载会话状态</td><td>15ms</td><td>40ms</td></tr><tr><td>5</td><td>上下文组装</td><td>L0–L7 拼 prompt，查缓存</td><td>20ms</td><td>60ms</td></tr><tr><td>6</td><td>模型网关</td><td>选模型、限流、路由</td><td>2ms</td><td>8ms</td></tr><tr><td>7</td><td><strong>排队</strong></td><td>等 GPU 槽位</td><td>10ms</td><td><strong>300ms</strong></td></tr><tr><td>8</td><td><strong>Prefill</strong></td><td>读 5,000 token 前缀</td><td>300ms</td><td>600ms</td></tr><tr><td>9</td><td><strong>Decode</strong></td><td>生成 350 token × 25ms</td><td><strong>8,750ms</strong></td><td>—</td></tr><tr><td>10</td><td>工具调用（平均 2 次）</td><td>检索 / 计算 / 写库</td><td>300ms</td><td>1,200ms</td></tr><tr><td>11</td><td>输出护栏</td><td>红线、免责声明</td><td>20ms</td><td>50ms</td></tr><tr><td>12</td><td>首包回传</td><td>SSE 推给客户端</td><td>5ms</td><td>20ms</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>跳</th><th>做什么</th><th>典型耗时</th><th>p95</th></tr></thead><tbody><tr><td>1</td><td>CDN / GSLB</td><td>就近接入、TLS 握手</td><td>10ms</td><td>30ms</td></tr><tr><td>2</td><td>接入网关</td><td>路由、限流、鉴权</td><td>3ms</td><td>10ms</td></tr><tr><td>3</td><td>配额 / 风控</td><td>查额度、黑名单</td><td>2ms</td><td>8ms</td></tr><tr><td>4</td><td>Agent Runtime</td><td>选 Agent、加载会话状态</td><td>15ms</td><td>40ms</td></tr><tr><td>5</td><td>上下文组装</td><td>L0–L7 拼 prompt，查缓存</td><td>20ms</td><td>60ms</td></tr><tr><td>6</td><td>模型网关</td><td>选模型、限流、路由</td><td>2ms</td><td>8ms</td></tr><tr><td>7</td><td><strong>排队</strong></td><td>等 GPU 槽位</td><td>10ms</td><td>300ms</td></tr><tr><td>8</td><td>Prefill</td><td>读 5,000 token 前缀</td><td>300ms</td><td>600ms</td></tr><tr><td>9</td><td>Decode</td><td>生成 350 token × 25ms</td><td>8,750ms</td><td>—</td></tr><tr><td>10</td><td>工具调用（平均 2 次）</td><td>检索 / 计算 / 写库</td><td>300ms</td><td>1,200ms</td></tr><tr><td>11</td><td>输出护栏</td><td>红线、免责声明</td><td>20ms</td><td>50ms</td></tr><tr><td>12</td><td>首包回传</td><td>SSE 推给客户端</td><td>5ms</td><td>20ms</td></tr></tbody></table></div>
 <p><strong>读这张表的三个要点</strong>：</p>
-<ol><li><strong>第 9 跳占了 90% 的时间</strong>。所以"优化端到端"≈"优化 decode"，而 decode 由显存带宽决定（第 02 章）。</li><li><strong>第 7 跳是唯一会"失控"的</strong>：负载一高，它从 10ms 跳到 300ms 甚至 2s，把 p95 拉爆。</li><li><strong>第 10 跳是唯一"不归你管"的</strong>：下游工具的延迟你只能熔断、降级、换供应商。</li></ol>
+<ol><li>第 9 跳占了 90% 的时间。所以"优化端到端"≈"优化 decode"，而 decode 由显存带宽决定（第 02 章）。</li><li><strong>第 7 跳是唯一会"失控"的</strong>：负载一高，它从 10ms 跳到 300ms 甚至 2s，把 p95 拉爆。</li><li>第 10 跳是唯一"不归你管"的：下游工具的延迟你只能熔断、降级、换供应商。</li></ol>
 <h3>2.1 两个不同的"延迟"</h3>
-<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>全称</th><th>定义</th><th>目标</th><th>用户体验</th></tr></thead><tbody><tr><td><strong>TTFT</strong></td><td>Time To First Token</td><td>请求发出到第 1 个 token（排队+prefill）</td><td>&lt; 800ms</td><td>"它开始回答了"</td></tr><tr><td><strong>TPOT</strong></td><td>Time Per Output Token</td><td>decode 每多生成一个 token 的间隔（一个 step）</td><td>≤ 50ms</td><td>"字在流畅地冒"</td></tr><tr><td><strong>端到端</strong></td><td>—</td><td>TTFT + TPOT×输出长度 + 工具</td><td>3–9s</td><td>"它答完了"</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>全称</th><th>定义</th><th>目标</th><th>用户体验</th></tr></thead><tbody><tr><td>TTFT</td><td>Time To First Token</td><td>请求发出到第 1 个 token（排队+prefill）</td><td>&lt; 800ms</td><td>"它开始回答了"</td></tr><tr><td>TPOT</td><td>Time Per Output Token</td><td>decode 每多生成一个 token 的间隔（一个 step）</td><td>≤ 50ms</td><td>"字在流畅地冒"</td></tr><tr><td><strong>端到端</strong></td><td>—</td><td>TTFT + TPOT×输出长度 + 工具</td><td>3–9s</td><td>"它答完了"</td></tr></tbody></table></div>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>发出请求 ──TTFT──▶ 字₁ ─TPOT─▶ 字₂ ─TPOT─▶ … ─▶ 字₃₅₀
 端到端 = TTFT + 349 × TPOT（+工具时间）</code></pre></figure>
 <p>TPOT = 一个 step 的时长 ≈ (30GB + B×0.96GB) ÷ 3.35TB/s；B 越大它越长。</p>
@@ -250,56 +250,56 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 数量级：并发到底是多少</h2>
-<p>这是架构评审最爱问的问题，也是最容易答错的地方。<strong>三个口径，三个数</strong>：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>口径</th><th>定义</th><th>高峰</th><th>极端</th></tr></thead><tbody><tr><td><strong>在线会话</strong></td><td>打开着页面的 SSE 连接</td><td><strong>62 万</strong></td><td>94 万</td></tr><tr><td><strong>在飞请求</strong></td><td>正在生成中的请求</td><td>2.5 万 – 6 万</td><td>—</td></tr><tr><td><strong>QPS</strong></td><td>每秒新发起的请求</td><td>7,000</td><td>—</td></tr></tbody></table></div>
+<p>这是架构评审最爱问的问题，也是最容易答错的地方。三个口径，三个数：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>口径</th><th>定义</th><th>高峰</th><th>极端</th></tr></thead><tbody><tr><td><strong>在线会话</strong></td><td>打开着页面的 SSE 连接</td><td><strong>62 万</strong></td><td>94 万</td></tr><tr><td><strong>在飞请求</strong></td><td>正在生成中的请求</td><td>2.5 万 – 6 万</td><td>—</td></tr><tr><td>QPS</td><td>每秒新发起的请求</td><td>7,000</td><td>—</td></tr></tbody></table></div>
 <h3>3.0 先搞清楚量纲：为什么"次数 × 时间 ÷ 时间"得到"个"</h3>
 <p>把单位写出来，一目了然：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>DAU             [人]
 × 人均会话数     [次/人]      →  [次/天]        日会话数
 × 单次时长       [秒/次]      →  [秒/天]        一天总共&quot;占用&quot;了多少会话·秒
 ÷ 86400         [秒/天]      →  [个]            平均同时有多少个会话在挂着</code></pre></figure>
-<p>最后一步的量纲是 <strong>秒/天 ÷ 秒/天 = 无量纲</strong>，物理含义就是"<strong>平均占用数量</strong>"。</p>
-<p><strong>直觉一：总占用 ÷ 总时间</strong></p>
+<p>最后一步的量纲是 秒/天 ÷ 秒/天 = 无量纲，物理含义就是"<strong>平均占用数量</strong>"。</p>
+<p>直觉一：总占用 ÷ 总时间</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>3000 万次 × 600 秒 = 180 亿&quot;会话·秒&quot;
 180 亿 ÷ 86400 秒 = 20.8 万个会话同时在挂</code></pre></figure>
-<p>就像"10 个人各住 1 小时，酒店一天 24 小时，平均住了几个人？"→ 10 人·小时 ÷ 24 小时 = 0.42 人。<strong>人·小时除以小时，剩下的是"人"。</strong></p>
-<p><strong>直觉二：Little's Law</strong></p>
+<p>就像"10 个人各住 1 小时，酒店一天 24 小时，平均住了几个人？"→ 10 人·小时 ÷ 24 小时 = 0.42 人。人·小时除以小时，剩下的是"人"。</p>
+<p>直觉二：Little's Law</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>L = λ × W
 λ = 日会话数 / 86400 = 347 次/秒     （到达率）
 W = 600 秒                            （每次停留）
 L = 347 × 600 = 20.8 万               （同时在场数）</code></pre></figure>
 <p>单位：<code>次/秒 × 秒 = 次</code>。这里的"次"不是"第几次"，而是"<strong>此刻正在进行的次数</strong>"。</p>
-<p><strong>为什么是"连接数"而不是"请求数"</strong>：</p>
+<p>为什么是"连接数"而不是"请求数"：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>生命周期</th><th>峰值数量</th></tr></thead><tbody><tr><td>连接</td><td>整个会话（10 分钟）</td><td>62 万</td></tr><tr><td>请求</td><td>一次生成（3.5–9 秒）</td><td>2.5–6 万</td></tr></tbody></table></div>
-<p>差的那 10 倍，就是用户<strong>看结果、思考、打字</strong>的时间——连接挂着，但没在生成。</p>
+<p>差的那 10 倍，就是用户看结果、思考、打字的时间——连接挂着，但没在生成。</p>
 <p><strong>三条边界条件</strong>（评审时会问）：</p>
-<ol><li><strong>窗口要一致</strong>：用"日"算出来的是<strong>日均</strong>并发；要峰值，就用峰值那一小时的 λ 重算。</li><li><strong>Little's Law 只管平均</strong>：它不预测峰值。峰值要靠到达分布或线上曲线。</li><li><strong>稳态假设</strong>：忽略跨零点的会话，日初日末的边界效应在千万级下可忽略。</li></ol>
-<p><strong>自己验证</strong>：<code>cd lab &amp;&amp; python3 littles_law.py</code>它会造 100 万个按早晚高峰到达的会话，逐分钟统计并发，你会看到<strong>实测平均 6,933 vs 公式预测 6,944（误差 0.16%）</strong>，而<strong>峰均比 3.18</strong>——平均是算出来的，峰值是估出来的。</p>
+<ol><li><strong>窗口要一致</strong>：用"日"算出来的是<strong>日均</strong>并发；要峰值，就用峰值那一小时的 λ 重算。</li><li>Little's Law 只管平均：它不预测峰值。峰值要靠到达分布或线上曲线。</li><li><strong>稳态假设</strong>：忽略跨零点的会话，日初日末的边界效应在千万级下可忽略。</li></ol>
+<p><strong>自己验证</strong>：<code>cd lab &amp;&amp; python3 littles_law.py</code>它会造 100 万个按早晚高峰到达的会话，逐分钟统计并发，你会看到实测平均 6,933 vs 公式预测 6,944（误差 0.16%），而<strong>峰均比 3.18</strong>——平均是算出来的，峰值是估出来的。</p>
 <h3>3.1 62 万是怎么算出来的</h3>
-<p>它不是拍的，是<strong>会话级的 Little's Law</strong>：</p>
+<p>它不是拍的，是会话级的 Little's Law：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>日会话数      = DAU × 人均会话数 = 2000 万 × 1.5 = 3000 万
 会话总时长    = 3000 万 × 10 分钟 = 3 亿分钟 = 180 亿秒
 平均同时在线  = 180 亿秒 / 86400 秒 ≈ 20.8 万
 高峰同时在线  = 20.8 万 × 3（早晚高峰突发）≈ 62 万
 极端峰值      = 62 万 × 1.5 ≈ 94 万</code></pre></figure>
-<p><strong>三个假设，每个都能被质疑</strong>：</p>
+<p>三个假设，每个都能被质疑：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>假设</th><th>取值</th><th>依据</th><th>怎么校准</th></tr></thead><tbody><tr><td>人均会话数</td><td>1.5 次/天</td><td>客服/助手类产品的常见值</td><td>看埋点：日会话数 / DAU</td></tr><tr><td>单次会话时长</td><td>10 分钟</td><td>多轮沟通 + 看结果</td><td>看会话时长分布的中位数</td></tr><tr><td>突发系数</td><td>3×</td><td>早晚高峰集中</td><td>用线上同时在线曲线的 P95 / 均值</td></tr></tbody></table></div>
 <p><strong>敏感性</strong>（假设变了，数字怎么动）：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>变化</th><th>结果</th></tr></thead><tbody><tr><td>会话时长 5 分钟</td><td>31 万</td></tr><tr><td>会话时长 20 分钟</td><td>125 万</td></tr><tr><td>突发系数 2×</td><td>42 万</td></tr><tr><td>突发系数 4×</td><td>83 万</td></tr><tr><td>人均 1.2 次</td><td>50 万</td></tr><tr><td>人均 2.0 次</td><td>83 万</td></tr></tbody></table></div>
 <p><strong>所以正确说法是</strong>："在'人均 1.5 次、每次 10 分钟、峰值 3 倍'的假设下，高峰约 62 万连接。"评审时把假设一起说出来，比只报一个数可信得多。</p>
 <h3>3.2 这个数字决定了什么</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>资源</th><th>推算</th><th>结论</th></tr></thead><tbody><tr><td>网关实例</td><td>62 万 ÷ 单实例 5 万连接</td><td>至少 13 个，按 N+1 与单元化 → 每单元 30 副本</td></tr><tr><td>网关内存</td><td>62 万 × 20KB/连接</td><td>≈ 12 GB（连接缓冲区）</td></tr><tr><td>文件描述符</td><td>每连接 1 个 fd</td><td>必须调 <code>ulimit</code>，否则先于 CPU 崩</td></tr><tr><td>负载均衡</td><td>长连接不能用轮询</td><td>用 least_conn / 一致性哈希</td></tr><tr><td>重连风暴</td><td>网关重启时 62 万同时重连</td><td>必须加退避 + 抖动</td></tr></tbody></table></div>
-<p><strong>交叉验证</strong>：62 万连接里约 10% 正在生成 → 6.2 万在飞请求，与"7,000 QPS × 9 秒长回答 ≈ 6.3 万"吻合。<strong>两条独立路径算出同一个数，这个数才可信。</strong></p>
+<p><strong>交叉验证</strong>：62 万连接里约 10% 正在生成 → 6.2 万在飞请求，与"7,000 QPS × 9 秒长回答 ≈ 6.3 万"吻合。两条独立路径算出同一个数，这个数才可信。</p>
 <h3>3.3 "2.5 万 – 6 万在飞请求"怎么来的：两级 Little's Law</h3>
-<p><strong>第一级：先从日轮次推出峰值 QPS</strong></p>
+<p>第一级：先从日轮次推出峰值 QPS</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>日轮次 = DAU × 人均会话 × 每会话轮次
        = 2000 万 × 1.5 × 5 = 1.5 亿
 
 峰值 QPS = 日轮次 × 高峰小时占比 / 3600 × 小时内突发系数
          = 1.5 亿 × 12% / 3600 × 1.4
          = 5,000 × 1.4 = 7,000</code></pre></figure>
-<p>两个假设：<strong>高峰 1 小时承载全天 12% 的轮次</strong>（均匀分布应是 1/24≈4.2%，高峰约 2.9 倍）；<strong>高峰小时内瞬时再 ×1.4</strong>。</p>
-<p><strong>第二级：QPS × 单轮生成时长</strong></p>
+<p>两个假设：高峰 1 小时承载全天 12% 的轮次（均匀分布应是 1/24≈4.2%，高峰约 2.9 倍）；<strong>高峰小时内瞬时再 ×1.4</strong>。</p>
+<p>第二级：QPS × 单轮生成时长</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>在飞请求 = QPS × W
   W = 3.5s（短回答 ~100–140 token + TTFT 0.8s）→ 7,000 × 3.5 = 2.45 万
   W = 9.0s（350 token × 25ms TPOT = 8.75s + TTFT）→ 7,000 × 9 = 6.3 万</code></pre></figure>
@@ -318,9 +318,9 @@ L = 347 × 600 = 20.8 万               （同时在场数）</code></pre></figu
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 设计含义：链路图怎么变成架构决策</h2>
 <p>链路图不是画着好看，它决定了三件事。</p>
 <p><strong>（1）延迟预算怎么切</strong></p>
-<div class="table-wrap"><table class="table"><thead><tr><th>段</th><th>预算</th><th>谁负责</th><th>超了怎么办</th></tr></thead><tbody><tr><td>接入（DNS/TLS/网关）</td><td>50 ms</td><td>网关</td><td>长连接、连接复用</td></tr><tr><td>鉴权 + 配额</td><td>20 ms</td><td>网关</td><td>token 本地缓存</td></tr><tr><td>排队</td><td>≤200 ms</td><td>调度器</td><td>拒绝，或降级到小模型</td></tr><tr><td>Prefill</td><td>≤450 ms</td><td>引擎</td><td>前缀缓存、chunked</td></tr><tr><td>首 token 传输</td><td>≤80 ms</td><td>网络</td><td>就近接入、cell 下沉</td></tr><tr><td><strong>TTFT 合计</strong></td><td><strong>800 ms</strong></td><td>—</td><td>—</td></tr><tr><td>Decode 350 token × 25 ms</td><td>8.75 s</td><td>引擎</td><td>TPOT、投机解码</td></tr></tbody></table></div>
-<p><strong>（2）哪一跳能买，哪一跳只能优化</strong></p>
-<p>第 10 跳（工具）不归你管 → 只能熔断、降级、换供应商；第 5–6 跳（decode）归你管 → 只能靠 TPOT 和 batch。<strong>归你管的做优化，不归你管的做隔离</strong>——把这两类混在一起讨论，永远得不出结论。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>段</th><th>预算</th><th>谁负责</th><th>超了怎么办</th></tr></thead><tbody><tr><td>接入（DNS/TLS/网关）</td><td>50 ms</td><td>网关</td><td>长连接、连接复用</td></tr><tr><td>鉴权 + 配额</td><td>20 ms</td><td>网关</td><td>token 本地缓存</td></tr><tr><td>排队</td><td>≤200 ms</td><td>调度器</td><td>拒绝，或降级到小模型</td></tr><tr><td>Prefill</td><td>≤450 ms</td><td>引擎</td><td>前缀缓存、chunked</td></tr><tr><td>首 token 传输</td><td>≤80 ms</td><td>网络</td><td>就近接入、cell 下沉</td></tr><tr><td><strong>TTFT 合计</strong></td><td>800 ms</td><td>—</td><td>—</td></tr><tr><td>Decode 350 token × 25 ms</td><td>8.75 s</td><td>引擎</td><td>TPOT、投机解码</td></tr></tbody></table></div>
+<p>（2）哪一跳能买，哪一跳只能优化</p>
+<p>第 10 跳（工具）不归你管 → 只能熔断、降级、换供应商；第 5–6 跳（decode）归你管 → 只能靠 TPOT 和 batch。归你管的做优化，不归你管的做隔离——把这两类混在一起讨论，永远得不出结论。</p>
 <p><strong>（3）容量按什么定</strong></p>
 <p>按 QPS 定算力（prefill），按在飞请求定显存（KV），按并发定连接数。三个口径对应三种资源，混着算就会像 §3 那样差出 10 倍。</p>
 </section>
@@ -333,9 +333,9 @@ L = 347 × 600 = 20.8 万               （同时在场数）</code></pre></figu
 <p><strong>判据</strong>：链路图每一跳耗时加起来，应落在端到端 p50 的 ±15% 内。差得远时，不是图错了，就是有一跳没测到——通常是<strong>排队</strong>。</p>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 三个误区</h2>
-<p><strong>误区 1：TTFT 达标 = 体验达标。</strong>错。TTFT 800ms 但 decode 慢，用户看到字一个个蹦，照样骂。</p>
-<p><strong>误区 2：QPS 就是并发。</strong>错。7,000 QPS 可能对应 2.5 万在飞请求，也可能对应 6 万。<strong>容量按在飞请求算，不按 QPS 算。</strong></p>
-<p><strong>误区 3：SSE 连接数 = 请求数。</strong>错。62 万连接里大部分在"看历史"，不占 GPU。</p>
+<p>误区 1：TTFT 达标 = 体验达标。错。TTFT 800ms 但 decode 慢，用户看到字一个个蹦，照样骂。</p>
+<p>误区 2：QPS 就是并发。错。7,000 QPS 可能对应 2.5 万在飞请求，也可能对应 6 万。容量按在飞请求算，不按 QPS 算。</p>
+<p>误区 3：SSE 连接数 = 请求数。错。62 万连接里大部分在"看历史"，不占 GPU。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 练习（15 分钟）</h2>
@@ -344,7 +344,7 @@ python3 mock_llm.py --port 8010 --slots 8    # 终端 A
 python3 mini_harness.py &quot;我最近体重涨了，帮我看看怎么办&quot;   # 终端 B</code></pre></figure>
 <p>打开 <code>events.jsonl</code>（每行一个事件，带 <code>ts</code>），回答：</p>
 <ol><li>这次会话一共几步？用相邻事件的 <code>ts</code> 差，算出<strong>每一步耗时</strong>，哪一步最慢？</li><li>把事件按类型归并：<code>llm.call</code> 占多少时间？<code>tool.call→tool.result</code> 占多少？其余编排占多少？</li><li>如果 decode 的 350 token 是主要成本，工具只占 5%，你会先优化哪个？给出一个数字理由。</li></ol>
-<blockquote><p>这题不需要写代码，用 <code>python3 -c</code> 或 Excel 都行。<strong>算不出来说明第 2 节没读透。</strong></p></blockquote>
+<blockquote><p>这题不需要写代码，用 <code>python3 -c</code> 或 Excel 都行。算不出来说明第 2 节没读透。</p></blockquote>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 复盘卡（写完发我）</h2>

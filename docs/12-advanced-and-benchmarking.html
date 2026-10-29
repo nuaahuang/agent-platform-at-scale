@@ -230,19 +230,19 @@ blockquote p{margin:.4em 0}
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：压测过的配置，上线三小时就崩</h2>
 <p>三种最常见的翻车：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>现场</th><th>压测时看到的</th><th>上线后</th></tr></thead><tbody><tr><td>A</td><td>并发 1，TTFT（Time To First Token） 120 ms</td><td>7000 QPS 时 TTFT 4.2 s，超时雪崩</td></tr><tr><td>B</td><td>固定 512 token 输入，吞吐 3200 tok/s/GPU</td><td>真实输入 p95 4800 token，吞吐掉到 1100</td></tr><tr><td>C</td><td>闭环 200 并发，QPS 稳定 6500</td><td>开环到达率 7000 时排队爆炸，p99 到 30 s</td></tr></tbody></table></div>
-<p>根因只有一个：<strong>压测测的是"系统最快能跑多快"，而生产要的是"在 SLO（Service Level Objective） 下最多能接多少"。</strong></p>
+<p>根因只有一个：压测测的是"系统最快能跑多快"，而生产要的是"在 SLO（Service Level Objective） 下最多能接多少"。</p>
 <p>这两个数字能差 2–3 倍。本章讲的就是怎么测后面那个。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 特性矩阵：先分清"白拿"和"要付代价"</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>特性</th><th>收益</th><th>代价</th><th>什么时候开</th><th>什么时候必须关</th></tr></thead><tbody><tr><td><strong>前缀缓存</strong></td><td>命中 85% → 卡数 2512→1808（−28%）</td><td>常驻显存 + 租户隔离风险</td><td>系统提示/工具 Schema 稳定</td><td>多租户且提示含敏感数据</td></tr><tr><td><strong>Chunked prefill</strong></td><td>TPOT（Time Per Output Token） 尖刺消失</td><td>TTFT 略增（多几个 step）</td><td>长短请求混跑</td><td>纯短请求（无收益）</td></tr><tr><td><strong>投机解码</strong></td><td>低并发下单用户 +60%–85%</td><td>高并发下挤占 batch</td><td>交互型产品、并发 &lt;128</td><td>批处理型、GPU 已饱和</td></tr><tr><td><strong>结构化输出</strong></td><td>解析失败率 3.2%→0.1%</td><td>每步多一次 mask 计算</td><td>工具调用、JSON 输出</td><td>自由文本创作</td></tr><tr><td><strong>多 LoRA</strong></td><td>一个基座服务 N 个租户</td><td>batch 内多 adapter 掉吞吐</td><td>租户多、单租户量小</td><td>单租户占满集群</td></tr><tr><td><strong>KV 量化 FP8</strong></td><td>显存减半，并发 ×1.8</td><td>长上下文精度 −1.3 pt</td><td>显存瓶颈</td><td>长文档精确检索</td></tr><tr><td><strong>长上下文扩展</strong></td><td>32K → 128K</td><td>卡数 ×4（2k→16k 是 1664→5632）</td><td>真有长文档需求</td><td>只是"怕不够"</td></tr></tbody></table></div>
-<blockquote><p>这张表的用法：<strong>每一项都要能在评审会上回答"开了它，SLO 和成本各变多少"</strong>。</p><p>答不上来的，就是没测过。</p></blockquote>
+<div class="table-wrap"><table class="table"><thead><tr><th>特性</th><th>收益</th><th>代价</th><th>什么时候开</th><th>什么时候必须关</th></tr></thead><tbody><tr><td><strong>前缀缓存</strong></td><td>命中 85% → 卡数 2512→1808（−28%）</td><td>常驻显存 + 租户隔离风险</td><td>系统提示/工具 Schema 稳定</td><td>多租户且提示含敏感数据</td></tr><tr><td>Chunked prefill</td><td>TPOT（Time Per Output Token） 尖刺消失</td><td>TTFT 略增（多几个 step）</td><td>长短请求混跑</td><td>纯短请求（无收益）</td></tr><tr><td><strong>投机解码</strong></td><td>低并发下单用户 +60%–85%</td><td>高并发下挤占 batch</td><td>交互型产品、并发 &lt;128</td><td>批处理型、GPU 已饱和</td></tr><tr><td><strong>结构化输出</strong></td><td>解析失败率 3.2%→0.1%</td><td>每步多一次 mask 计算</td><td>工具调用、JSON 输出</td><td>自由文本创作</td></tr><tr><td><strong>多 LoRA</strong></td><td>一个基座服务 N 个租户</td><td>batch 内多 adapter 掉吞吐</td><td>租户多、单租户量小</td><td>单租户占满集群</td></tr><tr><td><strong>KV 量化 FP8</strong></td><td>显存减半，并发 ×1.8</td><td>长上下文精度 −1.3 pt</td><td>显存瓶颈</td><td>长文档精确检索</td></tr><tr><td><strong>长上下文扩展</strong></td><td>32K → 128K</td><td>卡数 ×4（2k→16k 是 1664→5632）</td><td>真有长文档需求</td><td>只是"怕不够"</td></tr></tbody></table></div>
+<blockquote><p>这张表的用法：每一项都要能在评审会上回答"开了它，SLO 和成本各变多少"。</p><p>答不上来的，就是没测过。</p></blockquote>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 投机解码：什么时候是赚的</h2>
 <h3>3.1 三个符号，先定义清楚</h3>
 <p>投机解码的做法是：小模型先"猜"几个 token，大模型<strong>一次前向</strong>把它们全验一遍。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>符号</th><th>含义</th><th>怎么得到</th><th>典型值</th></tr></thead><tbody><tr><td><strong>k</strong></td><td>每步草稿模型猜几个 token</td><td>你配的参数（如 <code>USE_NEXTN_DECODE=5</code>）</td><td>2–8</td></tr><tr><td><strong>α</strong></td><td><strong>单个</strong>草稿 token 被接受的概率</td><td>实测：接受数 ÷ 草稿总数</td><td>0.4–0.9</td></tr><tr><td><strong>c</strong></td><td>每多验一个草稿，耗时涨多少（<strong>无量纲</strong>，相对一次普通 step）</td><td>实测：step 耗时增量 ÷ 基准 step 耗时</td><td>0.05–1.0</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>符号</th><th>含义</th><th>怎么得到</th><th>典型值</th></tr></thead><tbody><tr><td>k</td><td>每步草稿模型猜几个 token</td><td>你配的参数（如 <code>USE_NEXTN_DECODE=5</code>）</td><td>2–8</td></tr><tr><td><strong>α</strong></td><td><strong>单个</strong>草稿 token 被接受的概率</td><td>实测：接受数 ÷ 草稿总数</td><td>0.4–0.9</td></tr><tr><td>c</td><td>每多验一个草稿，耗时涨多少（<strong>无量纲</strong>，相对一次普通 step）</td><td>实测：step 耗时增量 ÷ 基准 step 耗时</td><td>0.05–1.0</td></tr></tbody></table></div>
 <blockquote><p><strong>c 的单位是"没有单位"</strong>——它是两个时间的比：</p><p>```</p><p>c = 每多一个草稿 token 增加的耗时（ms/token） ÷ 基准 step 耗时（ms）</p><p>  = 1.25 ms/token ÷ 25 ms = 0.05 /token</p><p>```</p><p>所以 <code>1 + k·c</code> 算出来的是<strong>耗时倍数</strong>（1.2 倍），<strong>不是钱</strong>。</p><p>要换成钱，还得乘一步的成本——那是第 14、17 章的事。</p></blockquote>
 <p><strong>α 是最关键的未知数</strong>，它取决于草稿模型和主模型有多像。同一个草稿模型，在"续写代码"上 α 可能 0.85，在"复杂推理"上只有 0.35。</p>
 <h3>3.2 一条时间轴看懂在干什么</h3>
@@ -256,38 +256,38 @@ blockquote p{margin:.4em 0}
           结果：d1 ✓  d2 ✓  d3 ✗  → 输出 3 个 token（接受 2 个 + 修正 1 个）
   step2:  从新位置再来一轮 …</code></pre></figure>
 <p>所以问题变成两句话：</p>
-<ol><li><strong>一个 step 平均能出几个 token？</strong> → 记为 E</li><li><strong>一个 step 变贵了多少？</strong> → 记为 1 + k·c</li></ol>
+<ol><li>一个 step 平均能出几个 token？ → 记为 E</li><li>一个 step 变贵了多少？ → 记为 1 + k·c</li></ol>
 <p>加速比就是这两个数的比。</p>
 <h3>3.3 E 怎么来的：把"平均"拆成"每个位置的概率"</h3>
 <p>第 i 个草稿要被接受，必须<strong>前面 i 个全对</strong>（第 3 个被接受，意味着第 1、2 个也对）。假设每个位置独立、接受率都是 α：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>被接受的条件</th><th>概率</th><th>对期望的贡献</th></tr></thead><tbody><tr><td>第 1 个草稿</td><td>d1 对</td><td>α</td><td>α</td></tr><tr><td>第 2 个草稿</td><td>d1、d2 都对</td><td>α²</td><td>α²</td></tr><tr><td>第 3 个草稿</td><td>前 3 个都对</td><td>α³</td><td>α³</td></tr><tr><td>第 4 个草稿</td><td>前 4 个都对</td><td>α⁴</td><td>α⁴</td></tr><tr><td><strong>修正位</strong></td><td>目标模型<strong>必出</strong> 1 个</td><td>1</td><td>1</td></tr><tr><td></td><td></td><td></td><td><strong>E = 1 + α + α² + α³ + α⁴</strong></td></tr></tbody></table></div>
-<p>这就是那个等比数列的来历——<strong>它不是凑出来的，是"第 i 个位置要求前 i 个都对"的直接结果</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>被接受的条件</th><th>概率</th><th>对期望的贡献</th></tr></thead><tbody><tr><td>第 1 个草稿</td><td>d1 对</td><td>α</td><td>α</td></tr><tr><td>第 2 个草稿</td><td>d1、d2 都对</td><td>α²</td><td>α²</td></tr><tr><td>第 3 个草稿</td><td>前 3 个都对</td><td>α³</td><td>α³</td></tr><tr><td>第 4 个草稿</td><td>前 4 个都对</td><td>α⁴</td><td>α⁴</td></tr><tr><td><strong>修正位</strong></td><td>目标模型<strong>必出</strong> 1 个</td><td>1</td><td>1</td></tr><tr><td></td><td></td><td></td><td>E = 1 + α + α² + α³ + α⁴</td></tr></tbody></table></div>
+<p>这就是那个等比数列的来历——它不是凑出来的，是"第 i 个位置要求前 i 个都对"的直接结果。</p>
 <p>α = 0.8 时：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>E = 1 + 0.8 + 0.64 + 0.512 + 0.4096 = 3.36</code></pre></figure>
-<p>意思是：<strong>每一步平均产出 3.36 个 token</strong>，而不是 1 个。</p>
+<p>意思是：每一步平均产出 3.36 个 token，而不是 1 个。</p>
 <h3>3.4 c 为什么是 0.05 而不是 1</h3>
 <p>直觉上"验 5 个位置应该贵 5 倍"，但 decode 阶段不是这样算的：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一步的耗时 ≈ 读一遍权重（固定） + 读 KV（随 batch） + 算（随 token 数）</code></pre></figure>
 <ul><li><strong>低并发</strong>：权重读取占 90% 以上，多算 4 个位置几乎不增加时间 → c ≈ 0.05</li></ul>
 <p>  （一步 25 ms，多一个草稿只多 1.25 ms）；</p>
 <ul><li><strong>高并发</strong>：batch 已经塞满，多 4 个位置就是实打实的算力 → c 会一路涨到接近 1。</li></ul>
-<p><strong>c 不是常数，它是"GPU 有多忙"的度量。</strong> 这一点决定了下一节。</p>
+<p>c 不是常数，它是"GPU 有多忙"的度量。 这一点决定了下一节。</p>
 <h3>3.5 合起来：S = E / (1 + k·c)</h3>
 <p>α = 0.8、k = 4、c = 0.05：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>E = 3.36（一步出 3.36 个 token）
 成本 = 1 + 4×0.05 = 1.2（一步贵 20%）
 S = 3.36 / 1.2 = 2.80×</code></pre></figure>
-<p>对照一下：如果不做投机，一步出 1 个 token、成本 1，S = 1。<strong>收益全部来自"一个 step 出多个 token"摊薄了权重读取。</strong></p>
+<p>对照一下：如果不做投机，一步出 1 个 token、成本 1，S = 1。收益全部来自"一个 step 出多个 token"摊薄了权重读取。</p>
 <h3>3.6 α 和 k 怎么配：不是越大越好</h3>
 <p>固定 c = 0.05，扫一遍 α × k：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>α ＼ k</th><th>2</th><th>4</th><th>6</th></tr></thead><tbody><tr><td>0.4</td><td>1.42×</td><td>1.37×</td><td><strong>1.28×</strong></td></tr><tr><td>0.6</td><td>1.78×</td><td><strong>1.92×</strong></td><td>1.87×</td></tr><tr><td>0.8</td><td>2.22×</td><td>2.80×</td><td><strong>3.04×</strong></td></tr><tr><td>0.9</td><td>2.46×</td><td>3.41×</td><td><strong>4.01×</strong></td></tr></tbody></table></div>
-<p>看 α = 0.4 那一行：<strong>k 从 2 加到 6，收益反而下降</strong>。因为第 5、6 个草稿的接受概率只有 α⁵ ≈ 1%、α⁶ ≈ 0.4%，但每一个都要付 c = 5% 的成本——<strong>赚的比花的多</strong>。</p>
-<p>判据：<strong>只要 α^k &gt; c 就继续加，否则停。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>α ＼ k</th><th>2</th><th>4</th><th>6</th></tr></thead><tbody><tr><td>0.4</td><td>1.42×</td><td>1.37×</td><td>1.28×</td></tr><tr><td>0.6</td><td>1.78×</td><td>1.92×</td><td>1.87×</td></tr><tr><td>0.8</td><td>2.22×</td><td>2.80×</td><td>3.04×</td></tr><tr><td>0.9</td><td>2.46×</td><td>3.41×</td><td>4.01×</td></tr></tbody></table></div>
+<p>看 α = 0.4 那一行：k 从 2 加到 6，收益反而下降。因为第 5、6 个草稿的接受概率只有 α⁵ ≈ 1%、α⁶ ≈ 0.4%，但每一个都要付 c = 5% 的成本——<strong>赚的比花的多</strong>。</p>
+<p>判据：只要 α^k &gt; c 就继续加，否则停。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>α</th><th>α^k &gt; 0.05 的边界</th><th>理论最优 k</th></tr></thead><tbody><tr><td>0.4</td><td>k &lt; 3.3</td><td>3</td></tr><tr><td>0.6</td><td>k &lt; 5.9</td><td>5</td></tr><tr><td>0.8</td><td>k &lt; 13.4</td><td>13</td></tr><tr><td>0.9</td><td>k &lt; 28</td><td>28（实际被 batch 上限压到 5–8）</td></tr></tbody></table></div>
 <p>这就是 DeepInfer 默认 <code>k = 5</code> 的原因：α 在 0.6–0.7 时，5 刚好在拐点附近。</p>
 <h3>3.7 并发一上来，c 变了，结论就翻了</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>并发</th><th>c</th><th>S = 3.36 / (1 + 4c)</th><th>状态</th></tr></thead><tbody><tr><td>1</td><td>0.05</td><td><strong>2.80×</strong></td><td>GPU 空闲，验证白赚</td></tr><tr><td>16</td><td>0.07</td><td>2.63×</td><td>仍有空余</td></tr><tr><td>128</td><td>0.35</td><td>1.40×</td><td>batch 接近饱和</td></tr><tr><td>512</td><td>0.55</td><td>1.05×</td><td>只剩零头</td></tr><tr><td>1024</td><td>0.64</td><td><strong>0.94×</strong></td><td>挤占他人，净亏</td></tr></tbody></table></div>
-<p><strong>公式没变，变的是 c。</strong> 这就是"投机解码不是提吞吐的工具"的全部数学来源。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>并发</th><th>c</th><th>S = 3.36 / (1 + 4c)</th><th>状态</th></tr></thead><tbody><tr><td>1</td><td>0.05</td><td>2.80×</td><td>GPU 空闲，验证白赚</td></tr><tr><td>16</td><td>0.07</td><td>2.63×</td><td>仍有空余</td></tr><tr><td>128</td><td>0.35</td><td>1.40×</td><td>batch 接近饱和</td></tr><tr><td>512</td><td>0.55</td><td>1.05×</td><td>只剩零头</td></tr><tr><td>1024</td><td>0.64</td><td>0.94×</td><td>挤占他人，净亏</td></tr></tbody></table></div>
+<p>公式没变，变的是 c。 这就是"投机解码不是提吞吐的工具"的全部数学来源。</p>
 <blockquote><p><strong>以为</strong>投机解码能提吞吐，<strong>其实</strong>它只在 GPU 没跑满时有效——</p><p>它买的是"单用户体验"，卖的是"batch 槽位"。</p><p>DeepSeek 的 DSpark 数据正是这个形状：单用户 +60%–85%，整体吞吐只 +4%–7%（第 10 章 §9）。</p></blockquote>
 <h3>3.8 决策</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>开不开</th><th>理由</th></tr></thead><tbody><tr><td>C 端对话，并发 20–100</td><td><strong>开</strong></td><td>c 小，收益最大</td></tr><tr><td>Agent 长任务，并发 500+</td><td>谨慎</td><td>先测总吞吐，可能为负</td></tr><tr><td>离线批处理</td><td><strong>不开</strong></td><td>直接拉满 batch 更划算</td></tr><tr><td>已撞 SLO 上限</td><td>不开</td><td>会把 p95 推高</td></tr></tbody></table></div>
@@ -301,7 +301,7 @@ S = 3.36 / 1.2 = 2.80×</code></pre></figure>
 
 开环（open-loop）：按固定速率 λ 发请求，不等响应
    → 系统变慢时请求继续堆积，排队与超时立刻暴露</code></pre></figure>
-<p>这就是 <strong>coordinated omission</strong>：闭环压测里，系统越慢，压测工具发的越少，于是你永远测不到真实的 p99。<strong>生产是开环的</strong>，所以压测也必须是开环。</p>
+<p>这就是 coordinated omission：闭环压测里，系统越慢，压测工具发的越少，于是你永远测不到真实的 p99。<strong>生产是开环的</strong>，所以压测也必须是开环。</p>
 <h3>4.2 一个 30 行的开环压测脚本</h3>
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>import asyncio, aiohttp, random, time, statistics
 
@@ -331,8 +331,8 @@ async def main(rate, duration, url):
 <p>三个坑：<code>limit=0</code> 不设连接上限、客户端要多核、时钟要 NTP 同步。</p>
 <h3>4.3 长度分布为什么值 3 倍</h3>
 <p>同一套硬件，只换输入分布：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>负载</th><th>平均输入</th><th>平均输出</th><th>单卡吞吐</th></tr></thead><tbody><tr><td>固定 512 / 256</td><td>512</td><td>256</td><td>3,200 tok/s</td></tr><tr><td>均匀 100–2,000</td><td>1,050</td><td>256</td><td>1,900 tok/s</td></tr><tr><td>生产分布（p50 800 / p95 4,800）</td><td>1,250</td><td>300</td><td><strong>1,100 tok/s</strong></td></tr></tbody></table></div>
-<p>原因有两个：attention 的计算随长度平方增长；长请求的 KV 常驻，挤掉并发。<strong>用固定长度压测，等于给系统开了一张 3 倍的假支票。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>负载</th><th>平均输入</th><th>平均输出</th><th>单卡吞吐</th></tr></thead><tbody><tr><td>固定 512 / 256</td><td>512</td><td>256</td><td>3,200 tok/s</td></tr><tr><td>均匀 100–2,000</td><td>1,050</td><td>256</td><td>1,900 tok/s</td></tr><tr><td>生产分布（p50 800 / p95 4,800）</td><td>1,250</td><td>300</td><td>1,100 tok/s</td></tr></tbody></table></div>
+<p>原因有两个：attention 的计算随长度平方增长；长请求的 KV 常驻，挤掉并发。用固定长度压测，等于给系统开了一张 3 倍的假支票。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 三个必测场景</h2>
@@ -343,18 +343,18 @@ async def main(rate, duration, url):
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 一份压测报告必须有的字段</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>示例</th><th>为什么必须有</th></tr></thead><tbody><tr><td><strong>配置指纹</strong></td><td>模型 v4.1-flash-1017、引擎 v0.9.2、TP8、max_num_seqs 256、block 16、KV FP8</td><td>没有它，结果无法复现</td></tr><tr><td><strong>负载画像</strong></td><td>输入 p50 800 / p95 4800，输出 p50 220 / p95 900，Poisson</td><td>换分布结果全变</td></tr><tr><td><strong>结果</strong></td><td>QPS 7600、TTFT p95 610 ms、TPOT p95 38 ms、错误率 0.03%</td><td>只看均值等于没测</td></tr><tr><td><strong>拐点</strong></td><td>8000 QPS 时 TTFT p95 破 800 ms</td><td>容量结论</td></tr><tr><td><strong>资源</strong></td><td>GPU 利用率 71%、KV 占用 78%、显存峰值 76 GB</td><td>判断瓶颈在哪</td></tr><tr><td><strong>结论</strong></td><td>单卡 3.0 QPS，2512 卡余量 8.6%</td><td>能直接进容量模型</td></tr></tbody></table></div>
-<div class="callout callout--check"><span class="callout-tag">验收</span><div>判据：<strong>别人拿这份报告，能不能不问你一句话就复现出同样的数</strong>。<br>不能，就说明缺字段。</div></div>
+<div class="callout callout--check"><span class="callout-tag">验收</span><div>判据：别人拿这份报告，能不能不问你一句话就复现出同样的数。<br>不能，就说明缺字段。</div></div>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 五个常见误判</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>正确做法</th></tr></thead><tbody><tr><td>压到 5000 QPS 很稳，上线 3000 就崩</td><td>闭环压测掩盖排队</td><td>改开环 Poisson</td></tr><tr><td>引擎 TTFT 200 ms，用户看到 1500 ms</td><td>没算网关、排队、网络</td><td>端到端压测</td></tr><tr><td>吞吐很高，但用户投诉卡</td><td>只看吞吐不看 p99</td><td>SLO 优先，看 p95/p99</td></tr><tr><td>首轮快，跑两小时变慢</td><td>KV 碎片、缓存膨胀、连接泄漏</td><td>24h 长稳</td></tr><tr><td>换模型后结果不可比</td><td>输出长度变了</td><td>按 token 数对齐，不按请求数</td></tr></tbody></table></div>
-<p>第二条最普遍：<strong>引擎内指标和用户体感之间，隔着 3–4 跳</strong>（第 8 章的 12 跳链路里，网关 + 排队 + 网络约占 300–800 ms）。只压引擎，等于只测了一半。</p>
+<p>第二条最普遍：引擎内指标和用户体感之间，隔着 3–4 跳（第 8 章的 12 跳链路里，网关 + 排队 + 网络约占 300–800 ms）。只压引擎，等于只测了一半。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 一组可对齐的数字</h2>
 <p>以本书教学案例（2512 卡、7000 QPS 峰值）为例，一次合格压测应产出：</p>
 <div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>目标</th><th>实测</th><th>余量</th></tr></thead><tbody><tr><td>QPS</td><td>7000</td><td>7600</td><td>+8.6%</td></tr><tr><td>TTFT p95</td><td>≤800 ms</td><td>610 ms</td><td>24%</td></tr><tr><td>TPOT p95</td><td>≤50 ms</td><td>38 ms</td><td>24%</td></tr><tr><td>端到端 p95</td><td>≤9 s</td><td>7.9 s</td><td>12%</td></tr><tr><td>错误率</td><td>&lt;0.1%</td><td>0.03%</td><td>—</td></tr><tr><td>KV 占用</td><td>&lt;90%</td><td>78%</td><td>12 pt</td></tr></tbody></table></div>
-<p><strong>余量最小的那一项，就是下一次扩容的触发点</strong>——这里是端到端（12%），不是 QPS。看错指标会导致"提前扩卡但体验没改善"。</p>
+<p>余量最小的那一项，就是下一次扩容的触发点——这里是端到端（12%），不是 QPS。看错指标会导致"提前扩卡但体验没改善"。</p>
 <div class="orn"></div>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 没有同规模环境怎么压</h2>
@@ -362,10 +362,10 @@ async def main(rate, duration, url):
 <h3>9.1 换问题：不复制规模，测单位产出</h3>
 <p>把"集群能扛多少 QPS"拆成两个独立的问题：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>集群容量 = 单卡在 SLO 下的产出（可测） × 卡数（已知） × 规模折扣（可估）</code></pre></figure>
-<p>第一个问题 8 张卡就能回答，第二个是采购数字，第三个是经验系数。<strong>整条链里，只有"规模折扣"需要大规模才能测准</strong>——而它可以靠分段验证逼近。</p>
+<p>第一个问题 8 张卡就能回答，第二个是采购数字，第三个是经验系数。整条链里，只有"规模折扣"需要大规模才能测准——而它可以靠分段验证逼近。</p>
 <h3>9.2 四层测试：每层只需要很少的卡</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>规模</th><th>测什么</th><th>能发现</th><th>发现不了</th></tr></thead><tbody><tr><td><strong>L1 单机</strong></td><td>1–8 卡</td><td>单卡吞吐-延迟曲线、SLO 拐点</td><td>引擎调优、batch 上限</td><td>任何跨机问题</td></tr><tr><td><strong>L2 小集群</strong></td><td>32–64 卡</td><td>PD 比例、路由、前缀缓存命中</td><td>组间干扰、负载不均</td><td>网络拥塞</td></tr><tr><td><strong>L3 影子</strong></td><td>512 卡 + 5% 真实流量</td><td>端到端 SLO、真实分布</td><td>网关、排队、长尾</td><td>全量故障叠加</td></tr><tr><td><strong>L4 生产</strong></td><td>2512 卡</td><td><strong>只做混沌与故障演练，不做压测</strong></td><td>重调度风暴、级联失败</td><td>—</td></tr></tbody></table></div>
-<p>关键认知：<strong>L4 不是用来压的，是用来"打坏"的</strong>。压测找边界，混沌找塌陷。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>规模</th><th>测什么</th><th>能发现</th><th>发现不了</th></tr></thead><tbody><tr><td><strong>L1 单机</strong></td><td>1–8 卡</td><td>单卡吞吐-延迟曲线、SLO 拐点</td><td>引擎调优、batch 上限</td><td>任何跨机问题</td></tr><tr><td><strong>L2 小集群</strong></td><td>32–64 卡</td><td>PD 比例、路由、前缀缓存命中</td><td>组间干扰、负载不均</td><td>网络拥塞</td></tr><tr><td><strong>L3 影子</strong></td><td>512 卡 + 5% 真实流量</td><td>端到端 SLO、真实分布</td><td>网关、排队、长尾</td><td>全量故障叠加</td></tr><tr><td><strong>L4 生产</strong></td><td>2512 卡</td><td>只做混沌与故障演练，不做压测</td><td>重调度风暴、级联失败</td><td>—</td></tr></tbody></table></div>
+<p>关键认知：L4 不是用来压的，是用来"打坏"的。压测找边界，混沌找塌陷。</p>
 <h3>9.3 外推三步，加三个折扣</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>做法</th><th>我们的数</th></tr></thead><tbody><tr><td>① 测单卡</td><td>L1 上找 TTFT p95 = 800 ms 的拐点</td><td>2.8 QPS/卡（7000 ÷ 2512）</td></tr><tr><td>② 乘卡数</td><td>线性放大</td><td>7000 QPS</td></tr><tr><td>③ 打折扣</td><td>见下表</td><td>见下</td></tr></tbody></table></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>折扣</th><th>典型值</th><th>来源</th></tr></thead><tbody><tr><td>网络与调度损耗</td><td>8%–15%</td><td>L2 上对比"单机组"与"跨机组"</td></tr><tr><td>故障预留</td><td>10%</td><td>一台挂掉后的重调度窗口</td></tr><tr><td>碎片与预热</td><td>5%</td><td>冷启动、KV 未命中</td></tr><tr><td><strong>合计</strong></td><td><strong>约 1.25×</strong></td><td>与第 1 章的 ×1.3 余量对应</td></tr></tbody></table></div>
@@ -380,7 +380,7 @@ async def main(rate, duration, url):
 <h3>9.6 仿真器：唯一能"免费"跑 2512 卡的办法</h3>
 <p>把 L1 测到的<strong>服务时间分布</strong>（不是均值）作为输入，用离散事件仿真跑 2512 卡的排队。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>能回答</th><th>不能回答</th></tr></thead><tbody><tr><td>P:D 比例取多少最省</td><td>网络拥塞</td></tr><tr><td>路由策略 A/B 谁更好</td><td>硬件故障</td></tr><tr><td>峰值时排队多长</td><td>缓存命中率</td></tr></tbody></table></div>
-<p>工具不复杂：SimPy 或自己写 200 行事件循环。<strong>仿真不能替代压测，但能把"试错成本"从 2512 卡降到 0 卡。</strong></p>
+<p>工具不复杂：SimPy 或自己写 200 行事件循环。仿真不能替代压测，但能把"试错成本"从 2512 卡降到 0 卡。</p>
 <h3>9.7 仿真器的三个要素与一条可信判据</h3>
 <p>它跑得快的真正原因不是"算得省"，是<strong>时间可以快进</strong>：不执行模型，只按事件推进时钟。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>要素</th><th>建模什么</th><th>数据从哪来</th></tr></thead><tbody><tr><td>到达过程</td><td>请求何时来</td><td>生产日志（Poisson 或实测轨迹）</td></tr><tr><td>服务时间</td><td>prefill / 一个 decode step 多久</td><td>L1 实测的<strong>分布</strong>，不是均值</td></tr><tr><td>调度规则</td><td>batching、抢占、KV 上限</td><td>引擎源码里的真实逻辑</td></tr></tbody></table></div>
@@ -390,7 +390,7 @@ async def main(rate, duration, url):
 </section>
 <section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 过载怎么测：测的不是"扛住"，是"退化曲线"</h2>
 <p>设计容量 7000 QPS，那 10,500 QPS 打进来会发生什么？这才是生产最关心的问题。</p>
-<p><strong>过载测试的产出不是"最大 QPS"，是三条曲线：</strong></p>
+<p>过载测试的产出不是"最大 QPS"，是三条曲线：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>有效吞吐 goodput  ──┐
                      ├── 随到达率变化的形状
 成功率            ──┤
@@ -410,10 +410,10 @@ TTFT p95          ──┘</code></pre></figure>
 <h3>10.4 验收清单：合格 vs 不合格</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>检查项</th><th>合格</th><th>不合格</th></tr></thead><tbody><tr><td>拒绝发生的位置</td><td>入口快速拒绝（&lt;50 ms）</td><td>排队 30 s 后超时</td></tr><tr><td>拒绝的语义</td><td>429 + Retry-After + 可重试标记</td><td>500 或直接断连</td></tr><tr><td>公平性</td><td>按租户配额，小客户不被饿死</td><td>先到先得，大客户挤爆</td></tr><tr><td>降级是否自动</td><td>阈值触发、可观测</td><td>靠人手动切</td></tr><tr><td>GPU 保护</td><td>KV 水位不超 90%，不 OOM</td><td>打满后 OOM 重启</td></tr><tr><td>恢复</td><td>撤压后 5 min 内回到 SLO</td><td>越等越糟</td></tr><tr><td>级联</td><td>无重试风暴</td><td>客户端重试把负载放大 2×</td></tr></tbody></table></div>
 <h3>10.5 小集群怎么测这个</h3>
-<p>好消息：<strong>过载行为主要由控制面决定，与集群规模弱相关。</strong></p>
+<p>好消息：过载行为主要由控制面决定，与集群规模弱相关。</p>
 <p>限流阈值、队列长度、降级触发点都是"按设计容量比例"配置的。在 64 卡的小集群上把阈值等比缩到 1/40，压到 1.5× 设计容量，看到的退化曲线和生产是同一形状。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>参数</th><th>生产（2512 卡）</th><th>测试（64 卡）</th></tr></thead><tbody><tr><td>设计容量</td><td>7000 QPS</td><td>175 QPS</td></tr><tr><td>限流阈值</td><td>7200 QPS</td><td>180 QPS</td></tr><tr><td>队列上限</td><td>2.5 万在飞</td><td>625 在飞</td></tr><tr><td>降级触发</td><td>排队 &gt; 2 s</td><td>排队 &gt; 2 s（不变）</td></tr></tbody></table></div>
-<p><strong>只有"排队时间"这类时间量纲的阈值不用缩放</strong>——这也是为什么过载测试在小集群上特别可信。</p>
+<p>只有"排队时间"这类时间量纲的阈值不用缩放——这也是为什么过载测试在小集群上特别可信。</p>
 <h3>10.6 观测：判断"优雅"需要的六个指标</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>看什么</th></tr></thead><tbody><tr><td>goodput（达标请求/秒）</td><td>核心，别的都是解释它</td></tr><tr><td>丢弃率与丢弃位置</td><td>入口拒绝比队列超时好</td></tr><tr><td>队列深度</td><td>是否无界增长</td></tr><tr><td>KV 水位</td><td>是否逼近 OOM</td></tr><tr><td>降级命中计数</td><td>哪一级被触发</td></tr><tr><td>客户端重试率</td><td>是否在放大故障</td></tr></tbody></table></div>
 <div class="orn"></div>
