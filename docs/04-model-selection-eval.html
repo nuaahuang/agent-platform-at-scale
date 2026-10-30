@@ -330,6 +330,68 @@ E = 专家总数，k = 每 token 激活数</code></pre></figure>
 <p>L0 通过只是入场券。三个最常见的断裂点都在 L1–L3：</p>
 <ul><li><strong>工具 schema 变了</strong>：模型按旧参数调，工具返回 400，Harness 重试三次后降级成兜底话术。L0 看不出来，用户看到的是"抱歉我暂时无法处理"。</li><li><strong>RAG 检索不到</strong>：模型本身答得对，但 Harness 塞给它的上下文是空的。L0 用的是自己准备的标准上下文，永远命中。</li><li><strong>流式被截断</strong>：网关 buffer 或超时把最后几个分片丢了，JSON 少了收尾括号。L0 拿的是完整响应。</li></ul>
 <p>所以 L2 和 L3 要用录制回放：把线上真实请求（含工具返回值、检索结果）存下来，重放时逐段比对。录制文件要带版本号，和模型版本、Prompt 版本一起绑定。</p>
+<h4>4.4.1 录什么</h4>
+<p>一条会话要重放得起来，得把"模型看到的一切"和"模型做过的一切"都存下来。少存一样，重放就会走岔：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>存什么</th><th>为什么必须存</th></tr></thead><tbody><tr><td>入口</td><td>用户原话、租户、会话 id、全部采样参数</td><td>少一个参数，输出就不同</td></tr><tr><td>模型调用</td><td>完整 messages、tools schema、返回文本、usage</td><td>复现模型当时看到的上下文</td></tr><tr><td>工具调用</td><td>工具名、入参、返回值、耗时</td><td>工具返回变了，后面全变</td></tr><tr><td>检索</td><td>query、命中 chunk id、分数、正文</td><td>召回不同，答案就不同</td></tr><tr><td>元信息</td><td>模型 digest、Prompt 版本、契约版本、知识库快照</td><td>判断这份录像还能不能用</td></tr></tbody></table></div>
+<p>存 JSON Lines，一条会话一个文件，路径按 <code>&lt;date&gt;/&lt;tenant&gt;/&lt;session&gt;.jsonl</code>。</p>
+<h4>4.4.2 怎么匹配</h4>
+<p>回放不是"再跑一遍"，是把真实调用换成查表。查表要命中，键必须稳定。</p>
+<p>键取三样：类型（llm/tool/retrieval）、步号、入参归一化后的哈希。</p>
+<p>归一化要抹掉三样东西，不抹的话同一逻辑请求每次哈希都不同：时间戳、UUID 与 trace id、会话里的随机盐。</p>
+<p>这一步做不好，命中率会掉到 30% 以下。团队会以为"这套东西没用"，其实是键没设计对。</p>
+<h4>4.4.3 三种接入点</h4>
+<div class="table-wrap"><table class="table"><thead><tr><th>接入点</th><th>改哪</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>网关镜像</td><td>LLM 网关 + 工具网关</td><td>不改业务代码，天然全量</td><td>拿不到中间决策</td></tr><tr><td>SDK 拦截</td><td>业务代码</td><td>能录到"为什么选这个工具"</td><td>漏包一处就录不全</td></tr><tr><td>Trace 导出</td><td>OTel span</td><td>复用可观测设施</td><td>受 trace 采样率限制</td></tr></tbody></table></div>
+<p>推荐 SDK 拦截为主、网关做兜底校验。网关发现某次真实调用没有对应的 SDK 记录，说明有代码绕过了拦截，这时候该告警。</p>
+<h4>4.4.4 分叉怎么办</h4>
+<p>回放最容易糊弄过去的就是这里。模型第一步换了工具，第二步入参就对不上，录像里没有这一条。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模式</th><th>行为</th><th>用在哪</th></tr></thead><tbody><tr><td>strict</td><td>未命中立刻失败，标 diverged</td><td>离线评测</td></tr><tr><td>shadow</td><td>分叉后切真实调用，只记录差异</td><td>线上影子流量</td></tr><tr><td>lenient</td><td>允许 N 步分叉</td><td>探索性对比</td></tr></tbody></table></div>
+<p>离线评测用 strict。用 lenient 跑出来的"通过"里，有一部分是拿旧录像顶替的。</p>
+<p>分叉率本身也是指标：同一处 Prompt 改动让分叉率从 5% 涨到 30%，说明改动已经改变了决策路径，不只是措辞。</p>
+<h4>4.4.5 存多少</h4>
+<p>单轮按 3 次模型调用 + 2 次工具 + 1 次检索、上下文 8K 算，约 200 KB。</p>
+<p>1.5 亿轮/日按 1% 采样是 150 万轮/日，每天 300 GB，留 7 天约 2.1 TB。对象存储按 ¥0.15/GB/月算，一个月三百来块。钱不是问题，问题是录了不看。</p>
+<p>实际做分层：失败样本 100% 录，成功样本 1% 录。</p>
+<h4>4.4.6 最小实现</h4>
+<p>三十行能跑通，关键是归一化和 strict 命中：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>import json, hashlib, re, pathlib
+
+UUID = re.compile(r&quot;[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}&quot;)
+TS = re.compile(r&quot;\d{4}-\d{2}-\d{2}T[\d:.]+Z&quot;)
+DROP = {&quot;trace_id&quot;, &quot;request_id&quot;, &quot;timestamp&quot;}
+
+def normalize(o):
+    if isinstance(o, dict):
+        return {k: normalize(v) for k, v in sorted(o.items()) if k not in DROP}
+    if isinstance(o, list):
+        return [normalize(x) for x in o]
+    if isinstance(o, str):
+        return TS.sub(&quot;&lt;ts&gt;&quot;, UUID.sub(&quot;&lt;uuid&gt;&quot;, o))
+    return o
+
+class Cassette:
+    def __init__(self, path, mode, meta):
+        self.mode, self.step = mode, 0
+        self.path = pathlib.Path(path)
+        self.data = (json.loads(self.path.read_text())
+                     if self.path.exists() else {&quot;meta&quot;: meta, &quot;steps&quot;: {}})
+
+    def call(self, kind, payload, real_fn):
+        h = hashlib.sha1(json.dumps(normalize(payload), sort_keys=True).encode())
+        key = f&quot;{self.step}:{kind}:{h.hexdigest()[:12]}&quot;
+        self.step += 1
+        if self.mode == &quot;record&quot;:
+            out = real_fn()
+            self.data[&quot;steps&quot;][key] = out
+            self.path.write_text(json.dumps(self.data, ensure_ascii=False))
+            return out
+        if key not in self.data[&quot;steps&quot;]:
+            raise RuntimeError(f&quot;diverged at {key}&quot;)
+        return self.data[&quot;steps&quot;][key]</code></pre></figure>
+<p>接进业务只要一层包装：<code>cassette.call("tool", {"name": "query_order", "args": args}, lambda: real_tool(**args))</code>。</p>
+<p>生产上还要加四样：gzip 压缩、分片上传、按 manifest 建索引、并发写锁。</p>
+<h4>4.4.7 什么时候回放会骗你</h4>
+<div class="table-wrap"><table class="table"><thead><tr><th>情况</th><th>回放给出的结论</th><th>实际情况</th></tr></thead><tbody><tr><td>模型换代</td><td>契约没变，通过</td><td>录像里是旧模型的答案，质量已变</td></tr><tr><td>工具字段改名</td><td>通过</td><td>回放走的是旧字段</td></tr><tr><td>知识库更新</td><td>通过</td><td>检索用的是旧快照</td></tr><tr><td>依赖实时数据（库存、价格）</td><td>决策路径一致</td><td>业务正确性没验证</td></tr></tbody></table></div>
+<p>所以定位要摆正：回放验证的是"改代码之后行为没变"，不验证"改完之后答案更好"。后者只能靠离线评测集和线上灰度。</p>
 <h3>4.5 参数一致性：应用层和模型接入层怎么保证一样</h3>
 <p>这一节解决一个很具体的问题：应用层传了 <code>max_tokens=2048</code>，模型接入层却按默认 512 截断，两边都认为自己是对的。</p>
 <p>不一致的八种典型来源：</p>
@@ -403,7 +465,7 @@ histogram_quantile(0.5, sum by (le) (rate(llm_request_temperature_bucket{env=&qu
 <div class="table-wrap"><table class="table"><thead><tr><th>评测项</th><th>判据性质</th><th>谁判</th><th>自动化程度</th><th>人怎么参与</th></tr></thead><tbody><tr><td>JSON 合法率、字段完整性</td><td>确定性</td><td>代码</td><td>全自动</td><td>不看，只在跌了才看</td></tr><tr><td>工具调用序列与参数</td><td>确定性</td><td>代码</td><td>全自动</td><td>月度看趋势</td></tr><tr><td>意图分类准确率</td><td>确定性（有标注）</td><td>代码</td><td>全自动</td><td>每月重采样校准</td></tr><tr><td>数值计算、引用来源</td><td>半确定</td><td>代码 + 规则</td><td>自动，冲突转人</td><td>冲突样本 100% 仲裁</td></tr><tr><td>退款资格、政策合规</td><td>业务规则</td><td>代码 + 人复审</td><td>人机结合</td><td>高风险样本全量人审</td></tr><tr><td>语气、有用性、完整性</td><td>主观</td><td>模型 judge</td><td>人机结合</td><td>每月校准 + 每周抽检 10%</td></tr><tr><td>提示注入、越权操作</td><td>高代价</td><td>机器筛 + 人定标准</td><td>机器全量筛</td><td>命中即人审，100%</td></tr><tr><td>新场景、新能力</td><td>无标准</td><td>人</td><td>全人工</td><td>人工探索后固化成题</td></tr></tbody></table></div>
 <p>第四条最容易被跳过："有标注可校准"意味着这件事以前有人做过、留下了判断依据。没有历史标注就先别上 judge，先人工标 100 条，把 rubric 写出来。</p>
 <p>人工参与有四种形态，不是笼统的"review 一下"：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>做什么</th><th>何时触发</th><th>单次成本</th><th>产出</th></tr></thead><tbody><tr><td>建标准</td><td>写 L3 的 rubric，定义什么叫"好"</td><td>换题时、季度评审</td><td>半天</td><td>rubric 文档</td></tr><tr><td>校准 judge</td><td>标 100 条，和 judge 结果比对算 Kappa</td><td>每月，或 judge/prompt 变更后</td><td>2 小时</td><td>Kappa 值 + 不一致样本</td></tr><tr><td>抽检</td><td>随机抽 10% 看结论对不对</td><td>每周</td><td>1 小时</td><td>badcase 清单</td></tr><tr><td>仲裁</td><td>处理冲突、高风险命中、线上申诉</td><td>触发式，SLA 4 小时</td><td>单条 10 分钟</td><td>判定结论，必要时改 rubric</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>做什么</th><th>何时触发</th><th>单次成本</th><th>产出</th></tr></thead><tbody><tr><td>建标准</td><td>写 L3 的 rubric，定义什么叫"好"</td><td>换题时、季度评审</td><td>半天</td><td>rubric 文档</td></tr><tr><td>校准 judge</td><td>标 100 条，和 judge 结果比对算 Kappa</td><td>每月，或 judge/prompt 变更后</td><td>2 小时</td><td>Kappa 值 + 不一致样本</td></tr><tr><td>抽检</td><td>随机抽 10% 看结论对不对</td><td>每周</td><td>1 小时</td><td>badcase 清单</td></tr><tr><td>仲裁</td><td>处理冲突、高风险命中、线上申诉</td><td>触发式，SLA（Service Level Agreement，服务等级协议）4 小时</td><td>单条 10 分钟</td><td>判定结论，必要时改 rubric</td></tr></tbody></table></div>
 <p>四者的区别在频率和对象：建标准是定规则，校准是验规则，抽检是验执行，仲裁是处理规则没覆盖到的情况。只做抽检不做校准，等于拿一个人的标准去衡量另一个标准。</p>
 <p>成本账要算清楚。50 道题全人工，按每题 10 分钟算要 8.3 小时，一周一次就是一个人一天半。改成人机结合：机器判 L1/L2，L3 只占 20%（10 条）人工判，再抽检 10%（5 条），人的时间压到 2.5 小时，机器 3 分钟。前提是 Kappa ≥0.8——达不到就还得全人工，省下的时间会以事故形式还回来。</p>
 <p>模型能自己判什么，边界比想象的窄：</p>

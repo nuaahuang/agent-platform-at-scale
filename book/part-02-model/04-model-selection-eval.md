@@ -264,6 +264,118 @@ L0 通过只是入场券。三个最常见的断裂点都在 L1–L3：
 
 所以 L2 和 L3 要用录制回放：把线上真实请求（含工具返回值、检索结果）存下来，重放时逐段比对。录制文件要带版本号，和模型版本、Prompt 版本一起绑定。
 
+#### 4.4.1 录什么
+
+一条会话要重放得起来，得把"模型看到的一切"和"模型做过的一切"都存下来。少存一样，重放就会走岔：
+
+| 类型 | 存什么 | 为什么必须存 |
+|---|---|---|
+| 入口 | 用户原话、租户、会话 id、全部采样参数 | 少一个参数，输出就不同 |
+| 模型调用 | 完整 messages、tools schema、返回文本、usage | 复现模型当时看到的上下文 |
+| 工具调用 | 工具名、入参、返回值、耗时 | 工具返回变了，后面全变 |
+| 检索 | query、命中 chunk id、分数、正文 | 召回不同，答案就不同 |
+| 元信息 | 模型 digest、Prompt 版本、契约版本、知识库快照 | 判断这份录像还能不能用 |
+
+存 JSON Lines，一条会话一个文件，路径按 `<date>/<tenant>/<session>.jsonl`。
+
+#### 4.4.2 怎么匹配
+
+回放不是"再跑一遍"，是把真实调用换成查表。查表要命中，键必须稳定。
+
+键取三样：类型（llm/tool/retrieval）、步号、入参归一化后的哈希。
+
+归一化要抹掉三样东西，不抹的话同一逻辑请求每次哈希都不同：时间戳、UUID 与 trace id、会话里的随机盐。
+
+这一步做不好，命中率会掉到 30% 以下。团队会以为"这套东西没用"，其实是键没设计对。
+
+#### 4.4.3 三种接入点
+
+| 接入点 | 改哪 | 优点 | 缺点 |
+|---|---|---|---|
+| 网关镜像 | LLM 网关 + 工具网关 | 不改业务代码，天然全量 | 拿不到中间决策 |
+| SDK 拦截 | 业务代码 | 能录到"为什么选这个工具" | 漏包一处就录不全 |
+| Trace 导出 | OTel span | 复用可观测设施 | 受 trace 采样率限制 |
+
+推荐 SDK 拦截为主、网关做兜底校验。网关发现某次真实调用没有对应的 SDK 记录，说明有代码绕过了拦截，这时候该告警。
+
+#### 4.4.4 分叉怎么办
+
+回放最容易糊弄过去的就是这里。模型第一步换了工具，第二步入参就对不上，录像里没有这一条。
+
+| 模式 | 行为 | 用在哪 |
+|---|---|---|
+| strict | 未命中立刻失败，标 diverged | 离线评测 |
+| shadow | 分叉后切真实调用，只记录差异 | 线上影子流量 |
+| lenient | 允许 N 步分叉 | 探索性对比 |
+
+离线评测用 strict。用 lenient 跑出来的"通过"里，有一部分是拿旧录像顶替的。
+
+分叉率本身也是指标：同一处 Prompt 改动让分叉率从 5% 涨到 30%，说明改动已经改变了决策路径，不只是措辞。
+
+#### 4.4.5 存多少
+
+单轮按 3 次模型调用 + 2 次工具 + 1 次检索、上下文 8K 算，约 200 KB。
+
+1.5 亿轮/日按 1% 采样是 150 万轮/日，每天 300 GB，留 7 天约 2.1 TB。对象存储按 ¥0.15/GB/月算，一个月三百来块。钱不是问题，问题是录了不看。
+
+实际做分层：失败样本 100% 录，成功样本 1% 录。
+
+#### 4.4.6 最小实现
+
+三十行能跑通，关键是归一化和 strict 命中：
+
+```python
+import json, hashlib, re, pathlib
+
+UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+TS = re.compile(r"\d{4}-\d{2}-\d{2}T[\d:.]+Z")
+DROP = {"trace_id", "request_id", "timestamp"}
+
+def normalize(o):
+    if isinstance(o, dict):
+        return {k: normalize(v) for k, v in sorted(o.items()) if k not in DROP}
+    if isinstance(o, list):
+        return [normalize(x) for x in o]
+    if isinstance(o, str):
+        return TS.sub("<ts>", UUID.sub("<uuid>", o))
+    return o
+
+class Cassette:
+    def __init__(self, path, mode, meta):
+        self.mode, self.step = mode, 0
+        self.path = pathlib.Path(path)
+        self.data = (json.loads(self.path.read_text())
+                     if self.path.exists() else {"meta": meta, "steps": {}})
+
+    def call(self, kind, payload, real_fn):
+        h = hashlib.sha1(json.dumps(normalize(payload), sort_keys=True).encode())
+        key = f"{self.step}:{kind}:{h.hexdigest()[:12]}"
+        self.step += 1
+        if self.mode == "record":
+            out = real_fn()
+            self.data["steps"][key] = out
+            self.path.write_text(json.dumps(self.data, ensure_ascii=False))
+            return out
+        if key not in self.data["steps"]:
+            raise RuntimeError(f"diverged at {key}")
+        return self.data["steps"][key]
+```
+
+接进业务只要一层包装：`cassette.call("tool", {"name": "query_order", "args": args}, lambda: real_tool(**args))`。
+
+生产上还要加四样：gzip 压缩、分片上传、按 manifest 建索引、并发写锁。
+
+#### 4.4.7 什么时候回放会骗你
+
+| 情况 | 回放给出的结论 | 实际情况 |
+|---|---|---|
+| 模型换代 | 契约没变，通过 | 录像里是旧模型的答案，质量已变 |
+| 工具字段改名 | 通过 | 回放走的是旧字段 |
+| 知识库更新 | 通过 | 检索用的是旧快照 |
+| 依赖实时数据（库存、价格） | 决策路径一致 | 业务正确性没验证 |
+
+所以定位要摆正：回放验证的是"改代码之后行为没变"，不验证"改完之后答案更好"。后者只能靠离线评测集和线上灰度。
+
 ### 4.5 参数一致性：应用层和模型接入层怎么保证一样
 
 这一节解决一个很具体的问题：应用层传了 `max_tokens=2048`，模型接入层却按默认 512 截断，两边都认为自己是对的。
@@ -453,7 +565,7 @@ D-3 到 D0 之间如果指标变差，走回滚而不是延期——已灰度的
 | 建标准 | 写 L3 的 rubric，定义什么叫"好" | 换题时、季度评审 | 半天 | rubric 文档 |
 | 校准 judge | 标 100 条，和 judge 结果比对算 Kappa | 每月，或 judge/prompt 变更后 | 2 小时 | Kappa 值 + 不一致样本 |
 | 抽检 | 随机抽 10% 看结论对不对 | 每周 | 1 小时 | badcase 清单 |
-| 仲裁 | 处理冲突、高风险命中、线上申诉 | 触发式，SLA 4 小时 | 单条 10 分钟 | 判定结论，必要时改 rubric |
+| 仲裁 | 处理冲突、高风险命中、线上申诉 | 触发式，SLA（Service Level Agreement，服务等级协议）4 小时 | 单条 10 分钟 | 判定结论，必要时改 rubric |
 
 四者的区别在频率和对象：建标准是定规则，校准是验规则，抽检是验执行，仲裁是处理规则没覆盖到的情况。只做抽检不做校准，等于拿一个人的标准去衡量另一个标准。
 
