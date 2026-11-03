@@ -396,7 +396,7 @@ blockquote p{margin:.4em 0}
 <p>我原来以为 RL 的瓶颈在训练，实际差在 rollout——生成占七到九成时间，优化错了地方等于白干。</p>
 </section>
 <section class="sec" id="s17"><h2><span class="sec-num">17</span>17. 延伸</h2>
-<ul><li>第 4 章：评测集与录制回放，本章的 rollout 复用同一套 cassette</li><li>第 10B 章：KV 作废为什么是权重回灌的必经一步</li><li>第 13 章：2,512 卡的推导，本章在它上面加了一个"训练占用"变量</li><li>第 31A 章：badcase 闭环，本章是它的下游</li><li>第 36 章：三层灰度，权重回灌的执行方式</li></ul>
+<ul><li>第 4 章：评测集与录制回放，本章的 rollout 复用同一套 cassette</li><li>第 10B 章：KV 作废为什么是权重回灌的必经一步</li><li>第 13 章：2,512 卡的推导，本章在它上面加了一个"训练占用"变量</li><li>第 31A 章：badcase 闭环，本章是它的下游</li><li>第 36 章：三层灰度，权重回灌的执行方式</li><li>算法与复现：<a href="https://github.com/datawhalechina/agentic-rl-lab">datawhalechina/agentic-rl-lab</a>——16 个算法的可跑实验，本章只讲交界，算法细节看它</li><li>自建集群路线：<a href="https://github.com/volcengine/verl">verl</a>、<a href="https://github.com/OpenRLHF/OpenRLHF">OpenRLHF</a></li></ul>
 <p>结论是：RL Infra 和在线平台的交界只有三处——轨迹从哪来、卡怎么分、权重怎么回。三处都算清，两套系统就能共存；少算一处，容量模型就会在训练那周崩掉。</p>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="A-model-physics.html"><span>上一章</span><b>A · 模型层的物理：显存、带宽、算力</b></a><i></i></nav>

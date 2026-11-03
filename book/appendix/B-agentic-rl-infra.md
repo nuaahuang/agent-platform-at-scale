@@ -407,5 +407,7 @@ def rl_step(policy, envs, reward_fn, cfg):
 - 第 13 章：2,512 卡的推导，本章在它上面加了一个"训练占用"变量
 - 第 31A 章：badcase 闭环，本章是它的下游
 - 第 36 章：三层灰度，权重回灌的执行方式
+- 算法与复现：[datawhalechina/agentic-rl-lab](https://github.com/datawhalechina/agentic-rl-lab)——16 个算法的可跑实验，本章只讲交界，算法细节看它
+- 自建集群路线：[verl](https://github.com/volcengine/verl)、[OpenRLHF](https://github.com/OpenRLHF/OpenRLHF)
 
 结论是：RL Infra 和在线平台的交界只有三处——轨迹从哪来、卡怎么分、权重怎么回。三处都算清，两套系统就能共存；少算一处，容量模型就会在训练那周崩掉。
