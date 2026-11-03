@@ -213,7 +213,7 @@
 | Part II | 4 | ✅ |
 | Part IX | 33 | ✅ |
 | Part III | 8、9、10、10A、11、12 | ✅ |
-| 附录 | A 模型物理、GLOSSARY | ✅ |
+| 附录 | A 模型物理、B Agentic RL Infra、C 业界基线（待）、D 延伸阅读（待）、GLOSSARY | A/B ✅ |
 | 其余 | 5–7、13–32、34–44 | ⬜ |
 
 详细写作标准见 [STYLE.md](STYLE.md)。
