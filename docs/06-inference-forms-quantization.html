@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>推理形态与压缩：精度换成本，换到哪一步 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">模型工程 · 第 06 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：成本要降 30%，四个手段摆上桌</a><a href="#s2"><span>02</span>. 先看瓶颈：一个 token 要读多少字节</a><a href="#s3"><span>03</span>. FP8：几乎是免费的一档</a><a href="#s4"><span>04</span>. INT4：省得多，掉得也实在</a><a href="#s5"><span>05</span>. KV 量化：提并发，不降单价</a><a href="#s6"><span>06</span>. 精度-成本曲线：怎么判断停在哪一档</a><a href="#s7"><span>07</span>. 四种推理形态，选错比量化选错更贵</a><a href="#s8"><span>08</span>. 部署形态一：lite-8B 分流</a><a href="#s9"><span>09</span>. 部署形态二：多 LoRA 隔离</a><a href="#s10"><span>10</span>. 四个手段叠起来，不是相加</a><a href="#s11"><span>11</span>. 量化怎么验收：不是看平均分</a><a href="#s12"><span>12</span>. 失败模式</a><a href="#s13"><span>13</span>. 什么情况下这些结论不成立</a><a href="#s14"><span>14</span>. 验收</a><a href="#s15"><span>15</span>. 复盘卡</a><a href="#s16"><span>16</span>. 延伸</a></nav>
+      <div class="rail-foot">模型工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">06</div><div class="ch-kicker">模型工程</div><h1>推理形态与压缩：精度换成本，换到哪一步</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>为什么权重量化和 KV 量化的收益，取决于 batch 大小？</li><li>FP8 掉几个点、省多少钱？INT4 呢？掉在哪类题上？</li><li>lite-8B 分流什么时候划算，分流器准确率要到多少？</li><li>多 LoRA 共用基座，显存和批处理怎么算，什么时候不该用？</li><li>一张精度-成本曲线，怎么判断该停在哪一档？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：成本要降 30%，四个手段摆上桌</h2>
+<p>第 13 章算出来，推理成本占 TCO 的 61%。老板要求降 30%。工程侧能动的只有四个地方：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>省多少</th><th>掉几个点</th><th>实现难度</th></tr></thead><tbody><tr><td>FP8 量化（权重与激活）</td><td>45%</td><td>1.5</td><td>低，改启动参数</td></tr><tr><td>INT4 权重量化</td><td>62%</td><td>4</td><td>中，要校准</td></tr><tr><td>FP8 KV 缓存</td><td>不降单价，提并发</td><td>0.8</td><td>中，kernel 要支持</td></tr><tr><td>lite-8B 分流</td><td>40% 流量成本降 73%</td><td>分流错了更贵</td><td>高，要训练分流器</td></tr></tbody></table></div>
+<p>四个手段不是并列的选项。前两个改的是"每个 token 多贵"，第三个改的是"一张卡能装多少请求"，第四个改的是"哪些请求不需要大模型"。</p>
+<p>选错方向的典型：为了降单价去做 KV 量化，做完发现成本没变——因为单价由权重带宽决定，KV 量化提的是并发上限。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 先看瓶颈：一个 token 要读多少字节</h2>
+<p>decode 阶段每生成一个 token，GPU 要做两件事：读一遍权重，读这个请求的 KV。两者都走 HBM 带宽。</p>
+<p>单 token 的带宽需求可以写成：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>每 token 带宽 = 权重字节 / batch + 单请求 KV 字节</code></pre></figure>
+<p>batch 越大，权重被摊得越薄。以 200B MoE、8K 上下文为例：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>batch</th><th>权重/批</th><th>单请求 KV</th><th>合计</th><th>权重占比</th></tr></thead><tbody><tr><td>64</td><td>3.1 GB</td><td>1.0 GB</td><td>4.1 GB</td><td>76%</td></tr><tr><td>128</td><td>1.6 GB</td><td>1.0 GB</td><td>2.6 GB</td><td>61%</td></tr><tr><td>256</td><td>0.78 GB</td><td>1.0 GB</td><td>1.78 GB</td><td>44%</td></tr><tr><td>416</td><td>0.48 GB</td><td>1.0 GB</td><td>1.48 GB</td><td>32%</td></tr></tbody></table></div>
+<p>这张表决定了本章的结论：</p>
+<ul><li>batch 小（&lt; 128）时，权重占七成带宽，<strong>权重量化收益大</strong></li><li>batch 大（&gt; 256）时，KV 占一半以上，<strong>KV 量化收益大</strong></li><li>两个都做，收益不是相加，要看当时的 batch 落在线性哪一段</li></ul>
+<p>所以"FP8 能省多少"这个问题没有统一答案，得先看你的实际 batch。线上 batch 通常由并发决定，而并发又由 SLO 决定——这是第 10 章的事。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. FP8：几乎是免费的一档</h2>
+<p>FP8 有两套格式：E4M3（精度高，范围小）和 E5M2（精度低，范围大）。权重和激活用 E4M3，梯度回传用 E5M2。</p>
+<p>MoE 模型特别适合 FP8，原因是它的计算以 GEMM 为主，数值分布集中，per-tensor scaling 就够用。稠密模型在注意力部分对精度更敏感，往往要 per-channel。</p>
+<p>代价是 1.5 个百分点。我们实测的分布是：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>题型</th><th>BF16</th><th>FP8</th><th>差值</th></tr></thead><tbody><tr><td>知识问答</td><td>93.0%</td><td>92.5%</td><td>−0.5</td></tr><tr><td>工具调用</td><td>94.0%</td><td>93.2%</td><td>−0.8</td></tr><tr><td>JSON 输出</td><td>99.5%</td><td>99.1%</td><td>−0.4</td></tr><tr><td>数值推理</td><td>86.0%</td><td>82.5%</td><td>−3.5</td></tr><tr><td>长上下文召回</td><td>88.0%</td><td>85.0%</td><td>−3.0</td></tr></tbody></table></div>
+<p>掉点集中在数值推理和长上下文召回。前者因为 FP8 的尾数只有 3 位，累加误差在长计算链上放大；后者因为注意力分数对小扰动敏感。</p>
+<p>这两类恰好是售后 Agent 的次要路径，所以能接受。如果业务主路径是算账或长文档比对，FP8 就得重新评估。</p>
+<p>成本从 0.53 分/轮降到 0.294 分/轮。这个降幅不是线性的 50%，因为权重减半只影响了公式里的第一项，KV 那部分没变。</p>
+<p>启动配置只有几行：</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code># vLLM 启动参数
+quantization: fp8
+kv_cache_dtype: fp8          # 另算，见第 5 节
+max_model_len: 32768
+gpu_memory_utilization: 0.92</code></pre></figure>
+<p>校准集要用线上的真实请求分布，512 条足够。用评测集校准会过拟合——评测集的问法比线上整齐得多。</p>
+<p>校准集怎么挑，直接决定量化后掉在哪：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>采样来源</th><th>占比</th><th>作用</th></tr></thead><tbody><tr><td>线上随机采样</td><td>60%</td><td>覆盖真实分布</td></tr><tr><td>长上下文请求（&gt;16K）</td><td>20%</td><td>注意力层对精度最敏感的地方</td></tr><tr><td>数值与金额类</td><td>15%</td><td>校准 scale 的极值区间</td></tr><tr><td>边界样本（拒答、异常）</td><td>5%</td><td>防止量化把极端值压平</td></tr></tbody></table></div>
+<p>漏掉第二行是常见的错：用短请求校准出来的 scale，跑长上下文会溢出或精度骤降，而评测集里恰好没有长请求。</p>
+<p>校准完要看两个信号，不是直接上线：单层输出的相对误差（超过 1% 说明这一层 scale 不对），以及 KL 散度（量化前后输出分布的偏离，超过 0.05 说明模型行为已经变了）。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. INT4：省得多，掉得也实在</h2>
+<p>INT4 只量化权重，激活仍是 FP16，所以叫 W4A16。两种主流做法：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方法</th><th>原理</th><th>校准成本</th><th>精度</th></tr></thead><tbody><tr><td>GPTQ</td><td>逐层最小化重构误差，用 Hessian</td><td>高，要几百条样本</td><td>略好</td></tr><tr><td>AWQ</td><td>找对精度敏感的通道，按通道缩放</td><td>低，几十条样本</td><td>略差但更稳</td></tr></tbody></table></div>
+<p>权重从 200 GB 降到 100 GB，成本降到 0.20 分/轮。但掉 4 个点，而且分布很不均匀：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>题型</th><th>FP8</th><th>INT4</th><th>差值</th></tr></thead><tbody><tr><td>知识问答</td><td>92.5%</td><td>90.0%</td><td>−2.5</td></tr><tr><td>工具调用</td><td>93.2%</td><td>88.0%</td><td>−5.2</td></tr><tr><td>JSON 输出</td><td>99.1%</td><td>97.5%</td><td>−1.6</td></tr><tr><td>数值推理</td><td>82.5%</td><td>74.0%</td><td>−8.5</td></tr><tr><td>长上下文召回</td><td>85.0%</td><td>79.0%</td><td>−6.0</td></tr></tbody></table></div>
+<p>MoE 还有一个额外问题：专家路由在低精度下更容易抖动。同一个 token，FP8 时路由到专家 12，INT4 时可能路由到 15。单次无所谓，但 batch 内的负载均衡会变差，最热的专家排队，最冷的闲着。</p>
+<p>实测的专家利用率从 78% 掉到 61%，这直接吃掉了量化省下的一部分吞吐。</p>
+<p>INT4 能用的场景要同时满足三条：</p>
+<ul><li>任务窄，且能验证答案对不对（分类、抽取、格式转换）</li><li>有 fallback：低置信度时升级到大模型</li><li>掉点落在非关键题型上</li></ul>
+<p>三条缺一条，就别用 INT4。省下的 0.09 分/轮，抵不上一次批量答错带来的客诉成本。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. KV 量化：提并发，不降单价</h2>
+<p>KV 缓存从 FP16 降到 FP8，容量减半：400 GB 变 200 GB，并发从 416 提到 832。</p>
+<p>但单价几乎不变。原因在第 2 节的公式里：KV 那部分对应的是"单请求 KV 字节"，量化它只让每个请求占的空间变小，不让每个 token 的计算变少。收益体现在"同样卡数能装更多请求"，也就是摊薄了权重那部分。</p>
+<p>按 batch 256 算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>量化前：0.78 + 1.0 = 1.78 GB/token
+量化后：0.78 + 0.5 = 1.28 GB/token
+提升：28%</code></pre></figure>
+<p>按 batch 64 算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>量化前：3.1 + 1.0 = 4.1 GB/token
+量化后：3.1 + 0.5 = 3.6 GB/token
+提升：12%</code></pre></figure>
+<p>所以 KV 量化在高并发场景值钱，低并发场景不值钱。</p>
+<p>精度代价跟上下文长度强相关：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>上下文长度</th><th>掉点</th></tr></thead><tbody><tr><td>&lt; 4K</td><td>0.1–0.2</td></tr><tr><td>4K–16K</td><td>0.5–1.0</td></tr><tr><td>16K–32K</td><td>1.5–3.0</td></tr></tbody></table></div>
+<p>原因是 KV 里存的是历史 token 的键值向量，越长，误差累积越多。售后场景 80% 的请求在 4K 以内，所以整体掉 0.8 个点。如果业务以长文档为主，这个代价要重算。</p>
+<p>工程上有个坑：per-token scaling 的计算开销。朴素做法是每个 token 算一次 scale，attention kernel 会被这个串行操作拖慢。生产实现一般用 per-head 或 per-block scaling，kernel 支持才开。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 精度-成本曲线：怎么判断停在哪一档</h2>
+<p>四个点画出来：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>权重</th><th>KV</th><th>单轮成本</th><th>通过率</th><th>每掉 1 点省多少</th></tr></thead><tbody><tr><td>BF16 基线</td><td>400 GB</td><td>400 GB</td><td>0.530 分</td><td>92.5%</td><td>—</td></tr><tr><td>FP8</td><td>200 GB</td><td>400 GB</td><td>0.294 分</td><td>91.0%</td><td>30%</td></tr><tr><td>FP8 + KV FP8</td><td>200 GB</td><td>200 GB</td><td>0.260 分</td><td>90.2%</td><td>14%</td></tr><tr><td>INT4 + KV FP8</td><td>100 GB</td><td>200 GB</td><td>0.190 分</td><td>86.5%</td><td>6%</td></tr></tbody></table></div>
+<p>最后一列是判断依据。它衡量的是"这笔交易划不划算"：</p>
+<ul><li>FP8 每掉 1 点换 30% 成本下降，几乎必上</li><li>KV 量化每掉 1 点换 14%，可以上，但要确认长上下文占比低</li><li>INT4 每掉 1 点只换 6%，边际收益降到三档里最差</li></ul>
+<p>停在哪一档，取决于两个业务参数：单点准确率值多少钱，以及长尾占比多少。</p>
+<p>如果一条错误工单的赔付成本是 ¥20，处理 1.5 亿轮/日，掉 1 个点就是每天多 150 万次错误，代价远超省下的电费。这种情况下停在第 2 档。</p>
+<p>反过来，如果是内部知识检索这种错了重问一次就行的场景，第 4 档也合理。</p>
+<p><strong>判定线可以量化</strong>：把"每掉 1 点的成本节省"和"每条错误的赔付成本 / 单轮成本"对比。前者大于后者，就往下走一档。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 四种推理形态，选错比量化选错更贵</h2>
+<p>压缩解决"多贵"，形态解决"怎么服务"。四种形态对应四类负载，混用会互相拖累。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>适用负载</th><th>关键参数</th><th>代价</th></tr></thead><tbody><tr><td>在线流式</td><td>用户等着看（默认）</td><td><code>stream=true</code>，TTFT 优先</td><td>不能批处理优化，吞吐低 30%</td></tr><tr><td>在线非流式</td><td>结果要整体校验（表单填单）</td><td>返回完整 JSON</td><td>用户等待感差，要前端 loading</td></tr><tr><td>离线批处理</td><td>批量分类、历史回刷</td><td>batch 可到 512</td><td>延迟以分钟计</td></tr><tr><td>长上下文</td><td>合同比对、长文档问答</td><td>32K 窗口，KV 量化</td><td>单请求占满显存，并发掉到个位数</td></tr></tbody></table></div>
+<p>第一条和第二条的差别不只是 API：流式模式下，引擎要在 token 级做 flush，网关要支持 SSE，客户端要处理断线重连。整条链路都为"早一点看到第一个字"服务，代价是吞吐。</p>
+<p>第三条是省钱的关键。离线任务不占在线资源，可以跑在夜间闲置卡上，按第 33 章的错峰策略，成本能压到在线的一半以下。售后系统的历史工单回刷、意图重新分类，都该走这条路。</p>
+<p>第四条和量化直接冲突：长上下文请求的 KV 占比高，权重量化对它几乎没帮助，该做的是 KV 量化和上下文压缩。第 2 节的表已经说明，batch 越大 KV 越重要，而长上下文请求的"单请求 KV"本身就有 4 GB（32K），一个请求就顶四个普通请求。</p>
+<p>形态选错的典型：把长文档问答做成在线流式。用户要等 30 秒才看到第一个字，因为 prefill 就要 30 秒（32K token × 0.09 ms），流式一点没用。这种场景该做的是先检索再生成，或者改成异步任务加通知。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 部署形态一：lite-8B 分流</h2>
+<p>8B 的成本是 0.078 分/轮，通过率 62%。单看通过率没法用，但它不是替代大模型，是筛掉一部分请求。</p>
+<p>分流的判据不是"问题短"，而是"答案可验证"：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>请求类型</th><th>占比</th><th>8B 通过率</th><th>适合分流</th></tr></thead><tbody><tr><td>意图分类</td><td>40%</td><td>88%</td><td>是，输出是 12 个枚举值</td></tr><tr><td>订单状态查询</td><td>20%</td><td>85%</td><td>是，有工具返回值兜底</td></tr><tr><td>简单政策问答</td><td>15%</td><td>61%</td><td>否，容易答错条款</td></tr><tr><td>多步退款</td><td>15%</td><td>32%</td><td>否</td></tr><tr><td>客诉与例外</td><td>10%</td><td>18%</td><td>否</td></tr></tbody></table></div>
+<p>分流的账要算全，不能只算省下的：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>分流正确：省 0.294 − 0.078 = 0.216 分
+分流错误：多花 0.078（小模型白跑）+ 0.294（大模型重跑）= 0.372 分
+盈亏平衡：0.216 × p = 0.372 × (1 − p) → p = 63%</code></pre></figure>
+<p>分流器准确率要到 63% 才不亏，但 63% 意味着 37% 的请求要多跑一次，用户还要多等一轮。所以实际门槛定在 95%。</p>
+<p>95% 的分流器不是靠 8B 自己判断，是用规则加小模型两层：先按意图分类（这个 8B 能到 88%），再用规则兜住高风险的（含金额、含投诉、含例外条款）。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 部署形态二：多 LoRA 隔离</h2>
+<p>一个基座加多个 adapter，每个业务方一个。adapter 很小：r=16 时约 2 亿参数，FP16 下 0.4 GB。</p>
+<p>显存账：基座 200 GB，20 个 adapter 共 8 GB，可以忽略。真正的问题是批处理——同一个 batch 里混了不同 adapter 的请求，怎么算。</p>
+<p>答案是分组 GEMM。把 batch 按 adapter 分组，每组做一次矩阵乘，再拼回去。Punica 提出的 SGMV 就是这个思路。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>吞吐损失</th><th>适用</th></tr></thead><tbody><tr><td>每请求单独跑</td><td>60%–80%</td><td>不适用</td></tr><tr><td>按 adapter 分组批处理</td><td>5%–15%</td><td>主流</td></tr><tr><td>按 adapter 分实例</td><td>0（但要独立显存）</td><td>adapter 少、流量大</td></tr></tbody></table></div>
+<p>隔离要注意两点：</p>
+<p>第一，KV 缓存必须按租户隔离。第 10B 章讲过前缀缓存的哈希要加 tenant salt，多 LoRA 场景更要严格——不同 adapter 的请求如果共享了 KV，会互相污染语义。</p>
+<p>第二，adapter 数量有上限。超过 50 个时，SGMV 的分组开销和 kernel 切换开销会吃掉收益，实测吞吐降到 70% 以下。这时候该拆实例，不是一个实例挂 100 个 adapter。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 四个手段叠起来，不是相加</h2>
+<p>单独看每个手段的收益，容易高估组合效果。它们作用在不同的项上：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>组合</th><th>作用项</th><th>叠加后的成本</th><th>说明</th></tr></thead><tbody><tr><td>FP8</td><td>权重</td><td>0.294</td><td>权重减半</td></tr><tr><td>FP8 + KV FP8</td><td>权重 + KV</td><td>0.260</td><td>KV 减半只影响第二项</td></tr><tr><td>再加 lite-8B 分流</td><td>流量结构</td><td>0.179</td><td>40% 流量走 0.078</td></tr><tr><td>再加多 LoRA</td><td>不加成本</td><td>—</td><td>只影响隔离，不影响单价</td></tr></tbody></table></div>
+<p>第三行的算法要注意：分流不是简单乘 0.6，因为分错的请求要重跑。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>正确分流占比 p = 0.95
+0.95 × 0.078 + 0.05 × (0.078 + 0.260) = 0.091
+其余 60% 走大模型：0.6 × 0.260 = 0.156
+合计 0.247，不是 0.179</code></pre></figure>
+<p>分错的 5% 让总成本比理想值高 38%。这就是为什么分流器的准确率比省下的比例更重要。</p>
+<p>四个手段全上，从 0.530 降到约 0.247，降幅 53%。但通过率从 92.5% 掉到 88% 左右——分流的错误和量化的掉点会叠加。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 量化怎么验收：不是看平均分</h2>
+<p>量化上线前的验收要三件事，只看总分不够：</p>
+<p>第一，逐题比对。同一批 50 题，BF16 和量化版各跑一遍，看哪些题翻转了。翻转的题要人工看，判断是"量化让答案变差了"还是"这题本来就在边界上"。</p>
+<p>第二，KL 散度。在同一批输入上比较两个版本的输出分布，超过 0.05 说明行为变了，不只是精度掉了。这个指标能抓到总分看不出的漂移。</p>
+<p>第三，按长度分桶。短请求和长请求分别看通过率。量化的问题经常只在长上下文暴露，混在一起看会被平均掉。</p>
+<p>三件事都过，才允许灰度。灰度期间盯的是客诉率，不是模型指标——量化导致的退化，用户比指标先感知到。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>量化后吞吐没涨</td><td>batch 太小，权重没摊薄</td><td>看实际 batch 分布</td><td>先提并发，再量化</td></tr><tr><td>量化后掉点集中在某类题</td><td>该类对精度敏感</td><td>分题型跑评测</td><td>回退该类到 BF16，或改校准集</td></tr><tr><td>INT4 后专家利用率下降</td><td>路由在低精度下抖动</td><td>看专家负载直方图</td><td>回退 FP8，或加路由平滑</td></tr><tr><td>KV 量化后长文崩了</td><td>长上下文误差累积</td><td>按长度分桶看通过率</td><td>长请求走未量化的实例</td></tr><tr><td>分流后总成本上升</td><td>分流器准确率不够</td><td>统计重跑率</td><td>加规则层，或提高阈值</td></tr><tr><td>多 LoRA 后 p99 变差</td><td>adapter 太多，分组开销大</td><td>看 kernel 时间占比</td><td>拆实例</td></tr></tbody></table></div>
+<p>第一条最常见：团队先做量化，做完发现省得不多，因为线上 batch 只有 40，权重占了八成带宽但并发上不去，省的都被排队吃回去了。</p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>FP8 掉 1.5 点可以接受</td><td>主路径是数值计算或长文比对时，3.5 点不可接受</td></tr><tr><td>INT4 只在窄任务用</td><td>有强 fallback 且任务可验证时，可以放宽到主路径</td></tr><tr><td>KV 量化在高并发才值钱</td><td>上下文超 32K 时，KV 本身就是瓶颈，低并发也值</td></tr><tr><td>分流器 95% 才划算</td><td>单轮成本差距更大时（如 8B vs API），门槛可以降到 85%</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 验收</h2>
+<ol><li>能算出你场景下权重和 KV 各占多少带宽，据此判断该量化哪个。</li><li>能画出自己模型的精度-成本曲线，并说出停在第几档、为什么。</li><li>能算出分流器的盈亏平衡点，并说明为什么实际门槛更高。</li><li>能估算多 LoRA 在多少 adapter 数量下开始亏。</li></ol>
+</section>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>15. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为量化就是"少存点、快一点"，实际差在要看 batch——权重量化摊薄的是权重那部分，KV 量化摊薄的是并发，两者在不同 batch 下收益差三倍。</p>
+</section>
+<section class="sec" id="s16"><h2><span class="sec-num">16</span>16. 延伸</h2>
+<ul><li>第 2 章：roofline 与带宽受限，本章的公式来自那里</li><li>第 10 章：batch 怎么被 SLO 限制住</li><li>第 10B 章：KV 容量与并发上限的推导</li><li>第 14 章：成本结构，量化省下的钱在 TCO 里占多少</li></ul>
+<p>结论是：量化能省多少，先看 batch 落在哪一段；FP8 几乎必上，KV 量化看并发，INT4 只给可验证的窄任务。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="05-adaptation-tradeoffs.html"><span>上一章</span><b>05 · 适配取舍：Prompt / RAG / 微调 / 蒸馏</b></a><a class="nav-next" href="08-request-journey.html"><span>下一章</span><b>08 · 一次请求的完整旅程</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('bar');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0? (h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  var t=document.getElementById('theme');
+  var saved=localStorage.getItem('theme');
+  var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  var cur=saved||(sysDark?'dark':'light');
+  document.documentElement.dataset.theme=cur;
+  t.textContent=cur==='dark'?'☀':'☾';
+  t.addEventListener('click',function(){
+    cur=cur==='dark'?'light':'dark';
+    document.documentElement.dataset.theme=cur;
+    localStorage.setItem('theme',cur);
+    t.textContent=cur==='dark'?'☀':'☾';
+  });
+
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var code=b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent='已复制'; setTimeout(function(){b.textContent='复制';},1200);
+      });
+    });
+  });
+
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  if(secs.length){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){l.classList.remove('active');});
+          var i=secs.indexOf(e.target);
+          if(i>=0) links[i].classList.add('active');
+        }
+      });
+    },{rootMargin:'-15% 0px -70% 0px'});
+    secs.forEach(function(s){ if(s) io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

@@ -70,8 +70,8 @@
 | # | 章节 | 核心问题 | 交付物 |
 |---|---|---|---|
 | 4 | [选型与能力评测](part-02-model/04-model-selection-eval.md) | 200B MoE / 30B 激活怎么定？50 道题怎么判断能不能用？ | 选型矩阵 + 评测集 |
-| 5 | 适配取舍：Prompt / RAG / 微调 / 蒸馏 | 什么时候**不该**微调？RAG 何时优于微调？ | 决策树 + 对比 |
-| 6 | 推理形态与压缩 | FP8/INT4 掉几点？KV 量化？lite-8B 何时上？多 LoRA 隔离？ | 精度-成本曲线 |
+| 5 | [适配取舍：Prompt / RAG / 微调 / 蒸馏](part-02-model/05-adaptation-tradeoffs.md) | 什么时候**不该**微调？RAG 何时优于微调？ | 决策树 + 对比 |
+| 6 | [推理形态与压缩](part-02-model/06-inference-forms-quantization.md) | FP8/INT4 掉几点？KV 量化？lite-8B 何时上？多 LoRA 隔离？ | 精度-成本曲线 |
 | 7 | 模型版本管理 | 灰度、回滚、旧 KV 作废、评测门禁 | 版本矩阵 + 灰度方案 |
 
 ### Part III · 推理工程（5 章 + 10A + 10B）
