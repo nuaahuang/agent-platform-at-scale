@@ -37,6 +37,7 @@
 | **Prefill** | Prefill / Prompt Processing | 一次性算完所有输入 token | 5,000 token / 450 ms | 以为它按 token 逐个算 |
 | **Decode** | Decoding / Autoregressive Generation | 逐 token 生成，每步重读权重 | 25 ms/token | 以为它算力受限（其实是带宽） |
 | **混沌工程** | Chaos Engineering | 主动注入故障，验证系统真实行为 | 从单节点、1% 流量起步 | 与压测混为一谈 |
+| **GEMM** | GEneral Matrix Multiply | 通用矩阵乘法 `C=αAB+βC`，M×K 乘 K×N，2MNK FLOPs | 算术强度约 M/2，prefill M=4,096 算力受限 | 与 GEMV 混为一谈 |
 | **FP8** | 8-bit Floating Point | 8 位浮点，权重与激活用 E4M3、梯度用 E5M2 | 权重 200 GB（BF16 的一半） | 以为它只有一种格式 |
 | **E4M3** | 4-bit Exponent, 3-bit Mantissa | FP8 的高精度档：范围到 448，相对误差 6% | 需 scaling 压进 [−448,448] | 直接用不做 scale |
 | **E5M2** | 5-bit Exponent, 2-bit Mantissa | FP8 的大范围档：范围到 57,344，相对误差 12% | 梯度回传用 | 拿它存权重 |

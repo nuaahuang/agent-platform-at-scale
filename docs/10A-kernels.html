@@ -230,7 +230,13 @@ blockquote p{margin:.4em 0}
 <div class="orn"></div>
 <section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：同一张 H800，吞吐能差 3 倍</h2>
 <p>第 10 章讲了引擎的四种机制：连续批处理、PagedAttention、chunked prefill、前缀缓存。但机制只决定"谁先算"，不决定"算得多快"。</p>
-<p>同样 8 张 H800、同样 200B MoE、同样 batch，attention 与 GEMM 的 kernel 写得好不好，端到端吞吐能差 <strong>2–3 倍</strong>。</p>
+<p>同样 8 张 H800、同样 200B MoE、同样 batch，attention 与 GEMM（GEneral Matrix Multiply，通用矩阵乘法）的 kernel 写得好不好，端到端吞吐能差 2–3 倍。</p>
+<p>GEMM 是 Transformer 里占算力最多的一类操作，形式就是 <code>C = α·A·B + β·C</code>，一个 M×K 的矩阵乘 K×N 的矩阵得到 M×N，浮点运算量是 2·M·N·K。QKV 投影、输出投影、MLP 的上下投影、MoE 的专家 FFN，全都是它。</p>
+<p>它有个性质决定了推理的整个性能形状：<strong>M 越小越吃亏</strong>。因为权重矩阵只读一遍就能被 M 行输入共用，M 大时权重被摊薄，算力喂得饱；M 小时每个 token 都要重读一遍权重，卡在带宽上。</p>
+<p>prefill 和 decode 的差别就在这个 M 上：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>M 是什么</th><th>典型值</th><th>算术强度</th><th>瓶颈</th></tr></thead><tbody><tr><td>prefill</td><td>序列长度</td><td>4,096</td><td>约 2,000 FLOP/byte</td><td>算力</td></tr><tr><td>decode</td><td>batch size</td><td>64</td><td>约 32 FLOP/byte</td><td>带宽</td></tr></tbody></table></div>
+<p>decode 的算术强度约等于 batch/2（权重占主导时）。H100 的 FP16 机器平衡点是 590 FLOP/byte（1,979 TFLOPS ÷ 3.35 TB/s），要进算力受限，batch 得超过 1,180。线上 batch 一般在 32–256，所以 decode 永远在带宽那一边。</p>
+<p>这就是为什么第 2 章的 roofline 分析里，decode 的优化方向是量化和批处理，不是换更快的卡。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>写法</th><th>H800 上的 attention 吞吐</th><th>相对</th></tr></thead><tbody><tr><td>朴素 PyTorch（eager，逐头循环）</td><td>约 12% 峰值</td><td>1×</td></tr><tr><td>通用 SDPA（cuDNN/flash 后端）</td><td>约 45% 峰值</td><td>3.7×</td></tr><tr><td>针对性 kernel（FlashMLA 级别）</td><td>约 78% 峰值</td><td>6.5×</td></tr></tbody></table></div>
 <p><strong>这不是调参能补上的差距</strong>，是"谁来写这个循环"的差距。</p>
 <div class="orn"></div>

@@ -17,7 +17,22 @@
 但机制只决定"谁先算"，不决定"算得多快"。
 
 同样 8 张 H800、同样 200B MoE、同样 batch，
-attention 与 GEMM 的 kernel 写得好不好，端到端吞吐能差 **2–3 倍**。
+attention 与 GEMM（GEneral Matrix Multiply，通用矩阵乘法）的 kernel 写得好不好，端到端吞吐能差 2–3 倍。
+
+GEMM 是 Transformer 里占算力最多的一类操作，形式就是 `C = α·A·B + β·C`，一个 M×K 的矩阵乘 K×N 的矩阵得到 M×N，浮点运算量是 2·M·N·K。QKV 投影、输出投影、MLP 的上下投影、MoE 的专家 FFN，全都是它。
+
+它有个性质决定了推理的整个性能形状：**M 越小越吃亏**。因为权重矩阵只读一遍就能被 M 行输入共用，M 大时权重被摊薄，算力喂得饱；M 小时每个 token 都要重读一遍权重，卡在带宽上。
+
+prefill 和 decode 的差别就在这个 M 上：
+
+| 阶段 | M 是什么 | 典型值 | 算术强度 | 瓶颈 |
+|---|---|---|---|---|
+| prefill | 序列长度 | 4,096 | 约 2,000 FLOP/byte | 算力 |
+| decode | batch size | 64 | 约 32 FLOP/byte | 带宽 |
+
+decode 的算术强度约等于 batch/2（权重占主导时）。H100 的 FP16 机器平衡点是 590 FLOP/byte（1,979 TFLOPS ÷ 3.35 TB/s），要进算力受限，batch 得超过 1,180。线上 batch 一般在 32–256，所以 decode 永远在带宽那一边。
+
+这就是为什么第 2 章的 roofline 分析里，decode 的优化方向是量化和批处理，不是换更快的卡。
 
 | 写法 | H800 上的 attention 吞吐 | 相对 |
 |---|---|---|
