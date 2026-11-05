@@ -248,7 +248,11 @@ blockquote p{margin:.4em 0}
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>1 位符号 | E 位指数 | M 位尾数 = 共 8 位
 E4M3 = 4 位指数 + 3 位尾数
 E5M2 = 5 位指数 + 2 位尾数</code></pre></figure>
-<p>同样是 8 位，给指数多一位，范围就大、精度就差。五种格式放一起看：</p>
+<p>同样是 8 位，给指数多一位，范围就大、精度就差。</p>
+<p>前面出现过 BF16 和 FP16，先把它们的位置放正。BF16（Brain Floating Point 16，Brain 浮点 16）是 Google Brain 提出的 16 位格式，位分配是 1 位符号 + 8 位指数 + 7 位尾数。</p>
+<p>它的取法很特别：把 FP32 的 8 位指数原样搬过来，尾数从 23 位砍到 7 位。这样做的结果是范围和 FP32 一样大（3.4e38），精度掉到 0.4%。FP16 反过来，尾数留 10 位（精度 0.05%），指数只给 5 位，最大只能到 65,504。</p>
+<p>训练用 BF16 不用 FP16，原因就是这一条：梯度值小且分布宽，FP16 会下溢成 0，得靠 loss scaling 补救；BF16 和 FP32 同范围，不用这层补丁。代价是精度差 8 倍——但训练对精度没那么敏感，对范围很敏感。</p>
+<p>五种格式放一起看：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>格式</th><th>指数位</th><th>尾数位</th><th>最大值</th><th>相对误差</th><th>用在哪</th></tr></thead><tbody><tr><td>FP32</td><td>8</td><td>23</td><td>3.4e38</td><td>1e-7</td><td>优化器状态</td></tr><tr><td>BF16</td><td>8</td><td>7</td><td>3.4e38</td><td>0.4%</td><td>训练权重</td></tr><tr><td>FP16</td><td>5</td><td>10</td><td>65,504</td><td>0.05%</td><td>旧版推理权重</td></tr><tr><td>FP8 E4M3</td><td>4</td><td>3</td><td>448</td><td>6%</td><td>推理权重与激活</td></tr><tr><td>FP8 E5M2</td><td>5</td><td>2</td><td>57,344</td><td>12%</td><td>梯度</td></tr></tbody></table></div>
 <p>两个关键差异：</p>
 <p>E4M3 的范围只有 FP16 的 1/146（448 对 65,504）。所以用它之前必须做 scaling——把实际数值乘一个系数，压进 [−448, 448] 这个区间。权重和激活的分布集中，scaling 能做得很好，这就是它能用的原因。</p>
