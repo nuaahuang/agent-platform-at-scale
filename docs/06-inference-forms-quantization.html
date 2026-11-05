@@ -244,7 +244,16 @@ blockquote p{margin:.4em 0}
 <p>所以"FP8 能省多少"这个问题没有统一答案，得先看你的实际 batch。线上 batch 通常由并发决定，而并发又由 SLO 决定——这是第 10 章的事。</p>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. FP8：几乎是免费的一档</h2>
-<p>FP8 有两套格式：E4M3（精度高，范围小）和 E5M2（精度低，范围大）。权重和激活用 E4M3，梯度回传用 E5M2。</p>
+<p>FP8（8 位浮点）有两套格式，名字就是各位的分配：E 是 exponent（指数位），M 是 mantissa（尾数位）。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>1 位符号 | E 位指数 | M 位尾数 = 共 8 位
+E4M3 = 4 位指数 + 3 位尾数
+E5M2 = 5 位指数 + 2 位尾数</code></pre></figure>
+<p>同样是 8 位，给指数多一位，范围就大、精度就差。五种格式放一起看：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>格式</th><th>指数位</th><th>尾数位</th><th>最大值</th><th>相对误差</th><th>用在哪</th></tr></thead><tbody><tr><td>FP32</td><td>8</td><td>23</td><td>3.4e38</td><td>1e-7</td><td>优化器状态</td></tr><tr><td>BF16</td><td>8</td><td>7</td><td>3.4e38</td><td>0.4%</td><td>训练权重</td></tr><tr><td>FP16</td><td>5</td><td>10</td><td>65,504</td><td>0.05%</td><td>旧版推理权重</td></tr><tr><td>FP8 E4M3</td><td>4</td><td>3</td><td>448</td><td>6%</td><td>推理权重与激活</td></tr><tr><td>FP8 E5M2</td><td>5</td><td>2</td><td>57,344</td><td>12%</td><td>梯度</td></tr></tbody></table></div>
+<p>两个关键差异：</p>
+<p>E4M3 的范围只有 FP16 的 1/146（448 对 65,504）。所以用它之前必须做 scaling——把实际数值乘一个系数，压进 [−448, 448] 这个区间。权重和激活的分布集中，scaling 能做得很好，这就是它能用的原因。</p>
+<p>E5M2 的指数位和 FP16 一样是 5 位，范围到 57,344，但尾数只剩 2 位，精度 12%。梯度用它是因为梯度需要的是范围不是精度：梯度值小而分布宽，范围不够会直接下溢成 0。</p>
+<p>权重和激活用 E4M3，梯度回传用 E5M2——一句话，前向要精度，反向要范围。</p>
 <p>MoE 模型特别适合 FP8，原因是它的计算以 GEMM 为主，数值分布集中，per-tensor scaling 就够用。稠密模型在注意力部分对精度更敏感，往往要 per-channel。</p>
 <p>代价是 1.5 个百分点。我们实测的分布是：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>题型</th><th>BF16</th><th>FP8</th><th>差值</th></tr></thead><tbody><tr><td>知识问答</td><td>93.0%</td><td>92.5%</td><td>−0.5</td></tr><tr><td>工具调用</td><td>94.0%</td><td>93.2%</td><td>−0.8</td></tr><tr><td>JSON 输出</td><td>99.5%</td><td>99.1%</td><td>−0.4</td></tr><tr><td>数值推理</td><td>86.0%</td><td>82.5%</td><td>−3.5</td></tr><tr><td>长上下文召回</td><td>88.0%</td><td>85.0%</td><td>−3.0</td></tr></tbody></table></div>
