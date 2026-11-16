@@ -308,7 +308,17 @@ h2 = hash(h1 + 块2 的 16 个 token)</code></pre></figure>
 <p>一个具体的例子。售后 Agent 的系统提示加工具定义是 3,000 token，每天出现 50 万次：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>状态</th><th>每个请求要 prefill</th><th>单请求耗时</th><th>一天的总计算量</th></tr></thead><tbody><tr><td>预热前</td><td>3,000 token</td><td>270 ms</td><td>41,667 小时</td></tr><tr><td>预热后</td><td>200 token（用户问题）</td><td>18 ms</td><td>2,778 小时</td></tr></tbody></table></div>
 <p>差 15 倍。这就是为什么值得花 3 分钟做预热。</p>
-<p>而"Top 100 提示"是从访问日志里统计出来的：日志记的是<strong>文本</strong>（system、tools、用户问题），不是 KV。统计哪个前缀出现次数最多、按哈希去重，取前 100 个——它们覆盖 78% 的请求。</p>
+<p>那"Top 100"是怎么来的？这里最容易误解成"挑 100 条代表性请求"。不是。</p>
+<p>一个请求的结构是这样的：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>[ system 提示 ][ tools 定义 ][ 历史对话 ][ 用户问题 ]
+└────────────── 前缀，全平台只有几百种 ──────────────┘  └ 每次都不同 ┘</code></pre></figure>
+<p>用户问题各不一样，但前面的 system 和 tools 是模板，全平台只有几百种组合（业务线 × Prompt 版本 × 工具集）。所以统计的对象是<strong>前缀</strong>，不是请求：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>数量级</th></tr></thead><tbody><tr><td>一天的请求</td><td>1.5 亿条</td></tr><tr><td>去掉用户问题、只留 system + tools</td><td>150 万条</td></tr><tr><td>按前缀哈希去重</td><td>约 200 种</td></tr><tr><td>按出现次数排序取前 100</td><td>100 种（覆盖 78%）</td></tr></tbody></table></div>
+<p>真实分布通常更集中：前 5 种前缀就可能覆盖 70%，前 100 种覆盖 78%，后面是长尾。如果业务简单，可能总共只有 8 种前缀，那"Top 100"实际就是 8 条。</p>
+<p>反过来说，如果统计出来有几万种前缀，通常不是业务复杂，是有人在系统提示里拼了时间戳、用户名或订单号——变量前置了。这种写法会让缓存命中率长期为零，是设计问题，不是预热能救的（第 20 章讲上下文工程时会再提）。</p>
+<p>拿到这 100 个前缀的<strong>文本</strong>之后，才轮到渲染和重算。完整流程六步：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>动作</th><th>产出</th></tr></thead><tbody><tr><td>1</td><td>日志取最近 7 天，抽 1%</td><td>150 万条记录</td></tr><tr><td>2</td><td>每条取 system + tools，canonical JSON 算 SHA1</td><td>前缀指纹</td></tr><tr><td>3</td><td>按指纹计数，降序取前 100</td><td>100 种前缀的文本</td></tr><tr><td>4</td><td>用线上同款 tokenizer + 模板渲染成 token ids</td><td>每条 3,000 左右的 id</td></tr><tr><td>5</td><td>逐条 <code>engine.generate(max_tokens=1)</code></td><td>引擎切块、算哈希、prefill、写回池子</td></tr><tr><td>6</td><td>读 <code>num_cached_tokens</code> 断言</td><td>确认写入成功</td></tr></tbody></table></div>
+<p>第 5 步是关键：它不是"把文本存进去"，是让引擎<strong>真的算一遍</strong>。算出来的块进了池子，后面真实请求才可能命中。</p>
 <p>然后对这 100 条文本，各发一次只跑 prefill 的请求，让引擎按正常路径算出 KV 写进池子。之后真实请求带着同样的 token ids 进来，链式哈希一致，直接命中。</p>
 <p>为什么不用"把 KV 存到磁盘再读回来"？因为重算更快也更简单：300K token 的 prefill 只要 27 秒计算，而 36 GB 的 KV 落盘再加载要处理序列化、块布局对齐、版本校验，出一次错就是脏缓存。</p>
 <h3>7.3 权重一变，为什么全废</h3>
