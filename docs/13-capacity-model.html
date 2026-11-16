@@ -363,6 +363,18 @@ decode 卡数 = 140,000 ÷ 667 × 8 = 1,679 卡</code></pre></figure>
 <p>第二，<strong>并发单位从请求数变成 token 数</strong>。因为长请求之间差 500 倍，按请求数算容量会严重失真。改成"每实例能装多少 KV token 总量"，1M 请求自然折算成 500 个 2K 请求。</p>
 <p>第三，<strong>SLO 要重定义</strong>。TTFT 800 ms 对 1M 请求不可能——光 prefill 就几分钟。长上下文的 SLO 得按"第一个 token 多久"和"检索到答案多久"分开定，或者干脆改成异步任务加通知。</p>
 <p>这也解释了为什么 1M 上下文的产品形态通常是"上传文档 → 后台处理 → 通知结果"，而不是聊天框里即时回答。不是产品不想做即时，是物理上做不到。</p>
+<p>这两条路具体怎么做，值得说清楚。</p>
+<p>检索（RAG）是"按问题找片段"：</p>
+<ol><li>离线切块，1,024 token 一块，相邻块重叠 128 token（防止条款被切断）</li><li>每块算 embedding，写进向量库</li><li>查询时召回 50 块，用 cross-encoder 重排取前 5</li><li>5 块拼成 4,000 token 上下文，交给模型</li></ol>
+<p>分层摘要是"先压缩再读"：</p>
+<ol><li>1,000 块各生成 100 字摘要</li><li>每 16 块合成一段（63 段），再合成顶层（4 段）</li><li>全局问题读顶层摘要，需要细节时再往下钻一层</li></ol>
+<p>两条路的成本差三个数量级：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方式</th><th>要读的 token</th><th>prefill</th><th>KV 占用</th></tr></thead><tbody><tr><td>全量 attention</td><td>1,000,000</td><td>4,002 s</td><td>126 GB</td></tr><tr><td>检索取 5 块</td><td>4,096</td><td>0.36 s</td><td>0.47 GB</td></tr><tr><td>只读顶层摘要</td><td>2,048</td><td>0.24 s</td><td>0.24 GB</td></tr></tbody></table></div>
+<p>1M 对 4K，差 244 倍 token，prefill 差 11,000 倍——因为平方项。</p>
+<p>什么时候用哪条，看问题类型：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>用哪条</th><th>为什么</th></tr></thead><tbody><tr><td>"第 7 条怎么规定的"</td><td>检索</td><td>有明确锚点，能定位</td></tr><tr><td>"整篇讲了什么"</td><td>分层摘要</td><td>没有锚点，检索无从下手</td></tr><tr><td>"A 条款和 B 条款冲突吗"</td><td>检索 + 多轮</td><td>要先找到两处，再一起读</td></tr><tr><td>"这两版逐字差在哪"</td><td>只能用真长上下文</td><td>摘要和检索都会丢字</td></tr></tbody></table></div>
+<p>最后一行是边界：凡是需要"逐字比对"或"数一数出现几次"的任务，压缩路线都给不了正确答案。这不是调优能解决的，是信息论决定的。</p>
+<p>所以产品上通常是混合的：默认走检索，检测到全局型问题（"总结一下"）切到摘要，检测到比对型问题提示用户上传到专门的长文池。</p>
 </section>
 <section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>按模型配了卡，上线就不够</td><td>没留两个系数</td><td>压测峰值直接破 SLO</td><td>补 1.56，或确认降级路径</td></tr><tr><td>卡够但 TTFT 破线</td><td>prefill 与 decode 混在一个池</td><td>看两个池子的队列长度</td><td>拆池，按第 11 章 PD 分离</td></tr><tr><td>成本对不上账</td><td>容量模型与成本模型用了不同假设</td><td>反算单轮成本</td><td>两边共用一张参数表</td></tr><tr><td>版本切换时大面积超时</td><td>容量按"缓存命中"配的</td><td>切换瞬间命中率归零</td><td>按缓存全失效配容量</td></tr><tr><td>长上下文上线后拒绝率飙升</td><td>并发被 KV 吃掉</td><td>看单实例并发数</td><td>长请求独立池，或 KV 量化</td></tr><tr><td>实际只用了一半卡</td><td>峰值系数取太高</td><td>看 7 天的实际峰值曲线</td><td>按 P99 而非理论峰值重算</td></tr></tbody></table></div>
