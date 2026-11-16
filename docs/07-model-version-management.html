@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模型版本管理：四层版本，只有一层能请求级灰度 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">模型工程 · 第 07 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：两个变更撞在同一天</a><a href="#s2"><span>02</span>. 四层版本</a><a href="#s3"><span>03</span>. 版本矩阵：什么组合是合法的</a><a href="#s4"><span>04</span>. 一个串标识完整组合</a><a href="#s5"><span>05</span>. 评测门禁：哪几项不过就不许发</a><a href="#s6"><span>06</span>. 灰度：模型层只能按实例切</a><a href="#s7"><span>07</span>. KV 作废与预热</a><a href="#s8"><span>08</span>. 回滚：30 分钟的前提是三个</a><a href="#s9"><span>09</span>版本保留策略：留多了占地方，留少了回不去</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下这些结论不成立</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
+      <div class="rail-foot">模型工程</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">07</div><div class="ch-kicker">模型工程</div><h1>模型版本管理：四层版本，只有一层能请求级灰度</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>代码、Prompt、模型权重、精度格式四层版本，谁能独立发布，谁必须绑在一起？</li><li>版本矩阵里哪些组合是合法的，哪些一上线就出事？</li><li>为什么模型灰度只能按实例切，不能按请求切？</li><li>权重一变为什么要作废全部 KV，不作废会怎样？</li><li>30 分钟回滚的前提有三个，缺一个就回不去？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：两个变更撞在同一天</h2>
+<p>10 月 27 日，两件事排进了同一周：</p>
+<ul><li>算法组要把模型从 FP8 换成 FP8 加 KV 量化，说能再省 12% 成本</li><li>产品组要上线新版 Prompt，改退款话术，说客诉能降 8%</li></ul>
+<p>两个变更单独看都没问题。一起上，出了问题就分不清是谁的。</p>
+<p>更麻烦的是它们互相影响：新 Prompt 更长，prefill 变慢，KV 量化又在长上下文掉点更多。上线后 TTFT（Time To First Token，首 token 延迟）涨了 90 ms、长文通过率掉 2 个点，两个指标都在报警，但没人能说清哪个变更导致的。</p>
+<p>这一章解决的就是这件事：把版本拆成可独立发布的层，定清楚谁和谁必须绑、谁变了要重跑什么、谁变了要让什么失效。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四层版本</h2>
+<p>一个 Agent 平台同时存在四种版本，变更频率差两个数量级：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>命名示例</th><th>变更频率</th><th>影响面</th><th>谁改</th></tr></thead><tbody><tr><td>代码</td><td><code>gw-v3.2.1</code></td><td>每天</td><td>全链路</td><td>工程</td></tr><tr><td>Prompt</td><td><code>p-2026-10-27.3</code></td><td>每周</td><td>行为与格式</td><td>产品 + 算法</td></tr><tr><td>模型权重</td><td><code>w-2026-11-02</code></td><td>每月</td><td>能力与知识</td><td>算法</td></tr><tr><td>精度格式</td><td><code>fp8-e4m3</code></td><td>季度</td><td>性能与精度</td><td>算法 + 平台</td></tr></tbody></table></div>
+<p>这四层的差别不只是频率。前两层可以回滚得很快，后两层回滚要动权重和显存。</p>
+<p>关键区别在于：代码和 Prompt 是"可以按请求生效"的，模型权重和精度格式是"按实例生效"的。因为一个推理实例只装得下一份权重，不可能同一个实例对 A 用户跑旧模型、对 B 用户跑新模型。</p>
+<p>这个物理约束决定了本章的核心结论：灰度方式被版本类型限制，不是你想怎么切就怎么切。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 版本矩阵：什么组合是合法的</h2>
+<p>四层任意组合有 16 种，但只有一部分能跑。下面是实际会遇到的组合：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>变更</th><th>必须重跑</th><th>必须失效</th><th>能独立发布吗</th></tr></thead><tbody><tr><td>代码（业务层）</td><td>契约测试</td><td>无</td><td>能</td></tr><tr><td>代码（引擎 / kernel 层）</td><td>回放 + 压测</td><td>无</td><td>能，但要重测性能</td></tr><tr><td>Prompt</td><td>50 题 + 盲测</td><td>前缀缓存（Prompt 是前缀时）</td><td>能</td></tr><tr><td>模型权重</td><td>50 题 + 回放 + 通用集</td><td>全部 KV</td><td>能，但要按实例</td></tr><tr><td>精度格式</td><td>50 题 + 逐题 diff + KL</td><td>全部 KV + 量化校准</td><td>能，但要按实例</td></tr><tr><td>Tokenizer</td><td>全部重测</td><td>全部 KV + 重新校准 + 重算成本</td><td>不能，要整体换</td></tr></tbody></table></div>
+<p>最后一行是特例。Tokenizer 换了，token id 的映射全变，历史 KV 的哈希、量化的 scale、成本核算的 token 计数全部失效。这种变更不该"灰度"，只能整体切换，而且要提前一周通知所有下游。</p>
+<p>三种组合最容易出事：</p>
+<p>第一种，新权重配旧 KV。权重变了但缓存没清，新模型读到旧模型算出来的 KV，注意力结果错乱。症状是输出不通顺、答非所问，但不会报错，很难定位。第 10B 章讲过，权重版本是 KV 唯一的真实失效条件，这种事得由发布流程强制保证，不能靠人记得。</p>
+<p>第二种，新 tokenizer 配旧量化 scale。Tokenizer 换了之后，激活的数值分布变了，原来的 per-tensor scale 就压不住了，要么溢出被 clamp，要么精度骤降。表现是准确率掉 5 个点以上，但量化配置看起来没变。</p>
+<p>第三种，新 Prompt 配旧评测基线。Prompt 改了，通过率从 91% 掉到 89%，团队以为是模型退化，实际是新 Prompt 让模型更保守。基线要和版本绑定，不绑就没法归因。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一个串标识完整组合</h2>
+<p>版本散落在四个地方，发布时必然对不上。解决办法是打成一个 manifest：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
+  &quot;release&quot;: &quot;r-2026-11-05.1&quot;,
+  &quot;code&quot;: &quot;gw-v3.2.1&quot;,
+  &quot;prompt&quot;: &quot;p-2026-10-27.3&quot;,
+  &quot;weights&quot;: &quot;w-2026-11-02&quot;,
+  &quot;precision&quot;: &quot;fp8-e4m3&quot;,
+  &quot;tokenizer&quot;: &quot;tok-v4&quot;,
+  &quot;eval_baseline&quot;: &quot;e-2026-10-20&quot;,
+  &quot;created_at&quot;: &quot;2026-11-05T09:12:00Z&quot;
+}</code></pre></figure>
+<p>六个字段缺一个，出问题就查不清。第 4 章的评测报告用同一套 manifest，评测结果和线上运行的是同一个组合——这一点是排查的前提。</p>
+<p>manifest 要落到两个地方：镜像的 label（运行时能查到），和发布记录表（历史能查）。只放镜像 label，回滚时找不到旧版本是什么组合；只放记录表，容器里查不到自己跑的是哪个版本。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 评测门禁：哪几项不过就不许发</h2>
+<p>门禁不是"跑一遍评测"，是"不过就拦住"。四项硬门禁，来自第 4 章的通过线：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>门禁</th><th>通过线</th><th>一票否决</th><th>谁看</th></tr></thead><tbody><tr><td>总通过率</td><td>≥89%（基线 −2pt）</td><td>&lt;85%</td><td>自动</td></tr><tr><td>工具调用参数正确率</td><td>≥92%</td><td>&lt;88%</td><td>自动</td></tr><tr><td>安全拒答率</td><td>≥95%</td><td>&lt;90%</td><td>自动</td></tr><tr><td>JSON 合法率</td><td>≥99%</td><td>&lt;97%</td><td>自动</td></tr></tbody></table></div>
+<p>四项之外还有三条软门禁，需要人签核：</p>
+<ul><li>通用能力退化不超过 5 个点（防止微调把模型训窄）</li><li>长上下文（&gt;16K）通过率不低于基线 2 个点</li><li>成本变化在 ±20% 以内，超出要说明原因</li></ul>
+<p>软门禁的意义在于拦住"任务指标变好、整体变差"的发布。这种情况在微调和量化里都常见。</p>
+<p>门禁的判定要绑定 manifest。同一份 Prompt、同一个权重、同一套评测集，跑出来的结果才有可比性。换了评测集再比，比的是两件事。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 灰度：模型层只能按实例切</h2>
+<p>这是本章最容易做错的地方。</p>
+<p>业务代码的灰度是按请求切的：给 5% 的请求打标，走新版本，其余走旧版本。同一个实例可以同时服务两个版本。</p>
+<p>模型不行。一个实例的显存里只装得下一份 200 GB 权重，要同时跑两个版本就得两份显存，等于两倍的卡。所以模型灰度只有一种做法：换实例。</p>
+<p>具体做法是双池：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>旧池：2,384 卡，跑 w-2026-10-20
+新池：128 卡，跑 w-2026-11-02
+路由：按租户哈希，5% 的租户进新池</code></pre></figure>
+<p>比例从 5% 开始，按租户切而不是按请求切——同一个用户在一次会话里不能一会儿新模型一会儿旧模型，否则上下文对不上。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>卡数占比</th><th>观察时长</th><th>放量条件</th></tr></thead><tbody><tr><td>金丝雀</td><td>5%（128 卡）</td><td>1 天</td><td>错误率不升，客诉不升</td></tr><tr><td>小流量</td><td>20%（512 卡）</td><td>2 天</td><td>goodput 不降，成本符合预期</td></tr><tr><td>半量</td><td>50%</td><td>2 天</td><td>以上全部满足</td></tr><tr><td>全量</td><td>100%</td><td>—</td><td>回滚演练通过</td></tr></tbody></table></div>
+<p>每个阶段都要跨一个完整的流量周期。只在工作日灰度，周末的流量形态（占比 30%，但客诉集中）根本没覆盖到。</p>
+<p>双池期间的成本要额外算：新池 128 卡没有前缀缓存，命中率从 85% 掉到 0，TTFT 会短暂破线。所以所以切流前要先预热（下一节）。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. KV 作废与预热</h2>
+<p>权重版本一变，前缀缓存全部失效。这不是缓存策略的问题，是数学上的必然：KV 是旧权重的中间结果，新权重的注意力分布不同，旧 KV 拿来用就是错的。</p>
+<p>失效的代价：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>时点</th><th>命中率</th><th>TTFT p95</th><th>现象</th></tr></thead><tbody><tr><td>切换前</td><td>85%</td><td>610 ms</td><td>正常</td></tr><tr><td>刚切换</td><td>0%</td><td>1,900 ms</td><td>超时告警集中爆发</td></tr><tr><td>预热 5 分钟后</td><td>40%</td><td>1,100 ms</td><td>仍破线</td></tr><tr><td>预热 20 分钟后</td><td>85%</td><td>620 ms</td><td>恢复</td></tr></tbody></table></div>
+<p>预热不是等自然流量填满，那要几个小时。做法是主动回填：取线上 Top 100 的系统提示（覆盖 78% 的请求），在新实例上各跑一遍 prefill，把 KV 写进去。</p>
+<figure class="code code--lang"><span class="code-lang">bash</span><button class="copy" type="button">复制</button><pre><code># 预热脚本的核心逻辑
+for q in $(head -100 top_system_prompts.txt); do
+  curl -s -X POST &quot;$NEW_POOL/v1/prefill&quot; \
+       -d &quot;{\&quot;prompt\&quot;: \&quot;$q\&quot;, \&quot;max_tokens\&quot;: 1}&quot; &gt; /dev/null
+done</code></pre></figure>
+<p>100 条提示的 prefill 大约 3 分钟（每条 3,000 token，按 0.09 ms/token 算约 270 ms，串行 27 秒，加上网络与排队 3 分钟）。之后靠自然流量把长尾补到 85%。</p>
+<p>预热要在切流之前做。切完再预热，前 20 分钟的请求全部承受 1.9 秒的 TTFT。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 回滚：30 分钟的前提是三个</h2>
+<p>回滚的目标是 30 分钟内恢复到旧版本。这个数字能不能达到，取决于三件事在发布前有没有准备好。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>前提</th><th>不满足会怎样</th><th>怎么准备</th></tr></thead><tbody><tr><td>旧权重文件还在</td><td>要重新导出和校准，2 小时起</td><td>保留最近 3 个版本，冷存储</td></tr><tr><td>旧版 KV 能重建</td><td>缓存无法恢复，TTFT 长期破线</td><td>预热脚本支持指定版本</td></tr><tr><td>数据库 schema 兼容</td><td>降级后读不了新写入的字段</td><td>变更前后各保留一个兼容版本</td></tr></tbody></table></div>
+<p>第三条最容易忽略。模型版本回滚通常不涉及 schema，但如果同一批发布里带了新字段（比如工具调用记录新增了 <code>refund_reason_code</code>），回滚后旧代码读到这个字段会报错，或者直接忽略导致数据丢失。</p>
+<p>30 分钟的构成：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>权重传输 200 GB / 2–3 分钟
+分批加载 20 批 × 1 分钟 = 20 分钟（与传输重叠）
+切流 2 分钟
+预热 3 分钟
+合计约 25 分钟，留 5 分钟余量</code></pre></figure>
+<p>这个账要提前算，不能出事时才算。而且每季度要真做一次回滚演练——演练不做，第一次真回滚一定会超时。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8.5 版本保留策略：留多了占地方，留少了回不去</h2>
+<p>权重文件很大，200 GB 一个，攒一年就是 2.4 TB。保留策略要在"回得去"和"存得起"之间定。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>版本</th><th>保留时长</th><th>存哪</th><th>一个月成本</th></tr></thead><tbody><tr><td>当前线上</td><td>常驻，每实例一份</td><td>GPU 显存</td><td>已含在推理成本里</td></tr><tr><td>前一个版本</td><td>30 天</td><td>对象存储 + 预热好的实例池</td><td>¥120</td></tr><tr><td>再往前一个</td><td>90 天</td><td>对象存储冷层</td><td>¥30</td></tr><tr><td>更早</td><td>删除</td><td>—</td><td>0</td></tr></tbody></table></div>
+<p>存得起，是因为对象存储便宜：200 GB 乘 ¥0.15/GB/月，一个版本一个月三十块。真正贵的是"保留可随时切换的实例池"——要真做到 30 分钟回滚，前几天得留一批空卡或者能快速腾出的池子。</p>
+<p>所以策略分两档：有明确上线日期的发布，前 7 天留一个 128 卡的空池；日常小版本只保留冷存储里的权重，回滚需要 25 分钟重建。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>输出不通顺、答非所问</td><td>新权重读到旧 KV</td><td>检查 KV 的权重版本标签</td><td>强制作废，发布流程加校验</td></tr><tr><td>准确率掉 5 点以上，配置没变</td><td>tokenizer 换了但没重校准</td><td>对比 token 数与历史</td><td>重跑量化校准</td></tr><tr><td>灰度没发现问题，全量后崩</td><td>灰度量不足，没跨周末</td><td>看灰度时长与流量分布</td><td>灰度拉长到 5 天，含周末</td></tr><tr><td>回滚超时</td><td>旧权重文件被清了</td><td>检查版本保留策略</td><td>保留最近 3 个版本</td></tr><tr><td>成本突然上涨</td><td>新 Prompt 变长，prefill 增加</td><td>对比平均输入 token</td><td>压缩系统提示</td></tr><tr><td>两个变更同时上，无法归因</td><td>没按层独立发布</td><td>查 manifest 变更记录</td><td>一次只改一层</td></tr></tbody></table></div>
+<p>第六行是这一章存在的理由。所有规则都可以简化成一句：一次只改一层。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>模型灰度按实例切</td><td>用多 LoRA 时，不同 adapter 可在同实例共存，能按请求切</td></tr><tr><td>权重变更必须作废全部 KV</td><td>模型只换了 LoRA adapter 时，基座 KV 仍可用</td></tr><tr><td>灰度至少 5 天</td><td>安全补丁或严重 bug 修复时，走紧急通道，2 小时内全量</td></tr><tr><td>一次只改一层</td><td>相邻层强耦合时（如 tokenizer 与量化），必须整体切换</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 验收</h2>
+<ol><li>能说出你系统里四层版本各自的名字和变更频率。</li><li>能列出三种非法组合，并说明每种会怎么表现。</li><li>能算出你的模型灰度需要几个阶段、每个阶段多少卡、观察多久。</li><li>能算出回滚需要多长时间，并说出前提条件缺哪个。</li></ol>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为灰度就是切流量，实际差在模型只能按实例切——一个实例装不下一份权重，就装不下第二份。</p>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 延伸</h2>
+<ul><li>第 4 章：评测门禁的通过线怎么定</li><li>第 6 章：精度格式版本，以及它为什么必须和权重绑</li><li>第 10B 章：KV 的唯一真实失效条件是权重版本</li><li>第 36 章：流量怎么切，本章只讲了模型层</li><li>第 37 章：回滚的完整步骤与变更冻结</li></ul>
+<p>结论是：版本管理不是流程问题，是显存问题。因为一个实例只装得下一份权重，模型就只能按实例灰度；因为 KV 是旧权重的中间结果，权重一变它就必须全部作废。这两条物理约束定下了所有流程的形状。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="06-inference-forms-quantization.html"><span>上一章</span><b>06 · 推理形态与压缩：精度换成本，换到哪一步</b></a><a class="nav-next" href="08-request-journey.html"><span>下一章</span><b>08 · 一次请求的完整旅程</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>
