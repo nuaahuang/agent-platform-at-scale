@@ -394,7 +394,7 @@ decode 卡数 = 140,000 ÷ 667 × 8 = 1,679 卡</code></pre></figure>
 <ul><li>第 2 章：roofline，解释为什么 decode 卡在带宽</li><li>第 6 章：KV 量化如何把单请求 KV 减半，直接改 decode 卡数</li><li>第 11 章：PD 分离，把两个池子真正拆开</li><li>第 33 章：弹性，回答"1.2 的弹性预留为什么不能更小"</li><li>附录 B：训练占用卡时，本章的容量模型要再加一个变量</li></ul>
 <p>结论是：2,512 不是一个数，是一条链——业务量乘峰值系数，分成 prefill 与 decode 两条路各自算，最后乘两个冗余系数。链上任何一个环节改写，末端都会变，所以容量评审要问的是假设，不是结果。</p>
 </section></article>
-    <nav class="pager"><a class="nav-prev" href="12-advanced-and-benchmarking.html"><span>上一章</span><b>12 · 高级特性与压测方法论</b></a><a class="nav-next" href="31A-rsi-flywheel.html"><span>下一章</span><b>31A · RSI：数据飞轮与自我改进</b></a></nav>
+    <nav class="pager"><a class="nav-prev" href="12-advanced-and-benchmarking.html"><span>上一章</span><b>12 · 高级特性与压测方法论</b></a><a class="nav-next" href="14-cost-structure.html"><span>下一章</span><b>14 · 成本结构：2.83 亿拆成什么，降本从哪下手</b></a></nav>
     <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
   </main>
 </div>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成本结构：2.83 亿拆成什么，降本从哪下手 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">容量与成本 · 第 14 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：老板要降 30%</a><a href="#s2"><span>02</span>. 成本树</a><a href="#s3"><span>03</span>. 单轮成本回算</a><a href="#s4"><span>04</span>三个视角看同一个成本</a><a href="#s5"><span>05</span>三年曲线：单位成本会自己降</a><a href="#s6"><span>06</span>. 降本十条，按年省排序</a><a href="#s7"><span>07</span>. 前三条为什么最大</a><a href="#s8"><span>08</span>. 降本的质量代价要标出来</a><a href="#s9"><span>09</span>一个能落地的降本排期</a><a href="#s10"><span>10</span>. 自建还是租用</a><a href="#s11"><span>11</span>. 失败模式</a><a href="#s12"><span>12</span>. 什么情况下这些结论不成立</a><a href="#s13"><span>13</span>. 验收</a><a href="#s14"><span>14</span>. 复盘卡</a><a href="#s15"><span>15</span>. 延伸</a></nav>
+      <div class="rail-foot">容量与成本</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">14</div><div class="ch-kicker">容量与成本</div><h1>成本结构：2.83 亿拆成什么，降本从哪下手</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>2.83 亿的年成本里，折旧、电费、人力各占多少？</li><li>为什么折旧占八成，这个结构意味着什么？</li><li>十条降本措施按年省排序，第一条和第十条差多少倍？</li><li>哪些降本会伤质量，伤多少，谁来签字？</li><li>自建和租用，什么规模下自建才划算？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：老板要降 30%</h2>
+<p>第 13 章算出 2,512 卡、年成本 2.83 亿。季度会上老板说，明年预算砍 30%，也就是省 8,500 万。</p>
+<p>工程侧的反应通常是"优化推理效率"。但先把账拆开看，会发现方向可能不对：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类别</th><th>年成本</th><th>占比</th></tr></thead><tbody><tr><td>折旧</td><td>2.39 亿</td><td>84.5%</td></tr><tr><td>运营</td><td>0.44 亿</td><td>15.5%</td></tr><tr><td>合计</td><td>2.83 亿</td><td>100%</td></tr></tbody></table></div>
+<p><strong>84.5% 是固定资产折旧，不是运行开销。</strong> 这意味着：</p>
+<ul><li>把电费压到零，也只省 5.7%</li><li>把推理效率提升一倍，省的是一半的卡，也就是一半的折旧</li><li>但卡已经买了，折旧照提，<strong>只有在"不再买新卡"的时候才真正省钱</strong></li></ul>
+<p>这条决定了降本的顺序：先动"卡数"，后动"每卡的开销"。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 成本树</h2>
+<p>先拆到叶子，每一片都能验算。</p>
+<h3>2.1 折旧：7.17 亿分三年</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>总额</th><th>年折旧</th><th>占比</th></tr></thead><tbody><tr><td>GPU（2,512 × ¥215,000）</td><td>5.40 亿</td><td>1.80 亿</td><td>63.6%</td></tr><tr><td>服务器（314 台 × ¥180,000）</td><td>0.57 亿</td><td>0.19 亿</td><td>6.7%</td></tr><tr><td>网络（IB 交换机 + 光模块）</td><td>0.70 亿</td><td>0.23 亿</td><td>8.2%</td></tr><tr><td>机房改造（配电、制冷、消防）</td><td>0.50 亿</td><td>0.17 亿</td><td>5.9%</td></tr><tr><td>合计</td><td>7.17 亿</td><td>2.39 亿</td><td>84.5%</td></tr></tbody></table></div>
+<p>按三年直线折旧，年折旧 2.39 亿。</p>
+<h3>2.2 运营：4,400 万一年</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>年成本</th><th>怎么算</th></tr></thead><tbody><tr><td>电费</td><td>1,620 万</td><td>2,512 × 700 W × 1.35 PUE × 8,760 h × ¥0.78/kWh</td></tr><tr><td>机位与机房</td><td>950 万</td><td>80 个机柜 × ¥9,900/柜/月</td></tr><tr><td>人力</td><td>1,000 万</td><td>11 人（第 3 章）</td></tr><tr><td>网络带宽</td><td>430 万</td><td>出口带宽 + 专线</td></tr><tr><td>监控、软件、备份</td><td>400 万</td><td>各类 SaaS 与自建服务</td></tr><tr><td>合计</td><td>4,400 万</td><td>15.5%</td></tr></tbody></table></div>
+<p>电费那一行值得自己算一遍：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2,512 卡 × 700 W = 1.76 MW（IT 负载）
+× 1.35 PUE = 2.37 MW（含制冷）
+× 8,760 h = 20,800 MWh
+× ¥0.78/kWh = ¥1,622 万</code></pre></figure>
+<p>PUE 1.35 是风冷机房的典型值。液冷能到 1.15，一年省 240 万——不算大，但一次改造能用五年。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 单轮成本回算</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2.83 亿 ÷ (1.5 亿轮 × 365 天) = ¥0.00517 = 0.517 分/轮</code></pre></figure>
+<p>和第 1 章对上。</p>
+<p>这个数还能往下拆：一轮里 prefill 和 decode 各花多少？</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>卡数</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>prefill</td><td>909</td><td>1.03 亿</td><td>0.188 分</td></tr><tr><td>decode</td><td>700</td><td>0.79 亿</td><td>0.144 分</td></tr><tr><td>冗余与弹性</td><td>903</td><td>1.01 亿</td><td>0.185 分</td></tr><tr><td>合计</td><td>2,512</td><td>2.83 亿</td><td>0.517 分</td></tr></tbody></table></div>
+<p><strong>冗余那 903 卡摊到每一轮是 0.185 分，占 36%。</strong> 这一行常被忽略：它不是"浪费"，是可用性的价格，但它确实占了三成六的单轮成本。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>3.5 三个视角看同一个成本</h2>
+<p>0.517 分/轮 是内部口径，对外沟通要用另外两个：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>视角</th><th>数值</th><th>怎么算</th></tr></thead><tbody><tr><td>每轮</td><td>0.517 分</td><td>2.83 亿 ÷ 547.5 亿轮</td></tr><tr><td>每百万输入 token</td><td>¥2.72</td><td>2.83 亿 ÷ 1.04 亿个百万 token</td></tr><tr><td>每百万输出 token</td><td>¥14.7</td><td>2.83 亿 ÷ 1,920 万个百万 token</td></tr><tr><td>每个 DAU 每年</td><td>¥14.2</td><td>2.83 亿 ÷ 2,000 万</td></tr></tbody></table></div>
+<p>输入和输出差 5.4 倍，是因为一轮里输入 1,900 token、输出 350 token，但 prefill 的算力占比只有 36%。这个差值是定价的基础——第 17 章讲按 token 定价时，输出单价必须高出输入 3 倍以上。</p>
+<p>每 DAU 每年 ¥14.2 这个数最容易被追问。它的含义是：一个日活用户，一年消耗 14 块钱的算力。如果客单价低于这个数的两倍，商业模式不成立。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>3.6 三年曲线：单位成本会自己降</h2>
+<p>固定成本摊薄是规模效应里最实在的一条。假设每年流量涨 50%，卡数按需增加，但机房、人力、网络这些半固定项涨得慢：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>年</th><th>流量</th><th>卡数</th><th>年成本</th><th>单轮成本</th></tr></thead><tbody><tr><td>Y1</td><td>1.0×</td><td>2,512</td><td>2.83 亿</td><td>0.517 分</td></tr><tr><td>Y2</td><td>1.5×</td><td>3,000</td><td>3.21 亿</td><td>0.391 分</td></tr><tr><td>Y3</td><td>2.25×</td><td>3,600</td><td>3.81 亿</td><td>0.310 分</td></tr></tbody></table></div>
+<p>三年下来单轮成本降 40%，靠的不是技术进步，是固定成本被摊薄。</p>
+<p>具体拆 Y2：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>折旧 = 7.17 亿 × (3,000 ÷ 2,512) ÷ 3 = 2.85 亿
+电费 = 1,620 万 × (3,000 ÷ 2,512) = 1,934 万
+其他运营 = 2,780 万 × 1.1 = 3,058 万（机房、人力、网络涨得慢）
+合计 = 3.21 亿
+÷ (1.5 × 547.5 亿轮) = 0.391 分</code></pre></figure>
+<p>这个曲线有个前提：流量真的涨。如果不涨，卡数不变，成本就是一条平线，单位成本一分钱都不会降——<strong>规模效应只在有规模的时候存在</strong>。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>4. 降本十条，按年省排序</h2>
+<p>下面每一条都能算，也都有代价。排序按"一年省多少"，不按"实施难度"。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>措施</th><th>省多少/年</th><th>代价</th></tr></thead><tbody><tr><td>1</td><td>lite-8B 分流 40% 流量</td><td>8,300 万</td><td>分流器 95% 准确率，误判重跑</td></tr><tr><td>2</td><td>KV 量化 FP8</td><td>6,170 万</td><td>长上下文掉 1.5–3 点</td></tr><tr><td>3</td><td>峰值系数 4.0 → 3.2（削峰）</td><td>5,670 万</td><td>峰值排队 30–60 秒</td></tr><tr><td>4</td><td>冗余 1.56 → 1.40</td><td>2,930 万</td><td>单 AZ 故障时要降级</td></tr><tr><td>5</td><td>采购议价 5%</td><td>1,200 万</td><td>需要量或长约</td></tr><tr><td>6</td><td>前缀命中 85% → 92%</td><td>510 万</td><td>改善首 token 延迟为主，不直接减卡</td></tr><tr><td>7</td><td>液冷改造 PUE 1.35 → 1.15</td><td>240 万</td><td>改造投入 2,000 万，回收 8 年</td></tr><tr><td>8</td><td>离线任务错峰跑</td><td>220 万</td><td>任务完成时间拉长</td></tr><tr><td>9</td><td>存储冷热分层</td><td>200 万</td><td>冷数据取回延迟</td></tr><tr><td>10</td><td>退役卡转二手</td><td>180 万</td><td>影响后续维保</td></tr></tbody></table></div>
+<p>前十条加起来 2.56 亿，但<strong>不能相加</strong>——第 1、2、3 条动的都是 decode 卡数，叠加会互相抵消。</p>
+<p>真实可叠加的组合是：分流 8B + KV FP8 + 削峰，合计省约 1.4 亿，卡数从 2,512 降到 1,270 左右。这是 30% 目标（8,500 万）的 1.6 倍，但代价是用户能感知的三件事：长文变差、峰值排队、小模型答错。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>5. 前三条为什么最大</h2>
+<h3>5.1 分流 8B：省的是三倍差价</h3>
+<p>8B 的激活参数是 8B，200B MoE 是 30B。单卡吞吐按激活参数反比：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>30 ÷ 8 = 3.75 倍</code></pre></figure>
+<p>40% 的流量交给 8B，只需要 40% ÷ 3.75 = 10.7% 的卡，省下 29.3% 的卡：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2,512 × 29.3% = 736 卡
+736 × ¥113,004 = ¥8,317 万</code></pre></figure>
+<p>代价是分流器必须准。第 6 章算过盈亏平衡点 63%，实际门槛 95%。</p>
+<h3>5.2 KV 量化：decode 卡数直接减半</h3>
+<p>KV 从 FP16 降到 FP8，单请求占的空间减半，单实例并发翻倍，decode 卡数从 700 降到 350：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>350 × 1.56（两个冗余系数）= 546 卡
+546 × ¥113,004 = ¥6,170 万</code></pre></figure>
+<p>代价在长上下文：16K 以上掉 1.5–3 个点（第 6 章）。如果业务以长文档为主，这条不能做。</p>
+<h3>5.3 削峰：少买 20% 的卡</h3>
+<p>峰值系数从 4.0 降到 3.2，卡数等比缩 20%：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2,512 × 20% = 502 卡 = ¥5,674 万</code></pre></figure>
+<p>怎么降？两条路：排队（超出容量时让用户等）和预约（把非紧急任务挪到低峰）。代价是峰值时段 30–60 秒的排队，会流失一部分用户。</p>
+<p>这一条最容易被低估：它不是技术活，是产品决策。签字的应该是业务负责人，不是 CTO。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>6. 降本的质量代价要标出来</h2>
+<p>每一条降本都在拿某种东西换钱，必须写清楚换的是什么。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>措施</th><th>换掉什么</th><th>可观测指标</th><th>谁签字</th></tr></thead><tbody><tr><td>分流 8B</td><td>少量准确率</td><td>分流后重跑率</td><td>算法负责人</td></tr><tr><td>KV FP8</td><td>长上下文精度</td><td>16K+ 通过率</td><td>算法 + 产品</td></tr><tr><td>削峰</td><td>峰值体验</td><td>排队时长 p99</td><td>业务负责人</td></tr><tr><td>冗余 1.40</td><td>故障时的余量</td><td>单 AZ 故障演练结果</td><td>SRE</td></tr><tr><td>议价</td><td>供应商关系</td><td>交付周期</td><td>采购</td></tr></tbody></table></div>
+<p>没有"免费的降本"。如果某条措施声称没有代价，多半是代价还没显现——比如分流器在测试集上 95%，上线三个月后分布漂移掉到 88%。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>6.5 一个能落地的降本排期</h2>
+<p>十条措施不能同时上，会互相干扰观察。按季度排：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>季度</th><th>做什么</th><th>预期省</th><th>验证方式</th></tr></thead><tbody><tr><td>Q1</td><td>KV 量化 FP8 + 长上下文分桶回归</td><td>6,170 万</td><td>16K+ 通过率不掉 2 点</td></tr><tr><td>Q2</td><td>分流器上线，先 10% 流量</td><td>2,000 万（部分）</td><td>重跑率 &lt; 5%</td></tr><tr><td>Q3</td><td>分流放到 40% + 削峰排队</td><td>1.1 亿（累计）</td><td>排队 p99 &lt; 60 秒</td></tr><tr><td>Q4</td><td>冗余从 1.56 调到 1.40 + 议价</td><td>4,100 万</td><td>单 AZ 故障演练通过</td></tr></tbody></table></div>
+<p>每季度只动一类，是为了能归因。同时上量化和分流，卡数降了，但说不清是谁的功劳，下次也不敢再动。</p>
+<p>排期的另一个约束是采购节奏：卡是一次性买的，降本效果要等到下一轮采购才体现。所以 Q1 省下的 6,170 万，在 Q1 的财报上看不到，只在 Q3 的采购预算里体现。这一层要提前跟财务对齐，否则会被认为"降本没效果"。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>7. 自建还是租用</h2>
+<p>同一个 2,512 卡，租用和自建的账完全不同。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>自建（3 年）</th><th>租用（按 ¥30/卡时）</th></tr></thead><tbody><tr><td>年度成本</td><td>2.83 亿</td><td>6.60 亿</td></tr><tr><td>3 年总成本</td><td>8.49 亿</td><td>19.8 亿</td></tr><tr><td>启动资金</td><td>7.17 亿一次性</td><td>0</td></tr><tr><td>弹性</td><td>差（买定离手）</td><td>好（按需增减）</td></tr><tr><td>折旧风险</td><td>高（卡会过时）</td><td>无</td></tr></tbody></table></div>
+<p>自建便宜 57%，但要求两件事：规模稳定、资金充足。</p>
+<p>盈亏平衡点可以算：租用单价 ¥30/卡时，自建 ¥12.86/卡时，差 ¥17.14。一次性投入 ÷ 年节省：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>7.17 亿 ÷ (2,512 × 8,760 × 17.14) = 7.17 亿 ÷ 3.77 亿 = 1.9 年</code></pre></figure>
+<p><strong>不到两年回本。</strong> 所以只要确定用满两年以上，自建更划算；低于两年，租用更灵活。</p>
+<p>第三条路是混合：基线负载自建（70%），峰值与训练租用（30%）。这也是第 33 章弹性策略的成本依据。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>8. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>降本后总成本反升</td><td>只算单价不算重跑</td><td>统计重试率与 token 总量</td><td>把重跑成本算进模型</td></tr><tr><td>折旧算少了</td><td>漏了网络与机房改造</td><td>对比财务口径</td><td>用 7.17 亿而非 5.4 亿</td></tr><tr><td>电费估低一半</td><td>忘了 PUE</td><td>对比电费单</td><td>PUE 按 1.35 计</td></tr><tr><td>三条措施叠加不生效</td><td>动的都是 decode 卡数</td><td>逐条上线，看实际卡数</td><td>叠加时按 min 而非 sum</td></tr><tr><td>自建后利用率只有 40%</td><td>买了峰值容量，平时闲置</td><td>看 30 天利用率曲线</td><td>混合模式，峰值租用</td></tr><tr><td>卡过时，折旧还没提完</td><td>3 年折旧 vs 2 年换代</td><td>看新卡发布时间</td><td>改 2 年折旧，或接受残值损失</td></tr></tbody></table></div>
+<p>最后一行是硬件行业的老问题：H100 三年折旧，但两年后新卡可能便宜一半、快一倍。这时候账面还在提折旧，实际价值已经掉了。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>9. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>自建比租用便宜 57%</td><td>租用价格战期间（¥15/卡时），差距缩到 14%</td></tr><tr><td>折旧占 84.5%</td><td>用二手卡或旧卡时，GPUs 成本降到 1/3，折旧占比降到 60%</td></tr><tr><td>分流省 8,300 万</td><td>分流后需要更多小模型实例时，净省减少</td></tr><tr><td>PUE 1.35</td><td>液冷机房已经改造完时，这项为 0</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>10. 验收</h2>
+<ol><li>能把自己的年成本拆成折旧与运营两段，并说出各自占比。</li><li>能算出"每省 1% 卡数"对应多少钱。</li><li>能判断一条降本措施动的是哪个环节，能不能和别的措施叠加。</li><li>能算出自己规模下的自建/租用盈亏平衡点。</li></ol>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>11. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为降本是压低"每卡开销"，实际差在八成的钱压在折旧上——不减少卡数，优化电费和运维都是小数点后的功夫。</p>
+</section>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>12. 延伸</h2>
+<ul><li>第 13 章：卡数怎么来，本章的每一行成本都能追到那里</li><li>第 6 章：量化与分流的技术细节</li><li>第 16 章：成本归因，谁花了这些钱</li><li>第 17 章：定价与毛利，0.517 分怎么变成收入</li><li>第 33 章：弹性，混合自建/租用的执行方式</li></ul>
+<p>结论是：降本不是"把效率提高"，是"把卡数减少"。折旧占八成四，任何不去动卡数的措施，最多影响剩下的 15%。而减少卡数的三条路——分流、量化、削峰——各自都要拿用户能感知的东西去换，所以降本方案的最后签字人应该是业务，不是技术。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="13-capacity-model.html"><span>上一章</span><b>13 · 容量模型：2,512 卡是怎么算出来的</b></a><a class="nav-next" href="31A-rsi-flywheel.html"><span>下一章</span><b>31A · RSI：数据飞轮与自我改进</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>
