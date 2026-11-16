@@ -305,9 +305,14 @@ h2 = hash(h1 + 块2 的 16 个 token)</code></pre></figure>
 <h3>7.2 那预热是在做什么</h3>
 <p>预热看清楚了：它是<strong>主动把还没人用过的那段前缀，提前算一遍写进池子</strong>。</p>
 <p>不是"把旧请求搬回来"，也不是"重放"——旧 KV 已经随权重版本作废了，搬不回来。是拿同样的文本，用新权重重新算一遍 prefill，得到新 KV，写进池子。</p>
-<p>一个具体的例子。售后 Agent 的系统提示加工具定义是 3,000 token，每天出现 50 万次：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>状态</th><th>每个请求要 prefill</th><th>单请求耗时</th><th>一天的总计算量</th></tr></thead><tbody><tr><td>预热前</td><td>3,000 token</td><td>270 ms</td><td>41,667 小时</td></tr><tr><td>预热后</td><td>200 token（用户问题）</td><td>18 ms</td><td>2,778 小时</td></tr></tbody></table></div>
-<p>差 15 倍。这就是为什么值得花 3 分钟做预热。</p>
+<p>一个具体的例子。售后 Agent 的系统提示加工具定义是 3,000 token，用户问题平均 200 token，这个前缀每天出现 50 万次。两种情况并排放：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>没预热</th><th>预热后</th><th>变化</th></tr></thead><tbody><tr><td>每请求要算的 prefill</td><td>3,200 token</td><td>200 token</td><td>−94%</td></tr><tr><td>单请求 prefill 耗时</td><td>267 ms</td><td>15 ms</td><td>−94%</td></tr><tr><td>单请求 TTFT（含排队 100 ms、网络 50 ms）</td><td>417 ms</td><td>165 ms</td><td>−60%</td></tr><tr><td>日 prefill 总量（50 万次）</td><td>16 亿 token</td><td>1 亿 token</td><td>−94%</td></tr><tr><td>折合单实例工作时间</td><td>37.5 实例·小时</td><td>2.5 实例·小时</td><td>−93%</td></tr><tr><td>p95 TTFT（实测，0% 命中 vs 85% 命中）</td><td>1,900 ms</td><td>610 ms</td><td>−68%</td></tr></tbody></table></div>
+<p>这张表要横着读。前三行是单请求，中间两行是按 50 万次放大，最后一行是线上实测。</p>
+<p>有两个数字值得注意。</p>
+<p>第一，prefill 耗时降了 94%，但 TTFT 只降 60%。差额是排队和网络——这两项不随预热变化，它们在分母里把百分比稀释了。所以"省了多少计算"和"用户快了多少"是两个数，不能混着说。</p>
+<p>第二，日计算量从 37.5 实例·小时降到 2.5，意思是这一个前缀每天省下 35 个实例·小时的 GPU 时间，约等于 1.5 张卡一直在算。而且这是<strong>一个前缀</strong>的账，Top 100 加起来更多。</p>
+<p>再看最后一行：实测的 p95 是 1,900 ms 对 610 ms，降 68%，和单请求模型的 60% 接近，说明模型没有算错方向。它的绝对值对不上，是因为 p95 里包含排队——高负载时排队那项会从 100 ms 涨到 600 ms 以上。</p>
+<p>这就是为什么值得花 3 分钟做预热：用 3 分钟换每天 35 个实例·小时。</p>
 <p>那"Top 100"是怎么来的？这里最容易误解成"挑 100 条代表性请求"。不是。</p>
 <p>一个请求的结构是这样的：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>[ system 提示 ][ tools 定义 ][ 历史对话 ][ 用户问题 ]
