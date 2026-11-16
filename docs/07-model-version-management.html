@@ -316,9 +316,15 @@ h2 = hash(h1 + 块2 的 16 个 token)</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>数量级</th></tr></thead><tbody><tr><td>一天的请求</td><td>1.5 亿条</td></tr><tr><td>去掉用户问题、只留 system + tools</td><td>150 万条</td></tr><tr><td>按前缀哈希去重</td><td>约 200 种</td></tr><tr><td>按出现次数排序取前 100</td><td>100 种（覆盖 78%）</td></tr></tbody></table></div>
 <p>真实分布通常更集中：前 5 种前缀就可能覆盖 70%，前 100 种覆盖 78%，后面是长尾。如果业务简单，可能总共只有 8 种前缀，那"Top 100"实际就是 8 条。</p>
 <p>反过来说，如果统计出来有几万种前缀，通常不是业务复杂，是有人在系统提示里拼了时间戳、用户名或订单号——变量前置了。这种写法会让缓存命中率长期为零，是设计问题，不是预热能救的（第 20 章讲上下文工程时会再提）。</p>
-<p>拿到这 100 个前缀的<strong>文本</strong>之后，才轮到渲染和重算。完整流程六步：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>动作</th><th>产出</th></tr></thead><tbody><tr><td>1</td><td>日志取最近 7 天，抽 1%</td><td>150 万条记录</td></tr><tr><td>2</td><td>每条取 system + tools，canonical JSON 算 SHA1</td><td>前缀指纹</td></tr><tr><td>3</td><td>按指纹计数，降序取前 100</td><td>100 种前缀的文本</td></tr><tr><td>4</td><td>用线上同款 tokenizer + 模板渲染成 token ids</td><td>每条 3,000 左右的 id</td></tr><tr><td>5</td><td>逐条 <code>engine.generate(max_tokens=1)</code></td><td>引擎切块、算哈希、prefill、写回池子</td></tr><tr><td>6</td><td>读 <code>num_cached_tokens</code> 断言</td><td>确认写入成功</td></tr></tbody></table></div>
-<p>第 5 步是关键：它不是"把文本存进去"，是让引擎<strong>真的算一遍</strong>。算出来的块进了池子，后面真实请求才可能命中。</p>
+<p>拿到这 100 个前缀的<strong>文本</strong>之后，才轮到渲染和重算。完整流程七步：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>动作</th><th>产出</th></tr></thead><tbody><tr><td>1</td><td>日志取最近 7 天，抽 1%</td><td>150 万条记录</td></tr><tr><td>2</td><td>每条取 system + tools，canonical JSON 算 SHA1</td><td>前缀指纹</td></tr><tr><td>3</td><td>按指纹计数，降序取前 100</td><td>100 种前缀的文本</td></tr><tr><td>4</td><td>用线上同款 tokenizer + 模板渲染成 token ids</td><td>每条的真实 id 序列</td></tr><tr><td>5</td><td>按 id 长度累加，估算 KV 占用，超预算就截断</td><td>实际预热的条数与总 token</td></tr><tr><td>6</td><td>逐条 <code>engine.generate(max_tokens=1)</code></td><td>引擎切块、算哈希、prefill、写回池子</td></tr><tr><td>7</td><td>读 <code>num_cached_tokens</code> 断言</td><td>确认写入成功</td></tr></tbody></table></div>
+<p>第 5 步最容易被跳过，但它是唯一能防止"预热把显存吃满"的环节。做法不是"100 条乘平均长度"，而是先渲染、按实际长度累加——前缀长度分布很偏，一条 8,000 token 的长前缀顶三条 2,600 的。</p>
+<p>算例：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>前缀档位</th><th>条数</th><th>单条 token</th><th>小计 token</th><th>KV 占用</th></tr></thead><tbody><tr><td>短（&lt;1K）</td><td>55</td><td>800</td><td>44,000</td><td>5.3 GB</td></tr><tr><td>中（1–3K）</td><td>30</td><td>2,000</td><td>60,000</td><td>7.2 GB</td></tr><tr><td>长（3–8K）</td><td>15</td><td>5,000</td><td>75,000</td><td>9.0 GB</td></tr><tr><td>合计</td><td>100</td><td>—</td><td>179,000</td><td>21.5 GB</td></tr></tbody></table></div>
+<p>179,000 token 乘 120 KB 约 21.5 GB，占 400 GB 池子的 5.4%，安全。</p>
+<p>如果统计出来是 60 万 token（比如长前缀占比高），就是 72 GB、18%，仍然能跑但接近警戒线。这时候按"每 GB 省多少毫秒"排序，砍掉短前缀——短前缀 prefill 本来就快，预热收益低。</p>
+<p>预算公式和警戒水位在 §8.4.2，这里只强调顺序：<strong>先估再算，不是算完再看显存</strong>。</p>
+<p>第 6 步是关键：它不是"把文本存进去"，是让引擎<strong>真的算一遍</strong>。算出来的块进了池子，后面真实请求才可能命中。</p>
 <p>然后对这 100 条文本，各发一次只跑 prefill 的请求，让引擎按正常路径算出 KV 写进池子。之后真实请求带着同样的 token ids 进来，链式哈希一致，直接命中。</p>
 <p>为什么不用"把 KV 存到磁盘再读回来"？因为重算更快也更简单：300K token 的 prefill 只要 27 秒计算，而 36 GB 的 KV 落盘再加载要处理序列化、块布局对齐、版本校验，出一次错就是脏缓存。</p>
 <h3>7.3 权重一变，为什么全废</h3>
@@ -375,7 +381,16 @@ torch.cuda.empty_cache()       # 归还给驱动，减少碎片</code></pre></fi
 <p>第一个坑是模板。用 messages 数组发送，引擎会用<strong>服务端自己的</strong> chat template 渲染；预热脚本如果你自己拼字符串，两边的 token 序列差一个空格，block hash 就不同，命中不了。正确做法是预热脚本加载<strong>同一个</strong> tokenizer 和模板，直接渲染成 token ids 再发。</p>
 <p>第二个坑是工具定义的序列化。tools 里的 key 顺序、空格、是否转义，只要变一处，前缀就变了。必须固定成 canonical JSON（<code>sort_keys=True</code>），而且这个序列化函数要和线上网关用同一份代码，不能各写一遍。</p>
 <p>第三个坑是只预热了一半。前缀是"系统提示 + 工具定义"这段公共部分，如果预热时漏了 tools，实际请求的前缀比预热的长，照样不命中。</p>
-<p>正确的回填脚本长这样：</p>
+<p>脚本里要包含"先估再算"这一步：渲染完拿到 id 长度，累加超过预算就截断，然后再进循环。</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>BUDGET_TOKENS = int(400 * 1024**3 * 0.15 / (120 * 1024))   # 15% 池子 ≈ 52 万 token
+plan, used = [], 0
+for key in top:                       # top 已按出现次数降序
+    ids = render(seen[key][&quot;system&quot;], seen[key][&quot;tools&quot;])
+    if used + len(ids) &gt; BUDGET_TOKENS:
+        break                         # 超预算就停，宁少不炸
+    plan.append((key, ids)); used += len(ids)
+print(f&quot;预热 {len(plan)} 条，共 {used} token，约 {used*120/1024**2:.1f} GB&quot;)</code></pre></figure>
+<p>完整的回填脚本长这样：</p>
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>import json, hashlib
 from transformers import AutoTokenizer
 from vllm import SamplingParams
