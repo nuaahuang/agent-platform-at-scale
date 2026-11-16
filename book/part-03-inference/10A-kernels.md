@@ -30,7 +30,16 @@ prefill 和 decode 的差别就在这个 M 上：
 | prefill | 序列长度 | 4,096 | 约 2,000 FLOP/byte | 算力 |
 | decode | batch size | 64 | 约 32 FLOP/byte | 带宽 |
 
-decode 的算术强度约等于 batch/2（权重占主导时）。H100 的 FP16 机器平衡点是 590 FLOP/byte（1,979 TFLOPS ÷ 3.35 TB/s），要进算力受限，batch 得超过 1,180。线上 batch 一般在 32–256，所以 decode 永远在带宽那一边。
+decode 的算术强度不会随 batch 无限涨。FLOPs 随 batch 线性涨，但 KV 的读取字节也随 batch 线性涨，两者同阶，所以它会饱和在一个上限：
+
+```
+AI_max ≈ 每 token 的 FLOPs ÷ 单请求 KV 字节
+       = 6e10 ÷ 245 MB（2K 上下文）= 238 FLOP/byte
+```
+
+而 H100 的机器平衡点是 FP8 590、FP16 295（1,979 ÷ 3.35 与 989 ÷ 3.35）。238 低于两者——**decode 无论 batch 加到多大，都停在带宽那一侧**。
+
+上下文越长，这个上限越低：8K 时只有 60 FLOP/byte。所以长上下文更难跑快，不是靠加大 batch 能解决的。
 
 这就是为什么第 2 章的 roofline 分析里，decode 的优化方向是量化和批处理，不是换更快的卡。
 
