@@ -414,6 +414,31 @@ for i, key in enumerate(top):
 <p>最后那个 assert 是校验，不是装饰。<code>num_cached_tokens</code> 是引擎真实写入的 token 数，减去一个 block（16 token）的边界误差，剩下的必须全部命中。断言挂了说明模板或序列化对不上，这时候继续跑完一百条也没意义。</p>
 <p>并发度要控制。预热请求会占用调度器，如果在<strong>存量实例</strong>上做（扩容预热），并发不要超过 4，否则抢走真实请求的 batch。在新实例上做没有这个问题，因为新实例还没接流量——这也是为什么 §8 的时序把预热放在接流之前。</p>
 <p>显存代价要提前算：100 条 × 3,000 token = 300K token，按每 token 121 KB 算约 36 GB，占 400 GB KV 池的 9%。如果显存本来就紧张，预热会触发淘汰，把刚写进去的又挤出来，命中率卡在 40% 上不去。这种情况要么降数量到 50 条，要么等扩容。</p>
+<h4>8.4.2 预热会不会把显存占满</h4>
+<p>会，而且这是预热最现实的失败方式。</p>
+<p>先算账。每个 token 的 KV 约 120 KB（1.92 MB ÷ 16），所以：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>前缀数</th><th>每前缀 token</th><th>总 KV</th><th>占 400 GB 池</th></tr></thead><tbody><tr><td>售后主流程</td><td>100</td><td>3,000</td><td>36 GB</td><td>9%</td></tr><tr><td>长文档问答</td><td>20</td><td>32,000</td><td>77 GB</td><td>19%</td></tr><tr><td>极端（全量长前缀）</td><td>100</td><td>32,000</td><td>384 GB</td><td>96%</td></tr></tbody></table></div>
+<p>前两行安全，第三行会爆。爆的表现不是报错，是新请求拿不到块，触发淘汰，把刚预热的又挤出去——命中率从 60% 掉回 30%，而且越预热越低。</p>
+<p>三个机制让这件事可控。</p>
+<p><strong>第一，预热块不带引用，随时会被淘汰。</strong></p>
+<p>块池是共享的，空闲块按 LRU 排队。预热写进去的块引用计数是 0，一旦有新请求要块，它们就是第一批候选。所以预热是"尽力而为"，不是"钉住"。</p>
+<p>这也解释了一个反直觉现象：预热完立刻测命中率是 60%，跑 5 分钟掉到 40%。不是预热没生效，是被真实流量挤掉了。</p>
+<p>要让高频前缀留住，得靠"周期性重算"而不是"一次性预热"——每 10 分钟补一次 Top 20，让它们在 LRU 队列里保持新鲜。</p>
+<p><strong>第二，预热前先算预算。</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>可预热前缀数 = 池子 × (1 − 安全水位) ÷ (前缀长度 × 每 token KV)
+
+安全水位取 15%，留给在途请求
+
+400 GB × 0.85 = 340 GB
+3,000 token 前缀：340 GB ÷ 360 MB ≈ 966 条 → 100 条毫无压力
+32,000 token 前缀：340 GB ÷ 3.84 GB ≈ 88 条 → 必须减量</code></pre></figure>
+<p>脚本里加一个累计判断，超预算就截断，只预热前 N 条。宁少不炸。</p>
+<p><strong>第三，健康标准是预热后剩余空闲块不低于 20%。</strong></p>
+<p>预热完立刻查两个数：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>free_ratio = engine.num_free_blocks() / engine.num_total_blocks()
+assert free_ratio &gt; 0.20, f&quot;预热过量，空闲块只剩 {free_ratio:.0%}&quot;</code></pre></figure>
+<p>低于 20% 就把预热条数砍半重来。这个阈值不是拍的：真实流量的并发峰值需要足够块才能接住，池子被预热吃到 80% 以上时，一次流量突增就会触发大面积淘汰。</p>
+<p>还有一个取巧办法：<strong>只预热长前缀</strong>。500 token 以下的前缀 prefill 只要 45 ms，预热的意义不大；把预算留给 2,000 token 以上的，收益最高。</p>
 <h3>8.5 分批的粒度由冗余决定</h3>
 <p>一批换多少卡，不是拍脑袋，是算出来的：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>在线容量冗余 = 10%
