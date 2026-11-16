@@ -380,6 +380,26 @@ torch.cuda.empty_cache()       # 归还给驱动，减少碎片</code></pre></fi
 <div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>做什么</th><th>耗时</th><th>不做的后果</th></tr></thead><tbody><tr><td>权重 warmup</td><td>跑 dummy 请求触发 kernel autotune</td><td>2 分钟</td><td>首个真实请求慢 3–5 秒</td></tr><tr><td>KV 预热</td><td>Top 100 提示回填前缀缓存</td><td>3 分钟</td><td>命中率 0，TTFT 1.9 秒</td></tr><tr><td>调度预热</td><td>低流量跑 5 分钟看队列与 TPOT（Time Per Output Token）</td><td>5 分钟</td><td>配置错误要等放量才发现</td></tr></tbody></table></div>
 <p>第一层最容易被跳过。GPU 的 kernel 首次调用要编译和选优，vLLM 在启动时可以用 profile run 提前触发。不做的话，第一个真实请求会吃到 3–5 秒的额外延迟，而灰度阶段偏偏最容易把这个当成"新模型更慢"。</p>
 <p>第三层是观察，不是技术动作：新实例接 1% 流量跑 5 分钟，看队列长度、TPOT 分布、显存水位是否和旧实例一致。不一致就停下来查，别急着放量。</p>
+<h4>8.4.0 这些统计数据从哪来</h4>
+<p>七步流程的第 1 步是"日志取最近 7 天"，先把这个前提补上——日志本身有成本，不是免费的。</p>
+<p>如果每个请求都完整落盘（messages + 响应正文约 200 KB），按 1.5 亿轮/日算：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>数值</th></tr></thead><tbody><tr><td>峰值写入带宽（7,000 QPS × 200 KB）</td><td>1.4 GB/s</td></tr><tr><td>日存储量</td><td>30.7 TB</td></tr><tr><td>一年</td><td>11 PB</td></tr></tbody></table></div>
+<p>这个量级不可能同步写，也不可能全留。所以日志分三层，各用各的中间件：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>内容</th><th>单条大小</th><th>采样率</th><th>中间件</th></tr></thead><tbody><tr><td>指标</td><td>计数、延迟直方图</td><td>聚合值</td><td>全量</td><td>内存聚合 → Prometheus</td></tr><tr><td>摘要行</td><td>请求 id、前缀哈希、耗时、状态</td><td>500 B</td><td>100%</td><td>Kafka → ClickHouse</td></tr><tr><td>全量载荷</td><td>messages、工具调用、响应正文</td><td>200 KB</td><td>成功 1%、失败 100%</td><td>对象存储</td></tr></tbody></table></div>
+<p>摘要行这一层的量很小：7,000 QPS × 500 B = 3.5 MB/s，一天 75 GB，Kafka 留三天副本也就 225 GB。而全量层靠采样压到 300 GB/日左右。</p>
+<p>前缀哈希在<strong>网关</strong>算，不在离线算。因为网关已经把 system 和 tools 渲染好了，文本就在内存里，顺手算一个 SHA1 的成本可以忽略；等日志进了数仓再回头算，就要把 1.5 亿条正文重新读一遍。</p>
+<p>所以统计 Top 100 就是一条 ClickHouse 查询：</p>
+<figure class="code code--lang"><span class="code-lang">sql</span><button class="copy" type="button">复制</button><pre><code>SELECT prefix_hash, any(system_text) AS sample, count() AS n
+FROM access_log
+WHERE ts &gt; now() - INTERVAL 7 DAY
+GROUP BY prefix_hash
+ORDER BY n DESC
+LIMIT 100;</code></pre></figure>
+<p>1.5 亿行的表，一列 group by，单机一两秒。这就是为什么摘要行要进 ClickHouse 而不是对象存储——对象存储能存但查不动。</p>
+<p>写日志对性能的影响要单独说。同步写会让 P99 多 5–20 ms，等于把 TTFT 的预算吃掉一块。三条纪律：</p>
+<ul><li><strong>异步入队</strong>：内存环形缓冲，满了丢计数、不阻塞</li><li><strong>批量发送</strong>：攒 100 条或 16 KB 再发一次</li><li><strong>先摘要后正文</strong>：摘要行 500 B 走 Kafka，正文异步传对象存储</li></ul>
+<p>丢日志是可接受的，拖慢请求不可接受。所以队列满时的策略是丢成功请求的日志、保留失败请求的，而不是反压主链路。</p>
+<p>第 41 章会展开讲可观测的整体设计，这里只需要记住：<strong>预热依赖的不是"存了所有日志"，是"存了带前缀哈希的摘要行"</strong>。</p>
 <h4>8.4.1 Top 100 怎么重算</h4>
 <p>重算的难点不在"发请求"，在"让引擎算出来的前缀和线上那条逐 token 相同"。</p>
 <p>三个坑，每一个都能让命中率停在 20%：</p>
