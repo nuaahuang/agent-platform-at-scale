@@ -453,7 +453,14 @@ for i, key in enumerate(top):
 <figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>free_ratio = engine.num_free_blocks() / engine.num_total_blocks()
 assert free_ratio &gt; 0.20, f&quot;预热过量，空闲块只剩 {free_ratio:.0%}&quot;</code></pre></figure>
 <p>低于 20% 就把预热条数砍半重来。这个阈值不是拍的：真实流量的并发峰值需要足够块才能接住，池子被预热吃到 80% 以上时，一次流量突增就会触发大面积淘汰。</p>
-<p>还有一个取巧办法：<strong>只预热长前缀</strong>。500 token 以下的前缀 prefill 只要 45 ms，预热的意义不大；把预算留给 2,000 token 以上的，收益最高。</p>
+<p>还有一个取巧办法：只预热长前缀。原因不是"短前缀不值得算"，是<strong>单位显存的收益随长度上升</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>前缀长度</th><th>prefill 耗时</th><th>KV 占用</th><th>每 GB 省</th></tr></thead><tbody><tr><td>800 token</td><td>60 ms</td><td>0.09 GB</td><td>655 ms/GB</td></tr><tr><td>2,000 token</td><td>159 ms</td><td>0.23 GB</td><td>693 ms/GB</td></tr><tr><td>5,000 token</td><td>450 ms</td><td>0.57 GB</td><td>786 ms/GB</td></tr><tr><td>8,000 token</td><td>806 ms</td><td>0.92 GB</td><td>880 ms/GB</td></tr></tbody></table></div>
+<p>如果 prefill 严格按 0.09 ms/token 线性，这一列会是常数（786 ms/GB）——因为时间和显存都正比于长度，比值自然不变。实际上它随长度上升，因为 prefill 里有两部分：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>T(N) = a·N + b·N²     a ≈ 0.072 ms/token，b ≈ 3.6e-6 ms/token²
+       └ 线性层 ┘    └ 注意力，O(N²) ┘</code></pre></figure>
+<p>线性层（QKV、MLP、专家）按 token 走，注意力按 token 的平方走。5,000 token 时注意力只占 20%，32,000 token 时占到 62%。所以长前缀的每 token 成本更高，它省下的时间也就更多。</p>
+<p>这也提醒一件事：0.09 ms/token 是 5,000 token 这个点的平均值，不是常数。用它估算 800 token 会多算 20%，估算 32K 会少算一倍。</p>
+<p>不过截断的时候，频次仍然是第一位的。一条出现 50 万次的前缀和一条出现 100 次的，单条收益相同，总收益差 5,000 倍；而长短带来的单位差异只有 34%。排序按"频次 × 单条节省时间"，长度只作为同频次时的次序。</p>
 <h3>8.5 分批的粒度由冗余决定</h3>
 <p>一批换多少卡，不是拍脑袋，是算出来的：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>在线容量冗余 = 10%
