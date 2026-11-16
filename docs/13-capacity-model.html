@@ -293,7 +293,12 @@ blockquote p{margin:.4em 0}
 <p>再验一下带宽够不够，别出现"装得下但跑不快"：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>单步时间 = (权重 200 GB + KV 400 GB) ÷ (8 × 3.35 TB/s)
          = 600 ÷ 26,800 = 22.4 ms</code></pre></figure>
-<p>22.4 ms 小于 TPOT 目标 50 ms，合格。有意思的是，带宽在这里反而有余量：单实例能跑 1,666 ÷ 0.0224 = 74,000 token/s，而实际只需 7,000 × 350 ÷ 87.5 = 28,000 token/s。</p>
+<p>先说清楚为什么能乘 8。TP8 把权重按维度切成 8 份，KV 头也按 TP 度分给 8 张卡，每张卡只读自己那 1/8，8 张卡同时读。所以聚合带宽是 8 × 3.35 = 26.8 TB/s。这不是"一张卡跑到 26.8"，是"8 张卡各跑 3.35，加起来"。</p>
+<p>能不能达到？打个折。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>值</th><th>说明</th></tr></thead><tbody><tr><td>理论聚合带宽</td><td>26.8 TB/s</td><td>8 × 3.35</td></tr><tr><td>实际可用</td><td>22.8 TB/s</td><td>HBM 有刷新、ECC、行冲突，实测 85% 左右</td></tr><tr><td>对应单步时间</td><td>26.3 ms</td><td>600 GB ÷ 22.8</td></tr><tr><td>TP 通信开销</td><td>+3.2 ms</td><td>60 层 all-reduce，每层 48 MB</td></tr><tr><td>实际单步</td><td>约 29.5 ms</td><td>仍低于 50 ms</td></tr></tbody></table></div>
+<p>那一行 TP 开销值得算一下：每层要对 [1,666, 8,192] 的激活做 all-reduce，bf16 下 27 MB；环状算法传 2 × 7/8，约 48 MB；60 层合计 2.87 GB；H100 的 NVLink 900 GB/s，3.2 ms。占单步时间 12%。</p>
+<p>所以 22.4 ms 是纸面值，29.5 ms 是能跑出来的值。TPOT 目标 50 ms，还剩 40% 余量——这个余量是给长尾和突发留的，不是浪费。</p>
+<p>有一个坑会影响这 8 倍：<strong>KV 头数少于 TP 度时会复制</strong>。如果模型只有 4 个 KV 头，切成 8 份就有 2 张卡拿同一份，聚合带宽打不到 8 倍，KV 容量也少了。做容量规划前要先确认模型结构，不能默认"TP8 就是 8 倍"。</p>
 <p>这说明 decode 的卡数是被<strong>并发</strong>压着走的，不是被吞吐。配多了不提升 SLO（Service Level Objective，服务等级目标），配少了直接拒绝请求。</p>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 两个系数：从 1,609 到 2,512</h2>
