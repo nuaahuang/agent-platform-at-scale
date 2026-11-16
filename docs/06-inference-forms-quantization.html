@@ -332,6 +332,25 @@ gpu_memory_utilization: 0.92</code></pre></figure>
 盈亏平衡：0.216 × p = 0.372 × (1 − p) → p = 63%</code></pre></figure>
 <p>分流器准确率要到 63% 才不亏，但 63% 意味着 37% 的请求要多跑一次，用户还要多等一轮。所以实际门槛定在 95%。</p>
 <p>95% 的分流器不是靠 8B 自己判断，是用规则加小模型两层：先按意图分类（这个 8B 能到 88%），再用规则兜住高风险的（含金额、含投诉、含例外条款）。</p>
+<h3>8.1 误判怎么发现</h3>
+<p>前面几处都说"分流错了就重跑"，但漏了一个前提：<strong>你得先知道它错了</strong>。</p>
+<p>误判不能事后发现。小模型把错误答案发给用户的那一刻，成本已经付了、用户已经看到了，重跑只是补救，不是避免。所以真正要做的是四层前置拦截，越靠前越便宜。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>什么时候判</th><th>判什么</th><th>召回</th><th>误报</th></tr></thead><tbody><tr><td>1 路由规则</td><td>收到请求时</td><td>含金额、含投诉、含"退/赔/法律"、多步指令</td><td>40%</td><td>5%</td></tr><tr><td>2 结构化前置</td><td>生成正文前</td><td>先让模型输出 intent + confidence，再决定要不要继续</td><td>30%</td><td>10%</td></tr><tr><td>3 生成中</td><td>流式过程中</td><td>平均 logprob、工具参数校验失败、输出长度异常</td><td>25%</td><td>15%</td></tr><tr><td>4 生成后</td><td>完整输出后</td><td>JSON schema、数值范围、政策条款能否引用</td><td>20%</td><td>0.1%</td></tr></tbody></table></div>
+<p>四层是并联关系，各管一类错误，叠加起来能拦住大部分。</p>
+<p>第一层不需要"识别误判"，它是事前规则：命中高风险特征就不走小模型。这一层最便宜也最可靠，应该先把能拦的都拦掉。</p>
+<p>第二层的做法值得展开。不要一上来就让小模型生成回答，而是先让它输出一个结构化的判断：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{&quot;intent&quot;: &quot;refund_apply&quot;, &quot;confidence&quot;: 0.62, &quot;needs_big&quot;: true}</code></pre></figure>
+<p><code>confidence</code> 低于阈值（比如 0.75）或者 <code>needs_big</code> 为真，就直接转大模型，小模型连正文都不生成。这样误判的代价只有一次分类调用（约 30 ms、0.01 分），而不是一次完整的错误回答。</p>
+<p>这一层能生效，是因为<strong>分类比生成容易</strong>。8B 做 12 类意图分类能到 88%，做完整回答只有 62%。把判断放在它擅长的任务上。</p>
+<p>第三层要能中断。流式输出时，如果平均 logprob 掉到 -1.5 以下，或者工具调用参数校验失败，应该立刻切断，改走大模型。代价是用户已经看到半句话——比看到一句错话好。</p>
+<p>第四层是兜底，只能拦住格式类错误，拦不住语义错误。JSON 合法但金额算错了，这一层发现不了。</p>
+<h3>8.2 重跑之后还是错怎么办</h3>
+<p>重跑不是终点。大模型也会错，所以要三级兜底：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>级别</th><th>触发</th><th>动作</th><th>用户等待</th></tr></thead><tbody><tr><td>一级</td><td>小模型低置信</td><td>转大模型</td><td>+0.4 s</td></tr><tr><td>二级</td><td>大模型也低置信</td><td>转人工或给"需要进一步确认"</td><td>+0 秒（异步）</td></tr><tr><td>三级</td><td>用户重问/差评</td><td>归因，改进路由规则</td><td>事后</td></tr></tbody></table></div>
+<p>第二级的关键是<strong>不要给一个可能错的确定答案</strong>。大模型置信度低时，输出"这个问题我需要确认后回复您"，然后进人工队列，比编一个答案好。</p>
+<p>这套东西的监控指标只有三个：</p>
+<ul><li>分流准确率（离线评测集，每周一次）</li><li>重跑率（线上，超过 8% 说明路由器坏了）</li><li>重跑后仍转人工的比例（超过 2% 说明分流边界选错了）</li></ul>
+<p>第二个指标最灵敏。重跑率突然从 5% 涨到 15%，通常是业务分布变了（比如上线了新品类），路由器还在按旧分布切。</p>
 </section>
 <section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 部署形态二：多 LoRA 隔离</h2>
 <p>一个基座加多个 adapter，每个业务方一个。adapter 很小：r=16 时约 2 亿参数，FP16 下 0.4 GB。</p>
