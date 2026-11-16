@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：这个数字被引用了三十次，但从没推过</a><a href="#s2"><span>02</span>. 从轮次到 token</a><a href="#s3"><span>03</span>. 为什么 prefill 和 decode 要分开算</a><a href="#s4"><span>04</span>. prefill 卡数：算力除以吞吐</a><a href="#s5"><span>05</span>. decode 卡数：并发除以容量</a><a href="#s6"><span>06</span>. 两个系数：从 1,609 到 2,512</a><a href="#s7"><span>07</span>. 回算：成本和单价</a><a href="#s8"><span>08</span>. 敏感性：哪个假设最危险</a><a href="#s9"><span>09</span>. 32K 场景：换一种算法</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下这些结论不成立</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：这个数字被引用了三十次，但从没推过</a><a href="#s2"><span>02</span>. 从轮次到 token</a><a href="#s3"><span>03</span>. 为什么 prefill 和 decode 要分开算</a><a href="#s4"><span>04</span>. prefill 卡数：算力除以吞吐</a><a href="#s5"><span>05</span>. decode 卡数：并发除以容量</a><a href="#s6"><span>06</span>. 两个系数：从 1,609 到 2,512</a><a href="#s7"><span>07</span>. 回算：成本和单价</a><a href="#s8"><span>08</span>. 敏感性：哪个假设最危险</a><a href="#s9"><span>09</span>. 32K 场景：换一种算法</a><a href="#s10"><span>10</span>. 1M 上下文：三个数一起爆炸</a><a href="#s11"><span>11</span>. 失败模式</a><a href="#s12"><span>12</span>. 什么情况下这些结论不成立</a><a href="#s13"><span>13</span>. 验收</a><a href="#s14"><span>14</span>. 复盘卡</a><a href="#s15"><span>15</span>. 延伸</a></nav>
       <div class="rail-foot">容量与成本</div>
     </div>
   </aside>
@@ -348,21 +348,37 @@ decode 卡数 = 140,000 ÷ 667 × 8 = 1,679 卡</code></pre></figure>
 <p>这个不对称是 32K 场景最难的地方：<strong>它几乎只吃 decode 的并发，不吃 prefill 的算力</strong>。所以不能靠"加 prefill 池"解决，只能加 decode 池，或者用 KV 量化把每 token 的 KV 压一半（第 6 章）。</p>
 <p>如果 10% 长上下文就要多买 979 卡，一年 ¥1.1 亿。这时候该问的是：这 10% 的请求值不值得单独建一个池？第 6 章的"形态分离"就是答案——长请求走独立池，不和短请求挤在一起。</p>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 失败模式</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 1M 上下文：三个数一起爆炸</h2>
+<p>1M 上下文（约 70 万字）不是"32K 再大一点"，是三个量同时失控。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>上下文</th><th>单请求 KV</th><th>单实例装几个</th><th>prefill 耗时</th></tr></thead><tbody><tr><td>2K</td><td>0.24 GB</td><td>1,666</td><td>0.16 s</td></tr><tr><td>32K</td><td>3.9 GB</td><td>102</td><td>6.2 s</td></tr><tr><td>128K</td><td>15.7 GB</td><td>25</td><td>71 s</td></tr><tr><td>1M</td><td>125.8 GB</td><td>3.2</td><td>4,002 s（67 分钟）</td></tr></tbody></table></div>
+<p>三个数分别是 KV 容量、并发、prefill 时间。最后一行意味着：一个 1M 请求要算 67 分钟，而且一整台 8 卡机只能同时装 3 个。</p>
+<p>按第 5 节的公式，prefill 暴涨是因为注意力那项：<code>b·N²</code> 在 1M 时是 3,571 秒，而线性层只有 72 秒。<strong>平方项占了 98%。</strong></p>
+<p>所以 1M 上下文不能靠"多买卡"解决，必须换算法。三条路各自砍掉一块：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>砍什么</th><th>效果</th></tr></thead><tbody><tr><td>MLA 压缩 KV</td><td>每 token 的 KV 字节</td><td>3–8 倍（取决于压缩维度）</td></tr><tr><td>KV 量化 FP8</td><td>每 token 的 KV 字节</td><td>再 2 倍</td></tr><tr><td>稀疏注意力</td><td>N² 那一项</td><td>32K 窗口下砍 30 倍以上</td></tr><tr><td>分层存储</td><td>放在 HBM 还是 DRAM/SSD</td><td>容量扩 10–100 倍，但延迟涨</td></tr></tbody></table></div>
+<p>四条都用上，1M 才勉强可跑：KV 从 126 GB 降到 8–15 GB，prefill 从 67 分钟降到分钟级。</p>
+<p>但代价必须说清楚：</p>
+<ul><li>MLA 压缩是有损的，长距离精确回忆会掉点</li><li>稀疏注意力只算一部分 token 对，需要任务本身允许（检索式问答可以，逐字比对不行）</li><li>分层存储让每次 attention 都要跨设备读，TPOT 从 50 ms 涨到 200 ms 以上</li></ul>
+<p>对容量模型的三个后果：</p>
+<p>第一，<strong>必须单独建池</strong>。1M 请求和 2K 请求混在一个池里，会互相拖累：长请求占着 125 GB 不走，短请求排队。第 6 章的"形态分离"在这里从优化变成必需。</p>
+<p>第二，<strong>并发单位从请求数变成 token 数</strong>。因为长请求之间差 500 倍，按请求数算容量会严重失真。改成"每实例能装多少 KV token 总量"，1M 请求自然折算成 500 个 2K 请求。</p>
+<p>第三，<strong>SLO 要重定义</strong>。TTFT 800 ms 对 1M 请求不可能——光 prefill 就几分钟。长上下文的 SLO 得按"第一个 token 多久"和"检索到答案多久"分开定，或者干脆改成异步任务加通知。</p>
+<p>这也解释了为什么 1M 上下文的产品形态通常是"上传文档 → 后台处理 → 通知结果"，而不是聊天框里即时回答。不是产品不想做即时，是物理上做不到。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>按模型配了卡，上线就不够</td><td>没留两个系数</td><td>压测峰值直接破 SLO</td><td>补 1.56，或确认降级路径</td></tr><tr><td>卡够但 TTFT 破线</td><td>prefill 与 decode 混在一个池</td><td>看两个池子的队列长度</td><td>拆池，按第 11 章 PD 分离</td></tr><tr><td>成本对不上账</td><td>容量模型与成本模型用了不同假设</td><td>反算单轮成本</td><td>两边共用一张参数表</td></tr><tr><td>版本切换时大面积超时</td><td>容量按"缓存命中"配的</td><td>切换瞬间命中率归零</td><td>按缓存全失效配容量</td></tr><tr><td>长上下文上线后拒绝率飙升</td><td>并发被 KV 吃掉</td><td>看单实例并发数</td><td>长请求独立池，或 KV 量化</td></tr><tr><td>实际只用了一半卡</td><td>峰值系数取太高</td><td>看 7 天的实际峰值曲线</td><td>按 P99 而非理论峰值重算</td></tr></tbody></table></div>
 <p>最后一行是反向错误：容量配多了也是错，一年白花几千万。判断依据是连续 30 天的峰值曲线，不是某一天的尖峰。</p>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 什么情况下这些结论不成立</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 什么情况下这些结论不成立</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>缓存不算进容量</td><td>缓存命中率长期稳定在 90% 以上且版本切换可预约时，可以扣一部分</td></tr><tr><td>峰值系数 4.0</td><td>业务有削峰手段（预约、排队）时，可以降到 2.5</td></tr><tr><td>decode 按并发算</td><td>输出极长（&gt;4K token）时，带宽会成为先绑的那一项</td></tr><tr><td>1.3 的冗余</td><td>单 AZ 部署（放弃多活）时，这 30% 可以省，但要接受整体故障</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 验收</h2>
 <ol><li>能用自己的业务参数（轮次、输入、输出、峰值系数）算出四个数：日 token、峰值 token 率、prefill 卡、decode 卡。</li><li>能解释为什么 decode 按并发算而 prefill 按算力算。</li><li>能说出 1.3 和 1.2 各覆盖什么，去掉会怎样。</li><li>能算出长上下文占比 10% 时 decode 卡数的变化。</li></ol>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
 <p>我原来以为卡数 = 总 token ÷ 单卡吞吐，实际差在 decode 那一半根本不能用吞吐算——它被并发和 KV 容量卡着，算力再多也装不下更多请求。</p>
 </section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 延伸</h2>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>15. 延伸</h2>
 <ul><li>第 2 章：roofline，解释为什么 decode 卡在带宽</li><li>第 6 章：KV 量化如何把单请求 KV 减半，直接改 decode 卡数</li><li>第 11 章：PD 分离，把两个池子真正拆开</li><li>第 33 章：弹性，回答"1.2 的弹性预留为什么不能更小"</li><li>附录 B：训练占用卡时，本章的容量模型要再加一个变量</li></ul>
 <p>结论是：2,512 不是一个数，是一条链——业务量乘峰值系数，分成 prefill 与 decode 两条路各自算，最后乘两个冗余系数。链上任何一个环节改写，末端都会变，所以容量评审要问的是假设，不是结果。</p>
 </section></article>
