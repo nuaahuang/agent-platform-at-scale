@@ -236,17 +236,44 @@ blockquote p{margin:.4em 0}
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四类 token 与价目表</h2>
 <p>先看一轮请求的 token 构成：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>数量</th><th>说明</th></tr></thead><tbody><tr><td>输入（未命中缓存）</td><td>285</td><td>用户问题 200 + 检索 85（部分系统提示）</td></tr><tr><td>输入（命中缓存）</td><td>1,615</td><td>系统提示与工具定义的公共前缀</td></tr><tr><td>输出</td><td>350</td><td>用户能看到的回答</td></tr><tr><td>reasoning</td><td>0</td><td>本模型不产生，思考模型另算</td></tr></tbody></table></div>
-<p>四类分开计量，因为成本结构完全不同（第 14 章）：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>单价</th><th>凭什么</th></tr></thead><tbody><tr><td>未命中输入</td><td>¥2.70/百万</td><td>要真算 prefill</td></tr><tr><td>命中输入</td><td>¥0.27/百万</td><td>只查表，不打矩阵乘</td></tr><tr><td>输出</td><td>¥11.34/百万</td><td>decode，占 KV、占并发</td></tr><tr><td>reasoning</td><td>¥11.34/百万</td><td>同样走 decode，只是用户看不到</td></tr></tbody></table></div>
+<p>四类分开计量，因为成本结构完全不同。但单价不是拍出来的，要从卡时一路推上去。</p>
+<h3>2.1 第一层：一切换算成卡时</h3>
+<p>底层只有一个数：<strong>一张卡跑一小时 ¥12.86</strong>（第 14 章：折旧 9.5 + 电 3.0 + 机位网络 0.4）。</p>
+<p>所有 token 的成本都是"占了多少卡秒 × 12.86 ÷ 3,600"。</p>
+<h3>2.2 第二层：一个 token 占多少卡秒</h3>
+<p>这一步要分 prefill 和 decode 算，因为两者的产出速率差 1.6 倍。</p>
+<p>prefill 单实例（8 卡）吞吐 118,700 token/s（第 13 章），单卡 14,838 token/s。一秒钟能算 14,838 个 token，所以一个 token 占 1/14,838 卡秒。</p>
+<p>decode 单实例在 1,666 并发下每 22.4 ms 出一批 token，单实例 74,375 token/s，单卡 9,297 token/s。</p>
+<p>把这两个速率换算成每百万 token 的裸成本：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>单卡吞吐</th><th>每百万 token 占卡秒</th><th>裸成本</th></tr></thead><tbody><tr><td>prefill</td><td>14,838 token/s</td><td>67.4 卡秒</td><td>¥0.241</td></tr><tr><td>decode</td><td>9,297 token/s</td><td>107.6 卡秒</td><td>¥0.384</td></tr></tbody></table></div>
+<p><strong>注意这两个数几乎一样</strong>，只差 1.6 倍。所以"prefill 比 decode 便宜"这件事，在第一层是不成立的——纯算力成本两者同一量级。</p>
+<h3>2.3 第三层：池子按峰值配，平均用不到一成</h3>
+<p>裸成本假设卡是满负荷的。实际不是。</p>
+<p>prefill 池 909 卡，按"峰值 QPS × 全部输入 + 缓存全失效"配。实际运行时，平均 QPS 只有峰值的 25%，85% 的输入又命中缓存，所以真实需要计算的只有：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>1.56 万亿未命中 token/年 ÷ (909 × 14,838 × 8,760 秒) = 3.7% 利用率</code></pre></figure>
+<p>decode 池 700 卡，按峰值并发 140,000 配。平均并发只有 140,000 × 25% = 35,000，所以：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>87.5 实例 × 1,666 并发 = 145,775 容量
+实际平均 35,000 ÷ 145,775 = 24% 占用（但按 token 产出算只有 9.4%）</code></pre></figure>
+<p>这就是成本真正被放大的地方：<strong>池子按峰值配，按平均值摊销</strong>。利用率 3.7% 和 9.4%，意味着每个 token 要摊 27 倍和 10 倍的闲置。</p>
+<h3>2.4 第四层：缓存把输入劈成两档</h3>
+<p>prefill 池的成本要摊到输入 token 上，但摊法有两种，结果差 10 倍：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>摊法</th><th>怎么算</th><th>未命中单价</th><th>命中单价</th></tr></thead><tbody><tr><td>平均摊</td><td>池成本 ÷ 全部输入 token</td><td>¥1.0</td><td>¥1.0</td></tr><tr><td>按实际计算摊</td><td>池成本 ÷ 未命中 token</td><td>¥6.6</td><td>≈0</td></tr></tbody></table></div>
+<p>第二种更真实：命中的 token 只做了哈希查找，没打矩阵乘，凭什么和未命中同价。</p>
+<p>再乘 1.56 的冗余系数，得到对外单价：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>单价</th><th>怎么来的</th></tr></thead><tbody><tr><td>未命中输入</td><td>¥10.24/百万</td><td>1.024 亿 × 1.56 ÷ 15.6 万亿</td></tr><tr><td>命中输入</td><td>¥0.05/百万</td><td>名义价，实际约为 0</td></tr><tr><td>输出</td><td>¥6.42/百万</td><td>0.789 亿 × 1.56 ÷ 19.2 万亿</td></tr><tr><td>reasoning</td><td>¥6.42/百万</td><td>与输出同价</td></tr></tbody></table></div>
 <p>验算一轮：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>285 × 2.70 = 769.5
-1,615 × 0.27 = 436.1
-350 × 11.34 = 3,969.0
-合计 5,174.6 → ¥0.00517 = 0.517 分/轮</code></pre></figure>
-<p>和第 1 章、第 14 章对上。</p>
-<p>这里要说清一个容易混的地方。第 14 章给过两个数：每百万输入 token ¥2.72、每百万输出 token ¥14.7。那两个数是<strong>两个独立的分摊视角</strong>——把全部成本分别摊到输入和输出上，各自看"如果全是这一类，单价是多少"。它们不能相加，也不能直接当价目表用。</p>
-<p>本章这张表才是能加总成账单的：四类分别定价，加起来等于总成本。</p>
-<p>缓存为什么便宜十倍？因为命中部分跳过 prefill，只做了三次哈希查找。它不占算力，只占显存——而显存的价格远低于算力。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>285 × 10.24 = 2,918
+1,615 × 0.05 = 81
+350 × 6.42 = 2,247
+合计 5,246 → 0.525 分/轮</code></pre></figure>
+<p>和第 1 章的 0.517 差 1.5%，差在"命中输入"给了一个名义价而不是零。</p>
+<h3>2.5 那为什么大家说"输出比输入贵四倍"</h3>
+<p>因为对外的输入价报的是<strong>混合价</strong>：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>混合输入 = (285 × 10.24 + 1,615 × 0.05) ÷ 1,900 = ¥1.58/百万
+输出 ¥6.42/百万
+比值 = 4.1 倍</code></pre></figure>
+<p>市场看到的 3 到 5 倍，全是这么来的。<strong>不是 decode 比 prefill 贵，是缓存把大部分输入变成了免费。</strong></p>
+<p>这也解释了一个反直觉的事实：如果你的缓存命中率是 0（比如每轮系统提示都带时间戳），输入价会立刻从 ¥1.58 跳到 ¥10.24，比输出还贵。所以第 20 章讲上下文工程时反复强调"变量要后置"——那不只是性能问题，是计价结构问题。</p>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. cached token 怎么判</h2>
 <p>引擎在响应里返回 <code>cached_tokens</code>，这是它真实命中的数目。平台不能自己估算，必须用引擎给的数——因为只有引擎知道块池里有什么。</p>
@@ -264,7 +291,7 @@ blockquote p{margin:.4em 0}
 <p>所以它不是"模型在内部思考"，是<strong>模型学会了把思考过程写出来</strong>。写出来的 token 进入上下文，下一步解码就能看到，等于用自然语言当草稿纸。</p>
 <p>为什么这样能提升准确率？因为自回归每生成一个 token 就是一次前向计算。多写 2,000 个 token，就多了 2,000 次计算机会。这叫 test-time compute——把算力从训练阶段挪到推理阶段，用时间换准确率。</p>
 <p>代价是三个数一起涨：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>普通模式</th><th>思考模式</th><th>倍数</th></tr></thead><tbody><tr><td>输出 token</td><td>350</td><td>2,350（2,000 推理 + 350 答案）</td><td>6.7×</td></tr><tr><td>单轮成本</td><td>0.517 分</td><td>2.79 分</td><td>5.4×</td></tr><tr><td>生成耗时（TPOT 44 ms）</td><td>15 秒</td><td>103 秒</td><td>6.7×</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>普通模式</th><th>思考模式</th><th>倍数</th></tr></thead><tbody><tr><td>输出 token</td><td>350</td><td>2,350（2,000 推理 + 350 答案）</td><td>6.7×</td></tr><tr><td>单轮成本</td><td>0.52 分</td><td>1.81 分</td><td>3.5×</td></tr><tr><td>生成耗时（TPOT 44 ms）</td><td>15 秒</td><td>103 秒</td><td>6.7×</td></tr></tbody></table></div>
 <p>103 秒意味着它根本不能用在交互式场景。这就是为什么思考模式的产品形态通常是"提交任务 → 等通知"，而不是聊天框里等。</p>
 <p>架构上要五条支持：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>要求</th><th>普通</th><th>思考</th></tr></thead><tbody><tr><td>超时</td><td>9 秒</td><td>300 秒以上</td></tr><tr><td>池子</td><td>与短请求混部</td><td>必须独立池（第 6 章形态分离）</td></tr><tr><td>计量</td><td>三项</td><td>加 reasoning 一列</td></tr><tr><td>流式</td><td>直接吐答案</td><td>决定是否展示推理过程</td></tr><tr><td>中断</td><td>少见</td><td>常见（用户等不及）</td></tr></tbody></table></div>

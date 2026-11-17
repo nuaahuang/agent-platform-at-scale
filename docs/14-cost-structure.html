@@ -260,7 +260,7 @@ blockquote p{margin:.4em 0}
 <p>0.517 分/轮 是内部口径，对外沟通要用另外两个：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>视角</th><th>数值</th><th>怎么算</th></tr></thead><tbody><tr><td>每轮</td><td>0.517 分</td><td>2.83 亿 ÷ 547.5 亿轮</td></tr><tr><td>每百万输入 token</td><td>¥2.72</td><td>2.83 亿 ÷ 1.04 亿个百万 token</td></tr><tr><td>每百万输出 token</td><td>¥14.7</td><td>2.83 亿 ÷ 1,920 万个百万 token</td></tr><tr><td>每个 DAU 每年</td><td>¥14.2</td><td>2.83 亿 ÷ 2,000 万</td></tr></tbody></table></div>
 <p>输入和输出差 5.4 倍，是因为一轮里输入 1,900 token、输出 350 token，但 prefill 的算力占比只有 36%。这个差值是定价的基础——第 17 章讲按 token 定价时，输出单价必须高出输入 3 倍以上。</p>
-<p>每 DAU 每年 ¥14.2 这个数最容易被追问。它的含义是：一个日活用户，一年消耗 14 块钱的算力。如果客单价低于这个数的两倍，商业模式不成立。顺着这三个数会引出一个问题：输入和输出为什么不同价？按环节拆开算，边际成本差 4.2 倍：</p>
+<p>每 DAU 每年 ¥14.2 这个数最容易被追问。它的含义是：一个日活用户，一年消耗 14 块钱的算力。如果客单价低于这个数的两倍，商业模式不成立。顺着这三个数会引出一个问题：输入和输出为什么不同价？这里要先说清摊法。prefill 池的成本有两种摊法：摊到全部输入 token 是 ¥0.99，摊到真正被计算的未命中 token（只占 15%）是 ¥6.56。两种都成立，差 6.6 倍。下表用第一种（平均摊），它对应的是对外的<strong>混合输入价</strong>：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>年成本</th><th>年 token 量</th><th>每百万 token</th></tr></thead><tbody><tr><td>prefill</td><td>1.03 亿</td><td>104 万亿</td><td>¥0.99</td></tr><tr><td>decode</td><td>0.79 亿</td><td>19.2 万亿</td><td>¥4.13</td></tr></tbody></table></div>
 <p>差价不是定价策略拍出来的，有三个物理来源。</p>
 <p>第一，输入可以缓存，输出不能。前缀命中率 85%，意味着输入里只有 15% 真正进了计算；而每一个输出 token 都必须现算。这一条单独就能解释 6.7 倍。</p>
