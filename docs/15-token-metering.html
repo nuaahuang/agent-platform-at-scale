@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token 计量学：账单是怎么一分一分算出来的 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Token 经济 · 第 15 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：账单和用户对不上</a><a href="#s2"><span>02</span>. 四类 token 与价目表</a><a href="#s3"><span>03</span>. cached token 怎么判</a><a href="#s4"><span>04</span>. reasoning token 怎么计</a><a href="#s5"><span>05</span>. 中途取消怎么计</a><a href="#s6"><span>06</span>. 重试、失败、超时</a><a href="#s7"><span>07</span>. 预扣与结算</a><a href="#s8"><span>08</span>阶梯与封顶</a><a href="#s9"><span>09</span>. 计量记录 schema</a><a href="#s10"><span>10</span>. 对账：差异从哪来</a><a href="#s11"><span>11</span>. 失败模式</a><a href="#s12"><span>12</span>. 什么情况下这些结论不成立</a><a href="#s13"><span>13</span>. 验收</a><a href="#s14"><span>14</span>. 复盘卡</a><a href="#s15"><span>15</span>. 延伸</a></nav>
+      <div class="rail-foot">Token 经济</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">15</div><div class="ch-kicker">Token 经济</div><h1>Token 计量学：账单是怎么一分一分算出来的</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>input / cached / output / reasoning 四类 token 怎么分，为什么价格不同？</li><li>缓存命中的那部分凭什么便宜，便宜多少？</li><li>reasoning token 用户看不到，凭什么计费？</li><li>用户中途取消，已生成的算不算？</li><li>重试、超时、5xx 各怎么计，谁承担？</li><li>平台账和引擎账差 3%，从哪查？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：账单和用户对不上</h2>
+<p>上线第二个月，三个租户同时投诉账单偏高。查了一周，发现三个不同的原因：</p>
+<ul><li>一个租户的账单包含了他重试的请求（网关 502 后自动重试，他付了两次钱）</li><li>一个租户用了思考模型，reasoning token 有 800，他看到的回答只有 200 字，觉得被多收</li><li>一个租户的请求超时被切断，他收到了半句话，但账单按完整输出算</li></ul>
+<p>三个问题都不是"算错了"，是<strong>计量口径没说清</strong>。</p>
+<p>这一章把口径定死：四类 token、五种结束状态、三个结算时点。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四类 token 与价目表</h2>
+<p>先看一轮请求的 token 构成：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>数量</th><th>说明</th></tr></thead><tbody><tr><td>输入（未命中缓存）</td><td>285</td><td>用户问题 200 + 检索 85（部分系统提示）</td></tr><tr><td>输入（命中缓存）</td><td>1,615</td><td>系统提示与工具定义的公共前缀</td></tr><tr><td>输出</td><td>350</td><td>用户能看到的回答</td></tr><tr><td>reasoning</td><td>0</td><td>本模型不产生，思考模型另算</td></tr></tbody></table></div>
+<p>四类分开计量，因为成本结构完全不同（第 14 章）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>单价</th><th>凭什么</th></tr></thead><tbody><tr><td>未命中输入</td><td>¥2.70/百万</td><td>要真算 prefill</td></tr><tr><td>命中输入</td><td>¥0.27/百万</td><td>只查表，不打矩阵乘</td></tr><tr><td>输出</td><td>¥11.34/百万</td><td>decode，占 KV、占并发</td></tr><tr><td>reasoning</td><td>¥11.34/百万</td><td>同样走 decode，只是用户看不到</td></tr></tbody></table></div>
+<p>验算一轮：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>285 × 2.70 = 769.5
+1,615 × 0.27 = 436.1
+350 × 11.34 = 3,969.0
+合计 5,174.6 → ¥0.00517 = 0.517 分/轮</code></pre></figure>
+<p>和第 1 章、第 14 章对上。</p>
+<p>这里要说清一个容易混的地方。第 14 章给过两个数：每百万输入 token ¥2.72、每百万输出 token ¥14.7。那两个数是<strong>两个独立的分摊视角</strong>——把全部成本分别摊到输入和输出上，各自看"如果全是这一类，单价是多少"。它们不能相加，也不能直接当价目表用。</p>
+<p>本章这张表才是能加总成账单的：四类分别定价，加起来等于总成本。</p>
+<p>缓存为什么便宜十倍？因为命中部分跳过 prefill，只做了三次哈希查找。它不占算力，只占显存——而显存的价格远低于算力。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. cached token 怎么判</h2>
+<p>引擎在响应里返回 <code>cached_tokens</code>，这是它真实命中的数目。平台不能自己估算，必须用引擎给的数——因为只有引擎知道块池里有什么。</p>
+<p>三个坑：</p>
+<p><strong>第一，cached 的边界是块。</strong> 块大小 16 token，命中 1,615 意味着 101 个整块。第 102 块只对了 8 个 token 也不算命中，那 8 个 token 按未命中计价。所以数字总是 16 的倍数。</p>
+<p><strong>第二，跨租户不能共享。</strong> 缓存键要带租户盐（第 10B 章），否则 A 租户的系统提示被 B 租户命中，既是安全漏洞，又是计费错误——B 不该为 A 的内容付钱，也不该享受 A 的热度。</p>
+<p><strong>第三，权重版本切换当天 cached 会归零。</strong> 那天的账单会涨 60% 以上，要提前通知租户，否则会被当成涨价。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. reasoning token 怎么计</h2>
+<p>思考模型会生成一段用户看不到的推理过程，500 到 2,000 token 不等。它确实消耗了 decode 算力，也占了 KV，所以必须计。</p>
+<p>有三种做法，各有代价：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>计费方式</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>并入 output</td><td>按输出价</td><td>简单</td><td>用户觉得回答 200 字收 800 token 的钱</td></tr><tr><td>单列但同价</td><td>单独一行</td><td>透明</td><td>账单变长，用户仍不理解</td></tr><tr><td>单列且打折</td><td>如 0.6 倍</td><td>接受度高</td><td>成本回收不全</td></tr></tbody></table></div>
+<p>我们的选择是单列且同价，理由是可审计：租户能查到"这 800 个 token 是思考过程"，虽然看不到内容，但能看到数量和单价。折价会让账更难解释——为什么同样是 decode token，有的 11.34 有的 6.8？</p>
+<p>一个必须做的防护：reasoning 要有上限。模型偶尔会陷入循环，生成几万 token 的思考。设一个 <code>max_reasoning_tokens</code>（比如 4,000），超了就强制收尾。没有这个上限，一次循环能把单轮成本推到 5 块钱。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 中途取消怎么计</h2>
+<p>三种中断，计费规则不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>中断方式</th><th>已生成</th><th>计费</th><th>理由</th></tr></thead><tbody><tr><td>客户端断开</td><td>有</td><td>计已生成的</td><td>算力已经花了</td></tr><tr><td>网关超时</td><td>有</td><td>计已生成的</td><td>同上，且超时是平台侧问题</td></tr><tr><td>用户点"停止"</td><td>有</td><td>计已生成的</td><td>用户主动，算力已消耗</td></tr><tr><td>排队中被取消</td><td>无</td><td>不计</td><td>没开始算</td></tr></tbody></table></div>
+<p>关键原则：<strong>按服务端实际生成量计，不按客户端收到的量计。</strong></p>
+<p>因为流式有缓冲，服务端可能已经生成 20 个 token，客户端只收到 15 个就断了。这 5 个 token 的算力确实花了，计费要算进去。</p>
+<p>麻烦在于用户感知：他看到 15 个字，账单算 20 个。差 5 个 token 是 0.00006 分，可以忽略；但如果缓冲很大（比如 200 token），就会引发投诉。</p>
+<p>所以工程上要把缓冲控制在小范围：每个分片 flush 一次，缓冲不超过 16 token。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 重试、失败、超时</h2>
+<p>这三类是账单争议的主要来源，规则要先定：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>情况</th><th>计费</th><th>谁承担</th><th>说明</th></tr></thead><tbody><tr><td>4xx（参数错、鉴权失败）</td><td>不计</td><td>—</td><td>没进引擎</td></tr><tr><td>5xx（服务端错）</td><td>不计</td><td>平台</td><td>用户没得到服务</td></tr><tr><td>超时（网关侧切断）</td><td>计已生成</td><td>平台补</td><td>见下</td></tr><tr><td>网关自动重试</td><td>只计一次</td><td>平台</td><td>幂等键去重</td></tr><tr><td>用户主动重试</td><td>各计各的</td><td>用户</td><td>是两次独立请求</td></tr><tr><td>引擎 OOM 崩溃</td><td>不计</td><td>平台</td><td>未完成</td></tr></tbody></table></div>
+<p>第四条要专门说。网关在 502/503 后会重试到另一个实例，用户只发了一次请求，但引擎可能跑了两遍（第一遍的算力白花了）。对用户只计一次，对平台要记两笔成本——<strong>用户账和成本账是两本账，不能混</strong>。</p>
+<p>超时那一行有个细节：如果超时是因为输出太长，那是用户的问题（他要求 4,000 字）；如果是平台慢，那是平台的问题。区分方法是看 <code>stop_reason</code>：<code>length</code> 是用户设的限制，<code>timeout</code> 是平台切断了。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 预扣与结算</h2>
+<p>计量不是请求结束才开始的。要防超额，必须在开始前预扣。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>请求进入
+  → 预扣：按 (输入 token + max_tokens) 估算上限，冻结额度
+  → 生成过程中：按已生成 token 增量更新
+  → 结束：按实际 usage 结算，退回多扣的</code></pre></figure>
+<p>预扣额度用最大值，不用估算值。因为估算不准——模型输出长度波动很大，按均值预估会让 20% 的请求中途被截断。</p>
+<p>冻结的额度从租户的实时余额里扣，结算时退。这样即使请求崩了没回调，冻结也会在 5 分钟后超时释放。</p>
+<p>超时释放这一条必须有。否则一次进程崩溃会让租户的余额永久少一块，第二天客诉就来。</p>
+<p>预扣额度有多大？按一轮典型请求算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>输入 1,900 token × ¥2.70/百万 = ¥0.0051
+输出上限 max_tokens 4,096 × ¥11.34/百万 = ¥0.0465
+合计 ¥0.0516 = 5.16 分</code></pre></figure>
+<p>而实际结算只有 0.517 分。<strong>冻结额度是实际消费的 10 倍</strong>，因为 <code>max_tokens</code> 取了上限而实际只用了 350。</p>
+<p>这带来两个后果。一是租户的余额要留够 10 倍的单次额度，否则并发一高就全被冻结、后续请求直接拒绝。二是必须尽快结算释放，通常请求结束 1 秒内退，否则余额看起来一直很紧。</p>
+<p>优化办法是按租户历史调整 <code>max_tokens</code> 的预估：常用 350 token 的租户，实测 P99 是 600，就把预扣按 600 算，冻结降到 1.5 倍。代价是偶尔超支，超支时按实际扣、允许账面临时透支。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7.5 阶梯与封顶</h2>
+<p>大租户不该按同一单价付。三条常见的商务规则要写进计量系统，而不是靠人工改单：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>规则</th><th>做法</th><th>计量系统的要求</th></tr></thead><tbody><tr><td>阶梯价</td><td>月用量 &gt;10 亿 token 打 8 折</td><td>记录要能按月聚合到租户</td></tr><tr><td>单请求封顶</td><td>单次请求最高 ¥1</td><td>结算时比较，超出部分由平台承担</td></tr><tr><td>月度保底</td><td>不足 5,000 元按 5,000 元收</td><td>月末出账时补差</td></tr></tbody></table></div>
+<p>第二条要注意：封顶是对用户的承诺，但成本真实发生了。所以要有监控——某个租户的请求频繁触发封顶，说明他在用超长输出薅羊毛，要限制 <code>max_tokens</code> 而不是一直垫成本。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 计量记录 schema</h2>
+<p>一条记录要能让三方对上账：租户、平台、财务。</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
+  &quot;request_id&quot;: &quot;req-7f3a9c&quot;,
+  &quot;idempotency_key&quot;: &quot;tenant-a:2026-11-17:88f1&quot;,
+  &quot;tenant_id&quot;: &quot;tenant-a&quot;,
+  &quot;model&quot;: &quot;w-2026-11-02&quot;,
+  &quot;usage&quot;: {
+    &quot;input_uncached&quot;: 285,
+    &quot;input_cached&quot;: 1615,
+    &quot;output&quot;: 350,
+    &quot;reasoning&quot;: 0
+  },
+  &quot;billing&quot;: {
+    &quot;cost_fen&quot;: 0.517,
+    &quot;price_version&quot;: &quot;price-2026-10-01&quot;,
+    &quot;currency&quot;: &quot;CNY&quot;
+  },
+  &quot;status&quot;: &quot;completed&quot;,
+  &quot;stop_reason&quot;: &quot;eos&quot;,
+  &quot;attempt&quot;: 1,
+  &quot;started_at&quot;: &quot;2026-11-17T09:12:03.221Z&quot;,
+  &quot;ended_at&quot;: &quot;2026-11-17T09:12:07.845Z&quot;
+}</code></pre></figure>
+<p>四个字段值得单独讲：</p>
+<ul><li><code>idempotency_key</code>：重试去重的唯一依据。同一个键只计一次。</li><li><code>price_version</code>：价格会变，账单必须能追到当时的价目表。没有这个字段，一年后对账要靠猜。</li><li><code>stop_reason</code>：<code>eos</code> / <code>length</code> / <code>timeout</code> / <code>cancelled</code> / <code>error</code>，决定计费规则。</li><li><code>attempt</code>：第几次尝试。网关重试时，第一次记 <code>cost</code> 但 <code>billable=false</code>。</li></ul>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 对账：差异从哪来</h2>
+<p>平台账和引擎账每天对一次，差异要压到 0.1% 以内。常见的四个来源：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>来源</th><th>表现</th><th>怎么查</th></tr></thead><tbody><tr><td>tokenizer 版本不一致</td><td>差 1–3%</td><td>比对 token 数，查版本号</td></tr><tr><td>reasoning 漏计</td><td>差 5–20%</td><td>看思考模型的请求</td></tr><tr><td>重试重复计</td><td>差等于重试量</td><td>按 idempotency_key 去重后比</td></tr><tr><td>缓存标记不同步</td><td>cached 与 uncached 比例异常</td><td>比对引擎返回的 cached_tokens</td></tr></tbody></table></div>
+<p>第一条最隐蔽：平台用 A 版 tokenizer 算 token 数，引擎用 B 版。同一段文本差 1–3%，日积月累就是一笔钱。解法是统一用引擎返回的 usage，平台不自己算。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>账单比用户算的高</td><td>重试重复计费</td><td>查同 idempotency_key 的记录</td><td>去重</td></tr><tr><td>用户说没收到那么多字</td><td>服务端缓冲多生成</td><td>比对 usage 与客户端收到的</td><td>减少 flush 缓冲</td></tr><tr><td>思考模型账单翻倍</td><td>reasoning 没单列</td><td>看 usage 里有没有这一项</td><td>单列并通知租户</td></tr><tr><td>版本切换当天账单暴涨</td><td>cached 归零</td><td>看 cached 比例曲线</td><td>提前通知，或分摊</td></tr><tr><td>余额被永久扣掉</td><td>预扣未超时释放</td><td>查冻结记录</td><td>加 5 分钟超时</td></tr><tr><td>两个租户账单完全一样</td><td>缓存键没带租户盐</td><td>看哈希键构造</td><td>加盐，重刷缓存</td></tr></tbody></table></div>
+<p>最后一行不只是计费问题，是安全问题：缓存键不带租户，A 租户的内容会被 B 命中，用户可能在回答里看到别人的数据（第 10B 章）。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>cached 按 0.1 倍计价</td><td>缓存命中率超过 95% 时，成本几乎全在 decode，cached 可以更低</td></tr><tr><td>reasoning 同价</td><td>思考 token 与输出 token 的 KV 占用差异大时，要分开定价</td></tr><tr><td>中途取消按已生成计</td><td>监管或合同要求"未收到不计"时，按客户端确认为准</td></tr><tr><td>预扣按最大值</td><td>大客户有充足授信时，可以后付费，省掉冻结开销</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 验收</h2>
+<ol><li>能说出你系统里 token 分几类，各自的单价怎么定。</li><li>能算出一次缓存命中的请求比未命中便宜多少。</li><li>能列出五种结束状态，并说出各自的计费规则。</li><li>能设计一条计量记录，让租户、平台、财务三方都能对上账。</li></ol>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为计量就是"数 token 乘单价"，实际差在口径——缓存命中的 token、用户没看到的思考 token、被切断的半个回答，三件事各有各的规则，不写清楚就是每天在处理客诉。</p>
+</section>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>14. 延伸</h2>
+<ul><li>第 6 章：缓存命中率与量化，直接决定 cached 与 uncached 的比例</li><li>第 10B 章：缓存键为什么必须带租户盐</li><li>第 14 章：单价怎么从成本推出来</li><li>第 16 章：计量数据怎么归因到业务线</li><li>第 17 章：这些单价怎么变成对外报价</li></ul>
+<p>结论是：计量不是财务的活，是架构的一部分。四类 token、五种结束状态、三个结算时点，任何一处口径含糊，都会变成客诉。而口径定得清不清，取决于系统有没有记录足够的字段——schema 里少一个 stop_reason，一年后就没有任何办法解释那笔超时账单。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="14-cost-structure.html"><span>上一章</span><b>14 · 成本结构：2.83 亿拆成什么，降本从哪下手</b></a><a class="nav-next" href="31A-rsi-flywheel.html"><span>下一章</span><b>31A · RSI：数据飞轮与自我改进</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>
