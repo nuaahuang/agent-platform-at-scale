@@ -249,25 +249,41 @@ blockquote p{margin:.4em 0}
 <p><strong>注意这两个数几乎一样</strong>，只差 1.6 倍。所以"prefill 比 decode 便宜"这件事，在第一层是不成立的——纯算力成本两者同一量级。</p>
 <h3>2.3 第三层：池子按峰值配，平均用不到一成</h3>
 <p>裸成本假设卡是满负荷的。实际不是。</p>
-<p>prefill 池 909 卡，按"峰值 QPS × 全部输入 + 缓存全失效"配。实际运行时，平均 QPS 只有峰值的 25%，85% 的输入又命中缓存，所以真实需要计算的只有：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>1.56 万亿未命中 token/年 ÷ (909 × 14,838 × 8,760 秒) = 3.7% 利用率</code></pre></figure>
-<p>decode 池 700 卡，按峰值并发 140,000 配。平均并发只有 140,000 × 25% = 35,000，所以：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>87.5 实例 × 1,666 并发 = 145,775 容量
-实际平均 35,000 ÷ 145,775 = 24% 占用（但按 token 产出算只有 9.4%）</code></pre></figure>
-<p>这就是成本真正被放大的地方：<strong>池子按峰值配，按平均值摊销</strong>。利用率 3.7% 和 9.4%，意味着每个 token 要摊 27 倍和 10 倍的闲置。</p>
-<h3>2.4 第四层：缓存把输入劈成两档</h3>
-<p>prefill 池的成本要摊到输入 token 上，但摊法有两种，结果差 10 倍：</p>
+<p>prefill 池 909 卡，年产能要先换算成秒——一年 8,760 小时，就是 3,154 万秒：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>年产能 = 909 卡 × 14,838 token/s × 3,154 万秒 = 4.25e14 token
+实际需求 = 1.56 万亿（只有 15% 输入未命中缓存）
+利用率 = 1.56e13 ÷ 4.25e14 = 3.7%</code></pre></figure>
+<p>decode 池 87.5 个实例，按 token 产出算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>年产能 = 87.5 × 74,375 token/s × 3,154 万秒 = 2.05e14 token
+实际产出 = 19.2 万亿
+利用率 = 1.92e13 ÷ 2.05e14 = 9.4%</code></pre></figure>
+<p>注意 decode 这里用 token 产出算，不是用并发算。按并发算是 24% 占用（平均 35,000 对容量 145,775），但那是"装了多少请求"，不是"产出多少 token"。算单价要用 token 产出。</p>
+<p>这就是成本真正被放大的地方：<strong>池子按峰值配，按平均产出摊销</strong>。3.7% 和 9.4% 的利用率，意味着每个 token 要摊 27 倍和 10.7 倍的闲置。</p>
+<h3>2.4 第四层：把闲置和冗余乘回去</h3>
+<p>到这里，一条完整的链就通了：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>卡时 ¥12.86/卡时
+  ÷ (单卡吞吐 × 3,600)         ← 裸算力成本
+= 裸成本
+  ÷ 利用率                      ← 摊掉闲置
+= 满摊成本
+  × 1.56                        ← 冗余 1.3 × 弹性 1.2
+= 单价</code></pre></figure>
+<p>代进两组数：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>卡时</th><th>单卡吞吐</th><th>裸成本</th><th>利用率</th><th>乘 1.56</th><th>单价</th></tr></thead><tbody><tr><td>prefill</td><td>12.86</td><td>14,838</td><td>0.241</td><td>3.7%</td><td>6.51 × 1.56</td><td><strong>10.24</strong></td></tr><tr><td>decode</td><td>12.86</td><td>9,297</td><td>0.384</td><td>9.4%</td><td>4.09 × 1.56</td><td><strong>6.42</strong></td></tr></tbody></table></div>
+<p>这两行就是价目表的来源。可以看到决定性因素不是"哪个环节快"，是利用率——prefill 3.7% 比 decode 9.4% 低一半多，所以它每个 token 摊的闲置更多。</p>
+<h3>2.5 第五层：缓存把输入再劈两档</h3>
+<p>上面的 10.24 是"未命中输入"的价。但输入里 85% 是命中缓存的，它们没打矩阵乘，只做了哈希查找，不能同价。</p>
+<p>摊法有两种，差 10 倍：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>摊法</th><th>怎么算</th><th>未命中单价</th><th>命中单价</th></tr></thead><tbody><tr><td>平均摊</td><td>池成本 ÷ 全部输入 token</td><td>¥1.0</td><td>¥1.0</td></tr><tr><td>按实际计算摊</td><td>池成本 ÷ 未命中 token</td><td>¥6.6</td><td>≈0</td></tr></tbody></table></div>
-<p>第二种更真实：命中的 token 只做了哈希查找，没打矩阵乘，凭什么和未命中同价。</p>
-<p>再乘 1.56 的冗余系数，得到对外单价：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>单价</th><th>怎么来的</th></tr></thead><tbody><tr><td>未命中输入</td><td>¥10.24/百万</td><td>1.024 亿 × 1.56 ÷ 15.6 万亿</td></tr><tr><td>命中输入</td><td>¥0.05/百万</td><td>名义价，实际约为 0</td></tr><tr><td>输出</td><td>¥6.42/百万</td><td>0.789 亿 × 1.56 ÷ 19.2 万亿</td></tr><tr><td>reasoning</td><td>¥6.42/百万</td><td>与输出同价</td></tr></tbody></table></div>
+<p>第二种更真实。乘冗余后就是价目表：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>类型</th><th>单价</th><th>怎么来的</th></tr></thead><tbody><tr><td>未命中输入</td><td>¥10.24/百万</td><td>0.241 ÷ 3.7% × 1.56</td></tr><tr><td>命中输入</td><td>¥0.05/百万</td><td>名义价，实际约为 0</td></tr><tr><td>输出</td><td>¥6.42/百万</td><td>0.384 ÷ 9.4% × 1.56</td></tr><tr><td>reasoning</td><td>¥6.42/百万</td><td>与输出同价</td></tr></tbody></table></div>
 <p>验算一轮：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>285 × 10.24 = 2,918
 1,615 × 0.05 = 81
 350 × 6.42 = 2,247
 合计 5,246 → 0.525 分/轮</code></pre></figure>
 <p>和第 1 章的 0.517 差 1.5%，差在"命中输入"给了一个名义价而不是零。</p>
-<h3>2.5 那为什么大家说"输出比输入贵四倍"</h3>
+<h3>2.6 那为什么大家说"输出比输入贵四倍"</h3>
 <p>因为对外的输入价报的是<strong>混合价</strong>：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>混合输入 = (285 × 10.24 + 1,615 × 0.05) ÷ 1,900 = ¥1.58/百万
 输出 ¥6.42/百万
@@ -304,7 +320,7 @@ blockquote p{margin:.4em 0}
 <p><strong>第三，卖点变成了默认。</strong> 当所有厂商都能做，它就不再是宣传语。产品页上不写了，不代表后台没开。</p>
 <p>从账上看，这个收敛是必然的。深度思考的成本是普通模式的 3.5 倍、耗时是 6.7 倍（103 秒）。如果对所有请求默认开启，成本翻三倍、SLO 全破。所以它只能留在"高价值 + 可等待"的场景里：数学、代码、复杂条款比对、多步规划。日常客服的 90% 请求用不上。</p>
 <p>判断一个系统有没有在用推理模式，看三个地方，而不是看 UI 上有没有按钮：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>看什么</th><th>有推理模式的特征</th></tr></thead><tbody><tr><td>输出 token 与输入 token 的比例</td><td>明显高于 1（普通对话约 0.2）</td></tr><tr><td>单请求耗时分布</td><td>双峰：一批 2 秒内，一批 60 秒以上</td></tr><tr><td>计费明细</td><td>有 reasoning 一列，或者 output 单价明显偏高</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>看什么</th><th>有推理模式的特征</th></tr></thead><tbody><tr><td>输出 token 与输入 token 的比例</td><td>高于 1（普通对话约 0.2）</td></tr><tr><td>单请求耗时分布</td><td>双峰：一批 2 秒内，一批 60 秒以上</td></tr><tr><td>计费明细</td><td>有 reasoning 一列，或者 output 单价高于输入 3 倍以上</td></tr></tbody></table></div>
 <p>第二行最实用。如果耗时分布是单峰，说明所有请求走同一条路径，那多半没开推理。</p>
 <p>有三种做法，各有代价：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>计费方式</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>并入 output</td><td>按输出价</td><td>简单</td><td>用户觉得回答 200 字收 800 token 的钱</td></tr><tr><td>单列但同价</td><td>单独一行</td><td>透明</td><td>账单变长，用户仍不理解</td></tr><tr><td>单列且打折</td><td>如 0.6 倍</td><td>接受度高</td><td>成本回收不全</td></tr></tbody></table></div>
