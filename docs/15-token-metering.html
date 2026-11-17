@@ -257,6 +257,19 @@ blockquote p{margin:.4em 0}
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. reasoning token 怎么计</h2>
 <p>思考模型会生成一段用户看不到的推理过程，500 到 2,000 token 不等。它确实消耗了 decode 算力，也占了 KV，所以必须计。</p>
+<h3>4.1 深度思考模式的原理</h3>
+<p>它没有特殊的"思考模块"。机制上就是让模型先生成一段推理文本，再生成答案——两者都是普通的自回归解码，只是内容不同：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>[用户问题] → [推理: &quot;先看政策第 3 条……等等，签收日期要算退货期限……&quot;] → [答案]</code></pre></figure>
+<p>这段推理会被训练出来。做法是先用少量长推理样本做冷启动，再用强化学习（GRPO 这类）在有确定答案的任务上训练：答对了给正奖励，答错了给负奖励。训练久了，模型自发学会"先复述条件、再代入、最后验算"——因为这样做答对率高。</p>
+<p>所以它不是"模型在内部思考"，是<strong>模型学会了把思考过程写出来</strong>。写出来的 token 进入上下文，下一步解码就能看到，等于用自然语言当草稿纸。</p>
+<p>为什么这样能提升准确率？因为自回归每生成一个 token 就是一次前向计算。多写 2,000 个 token，就多了 2,000 次计算机会。这叫 test-time compute——把算力从训练阶段挪到推理阶段，用时间换准确率。</p>
+<p>代价是三个数一起涨：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>普通模式</th><th>思考模式</th><th>倍数</th></tr></thead><tbody><tr><td>输出 token</td><td>350</td><td>2,350（2,000 推理 + 350 答案）</td><td>6.7×</td></tr><tr><td>单轮成本</td><td>0.517 分</td><td>2.79 分</td><td>5.4×</td></tr><tr><td>生成耗时（TPOT 44 ms）</td><td>15 秒</td><td>103 秒</td><td>6.7×</td></tr></tbody></table></div>
+<p>103 秒意味着它根本不能用在交互式场景。这就是为什么思考模式的产品形态通常是"提交任务 → 等通知"，而不是聊天框里等。</p>
+<p>架构上要五条支持：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>要求</th><th>普通</th><th>思考</th></tr></thead><tbody><tr><td>超时</td><td>9 秒</td><td>300 秒以上</td></tr><tr><td>池子</td><td>与短请求混部</td><td>必须独立池（第 6 章形态分离）</td></tr><tr><td>计量</td><td>三项</td><td>加 reasoning 一列</td></tr><tr><td>流式</td><td>直接吐答案</td><td>决定是否展示推理过程</td></tr><tr><td>中断</td><td>少见</td><td>常见（用户等不及）</td></tr></tbody></table></div>
+<p>流式那一条是产品决策，不是技术决策。展示推理过程（DeepSeek 风格）能让用户理解"它在想"，首字延迟仍然是几百毫秒；隐藏推理（o1 风格）则用户要等到思考结束才见字，感知延迟就是 103 秒。</p>
+<p>还有一个容易忽略的点：<strong>推理不是越长越好</strong>。超过某个长度后准确率会下降，因为模型开始自我怀疑、反复推翻。所以要设 <code>max_reasoning_tokens</code>，通常 4,000 封顶。</p>
 <p>有三种做法，各有代价：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>计费方式</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>并入 output</td><td>按输出价</td><td>简单</td><td>用户觉得回答 200 字收 800 token 的钱</td></tr><tr><td>单列但同价</td><td>单独一行</td><td>透明</td><td>账单变长，用户仍不理解</td></tr><tr><td>单列且打折</td><td>如 0.6 倍</td><td>接受度高</td><td>成本回收不全</td></tr></tbody></table></div>
 <p>我们的选择是单列且同价，理由是可审计：租户能查到"这 800 个 token 是思考过程"，虽然看不到内容，但能看到数量和单价。折价会让账更难解释——为什么同样是 decode token，有的 11.34 有的 6.8？</p>
