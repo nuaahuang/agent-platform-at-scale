@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成本归因与预算控制：谁花了这 2.83 亿 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Token 经济 · 第 16 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：月底一张总账单</a><a href="#s2"><span>02</span>. 五维归因</a><a href="#s3"><span>03</span>. 能直接算的 64%，要分摊的 36%</a><a href="#s4"><span>04</span>. 分摊的三种口径</a><a href="#s5"><span>05</span>. 缓存池怎么摊</a><a href="#s6"><span>06</span>. 预算控制：三档阈值</a><a href="#s7"><span>07</span>. 配额怎么落地</a><a href="#s8"><span>08</span>. 超额之后的四种处理</a><a href="#s9"><span>09</span>一个月的预算是怎么跑的</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>归因结果怎么用</a><a href="#s12"><span>12</span>. 什么情况下这些结论不成立</a><a href="#s13"><span>13</span>. 验收</a><a href="#s14"><span>14</span>. 复盘卡</a><a href="#s15"><span>15</span>. 延伸</a></nav>
+      <div class="rail-foot">Token 经济</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">16</div><div class="ch-kicker">Token 经济</div><h1>成本归因与预算控制：谁花了这 2.83 亿</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>五维归因是哪五维，各自服务谁？</li><li>哪些成本能直接算到人头上，哪些只能分摊？</li><li>共享资源（缓存池、冗余卡）按什么摊才公平？</li><li>硬限额和软预警分别设在多少，超了怎么办？</li><li>配额为什么要预扣，定时汇总行不行？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：月底一张总账单</h2>
+<p>财务把 2.83 亿的账单发过来，只有一行：推理服务，全年 2.83 亿。</p>
+<p>三个业务线立刻吵起来：</p>
+<ul><li>售后说："我们只占三成流量，凭什么摊三分之一？"</li><li>物流说："我们的请求都很短，凭什么按请求数摊？"</li><li>营销说："我们只在活动期间用，平时不用，凭什么按年摊？"</li></ul>
+<p>三种说法都有道理，因为它们争的不是"总量"，是"分摊口径"。而口径不定义清楚，这件事永远吵不完。</p>
+<p>成本归因要解决的就是这个：把总额拆到能认领的粒度，并且让被拆的人接受拆法。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 五维归因</h2>
+<p>一笔成本可以从五个角度看，每个角度服务不同的人。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>粒度</th><th>例子</th><th>谁在看</th></tr></thead><tbody><tr><td>租户</td><td>谁付钱</td><td>tenant-a</td><td>商务、财务</td></tr><tr><td>业务线</td><td>哪个产品</td><td>售后 / 物流 / 营销</td><td>业务负责人</td></tr><tr><td>模型</td><td>用哪个模型</td><td>200B MoE / lite-8B / 外部 API</td><td>算法、平台</td></tr><tr><td>请求类型</td><td>干什么</td><td>意图分类 / 多步退款 / 政策问答</td><td>产品</td></tr><tr><td>时间</td><td>什么时候</td><td>小时 / 日 / 月</td><td>容量规划</td></tr></tbody></table></div>
+<p>五个维度不是五张报表，是同一份明细的五种切法。所以底下要有一张"请求级明细表"，五维都从它聚合出来——不能各建一套，否则五个数对不上。</p>
+<p>明细表的最小字段就是第 15 章那条计量记录：租户、模型、token 四类、结束状态、时间戳。加上业务线和请求类型两个标签，就有了五维。</p>
+<p>标签怎么打？两个来源：</p>
+<ul><li>业务线：按租户配置（一个租户通常属于一个业务线），少数跨线的按 API key 区分</li><li>请求类型：按意图分类的结果（第 6 章路由器的输出），这个标签是免费的</li></ul>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 能直接算的 64%，要分摊的 36%</h2>
+<p>不是所有成本都能追到具体请求。先看结构：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>成本类型</th><th>金额</th><th>占比</th><th>能不能直接归因</th></tr></thead><tbody><tr><td>prefill 与 decode 的算力</td><td>1.81 亿</td><td>64%</td><td>能，token × 单价</td></tr><tr><td>冗余与弹性</td><td>1.02 亿</td><td>36%</td><td>不能，只能分摊</td></tr></tbody></table></div>
+<p>前一行是"真的被某个请求用掉的"，后一行是"为了扛峰值和故障而常备的"。</p>
+<p><strong>36% 靠分摊，不靠计量。</strong> 这个比例决定了归因的精度上限——再怎么精确计量，也只能把 64% 算准，剩下 36% 的方法选择会带来 10 个点以上的差异。</p>
+<p>这一条要先跟财务说清楚，否则他们会以为"上了计量系统，账就能算到分"。</p>
+<h3>3.1 勾稽：五个维度必须能加回总账</h3>
+<p>五维归因最容易出的错不是算错，是<strong>对不上</strong>：租户维度加起来 2.80 亿，业务线维度加起来 2.86 亿，总账 2.83 亿。</p>
+<p>所以每天要跑一次勾稽，四条规则：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>检查</th><th>期望</th><th>不等说明什么</th></tr></thead><tbody><tr><td>Σ 租户 = 总账</td><td>差 &lt;0.1%</td><td>有请求没打租户标签</td></tr><tr><td>Σ 业务线 = 总账</td><td>差 &lt;0.3%</td><td>跨线租户没拆分</td></tr><tr><td>Σ 模型 = 总账</td><td>差 &lt;0.1%</td><td>有调用绕过了计量</td></tr><tr><td>Σ 小时 = 日总额</td><td>差 &lt;0.5%</td><td>跨小时的请求被算重或漏算</td></tr></tbody></table></div>
+<p>第三行最值得盯。<strong>有调用绕过计量</strong>通常意味着有人直连了模型服务，没走网关——这既是账的问题，也是安全问题（没走网关就没有鉴权和限流）。</p>
+<p>模型维度天然不均衡，可以顺手看出成本结构：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>流量占比</th><th>成本占比</th></tr></thead><tbody><tr><td>200B MoE</td><td>55%</td><td>约三分之二</td></tr><tr><td>lite-8B</td><td>40%</td><td>约一成</td></tr><tr><td>外部 API</td><td>5%</td><td>约三分之一</td></tr></tbody></table></div>
+<p>最后一行是反差最大的：<strong>5% 的流量吃掉三分之一的成本</strong>，因为外部 API 单价 3.5 分/轮，是自建的 12 倍。这一行会直接推动"兜底能不能再少一点"的讨论。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 分摊的三种口径</h2>
+<p>同一个 36%，三种摊法，结果差 20 个百分点。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>摊法</th><th>怎么算</th><th>对谁有利</th><th>后果</th></tr></thead><tbody><tr><td>按用量</td><td>按 token 数占比</td><td>平稳型租户</td><td>高峰期租户白占容量</td></tr><tr><td>按峰值</td><td>按峰值并发占比</td><td>平稳型租户</td><td>高峰型被重罚</td></tr><tr><td>按预留</td><td>按预购容量</td><td>谁预留谁付</td><td>预留了不用就浪费</td></tr></tbody></table></div>
+<p>举个具体的例子。三个租户的用量和峰值不一样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>日均用量</th><th>峰值占比</th><th>按用量摊</th><th>按峰值摊</th></tr></thead><tbody><tr><td>A（高峰型）</td><td>30%</td><td>50%</td><td>30%</td><td>50%</td></tr><tr><td>B（平稳型）</td><td>50%</td><td>30%</td><td>50%</td><td>30%</td></tr><tr><td>C（长尾）</td><td>20%</td><td>20%</td><td>20%</td><td>20%</td></tr></tbody></table></div>
+<p>A 是白天集中用，B 是全天均匀用。按用量摊，A 付 30%；按峰值摊，A 付 50%——差 20 个百分点，一年就是 2,000 万。</p>
+<p>这个差异不能靠技术解决，是商务决策。业界常见的做法是组合：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>应付 = 用量费（按 token）+ 容量预留费（按峰值）
+     = 64% 按用量 + 36% 按峰值</code></pre></figure>
+<p>这样 A 付 0.64×30% + 0.36×50% = 37.2%，B 付 0.64×50% + 0.36×30% = 42.8%，C 付 20%。比单纯的任一摊法都更容易接受。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 缓存池怎么摊</h2>
+<p>还有一个更麻烦的共享资源：前缀缓存。</p>
+<p>A 租户的热门前缀占了缓存池的 40%，把 B 租户的挤出去了。B 的命中率因此从 90% 掉到 70%，成本上升。这笔账算谁的？</p>
+<p>三种处理：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>效果</th><th>代价</th></tr></thead><tbody><tr><td>不隔离，谁抢到算谁的</td><td>利用率最高</td><td>大租户挤小租户，不公平</td></tr><tr><td>按租户配额分池</td><td>公平</td><td>小租户分到的池子太小，命中率低</td></tr><tr><td>共享 + 计费时按实际命中率算</td><td>折中</td><td>需要精确记录每个租户的命中率</td></tr></tbody></table></div>
+<p>我们选第三种：缓存池共享，但计量时用各租户自己的 cached 比例。B 被挤掉了，它的 cached 少，付的钱就少——成本自动转给了占得多的人。</p>
+<p>这一条能成立，前提是第 15 章的计量记录里 cached 与 uncached 是分开的。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 预算控制：三档阈值</h2>
+<p>归因解决"花了多少"，预算控制解决"能不能继续花"。</p>
+<p>三个阈值，动作不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>用量</th><th>动作</th><th>谁收到通知</th><th>用户感知</th></tr></thead><tbody><tr><td>80%</td><td>软预警</td><td>租户管理员 + 平台</td><td>无</td></tr><tr><td>95%</td><td>降级</td><td>租户 + 平台</td><td>慢一点 / 短一点</td></tr><tr><td>100%</td><td>阻断新请求</td><td>租户 + 平台</td><td>429</td></tr></tbody></table></div>
+<p>关键设计是 95% 那一档：<strong>不是直接拒绝，是先降级</strong>。</p>
+<p>降级的顺序按第 6 章和第 15 章的组合来：</p>
+<ol><li>关深度思考（省 3.5 倍成本）</li><li>长回答截断到 200 token</li><li>非关键请求走 lite-8B</li><li>才轮到拒绝</li></ol>
+<p>这样做的好处是：预算用完的租户还能用，只是慢一点、笨一点。比直接 429 友好，也比"不设限"可控。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 配额怎么落地</h2>
+<p>配额要有三个属性：能实时扣、能预扣、能退。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>请求进来
+  → 查配额（Redis，O(1)）
+  → 预扣估算额度（第 15 章的 5.16 分）
+  → 检查剩余额度够不够
+  → 不够就走降级或拒绝
+  → 结束后结算，退回多扣的</code></pre></figure>
+<p>为什么不能定时汇总？因为一次批量调用就能把月度预算打穿。假设某租户月预算 100 万，定时汇总每 5 分钟一次，这 5 分钟里他可以跑 200 万的量——下个周期才发现，已经晚了。</p>
+<p>所以配额必须是<strong>实时强一致</strong>的读，至少在预扣这一步。</p>
+<p>Redis 存什么：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>quota:{tenant}:{month}      已用额度（分）
+quota:{tenant}:{month}:hold 冻结中（进行中的请求）</code></pre></figure>
+<p>两个 key 分开，是为了让"已用"和"进行中"能分别统计。冻结部分超时 5 分钟自动释放（第 15 章）。</p>
+<h3>7.1 配额的三级继承</h3>
+<p>预算不是一个平铺的数字，是三层结构：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>公司年度预算 2.83 亿
+  ├─ 业务线 A 1.2 亿
+  │    ├─ 租户 a1 6,000 万
+  │    └─ 租户 a2 6,000 万
+  └─ 业务线 B 1.6 亿</code></pre></figure>
+<p>扣减顺序自下而上检查，自上而下扣：</p>
+<ul><li>请求进来，先看租户配额够不够</li><li>租户够了，再看业务线剩余够不够（防止某条线被单个租户吃穿）</li><li>都够才放行</li></ul>
+<p>两级都扣，意味着同一笔消费在两个层级各记一次。这不是浪费存储，是为了让"哪个业务线超了"和"哪个租户超了"能分别回答。</p>
+<p>继承规则要定清楚：租户配额是业务线配额的子集，还是独立额度？前者简单（子集用完就停），后者灵活（业务线内部可调剂）。多数公司选后者——给业务线一个池子，线内自己分。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 超额之后的四种处理</h2>
+<p>100% 之后不是只有"拒绝"一个选项：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>处理</th><th>适用</th><th>实现</th></tr></thead><tbody><tr><td>拒绝新请求</td><td>默认</td><td>429 + Retry-After</td></tr><tr><td>允许透支到 120%</td><td>重要租户</td><td>白名单 + 事后补签</td></tr><tr><td>降级到共享池</td><td>有弹性</td><td>走慢速队列</td></tr><tr><td>转人工审批</td><td>突发大额</td><td>工单</td></tr></tbody></table></div>
+<p>透支的设计要小心：给谁透支、透支多少、谁批，都要写进合同。技术侧只负责执行——按租户配置一个 <code>overdraft_ratio</code>，0 表示不许透支。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8.1 一个月的预算是怎么跑的</h2>
+<p>配额不是设一次就完事，它按月滚动。一个典型流程：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>动作</th><th>谁做</th></tr></thead><tbody><tr><td>上月 20 日</td><td>出下月预测（按近 3 月趋势 + 已知活动）</td><td>财务 + 平台</td></tr><tr><td>上月 25 日</td><td>分到业务线，业务线分到租户</td><td>业务负责人</td></tr><tr><td>当月 1 日</td><td>配额生效</td><td>平台</td></tr><tr><td>每周一</td><td>用量周报，超 60% 的提前预警</td><td>平台</td></tr><tr><td>当月 20 日</td><td>中期检查，预测超支的申请追加</td><td>业务 + 财务</td></tr><tr><td>次月 3 日</td><td>结算，差异分析</td><td>财务</td></tr></tbody></table></div>
+<p>第二步最关键，也最容易糊弄：业务线拿到总额后，往往按上月的比例一分了事。结果用量涨了的租户月初就撞线，用量降了的租户预算闲置。</p>
+<p>正确做法是按"用量趋势"分，不是按"上月占比"分。趋势看两点：近四周的斜率，以及有没有已知的活动（大促、新品上线）。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>五个维度的数对不上</td><td>各建一套报表</td><td>交叉验证总和</td><td>统一从明细表聚合</td></tr><tr><td>归因误差超过 10%</td><td>共享成本按单一维度摊</td><td>对比两种摊法</td><td>改成用量 + 峰值组合</td></tr><tr><td>租户投诉被多收</td><td>缓存被挤占但仍按命中计</td><td>查 cached 比例</td><td>按实际命中率计量</td></tr><tr><td>预算打穿才发现</td><td>定时汇总而非实时扣</td><td>对比日终与实时</td><td>改预扣</td></tr><tr><td>降级没生效，直接拒绝</td><td>阈值配置写成同一档</td><td>查配置</td><td>80/95/100 三档分开</td></tr><tr><td>透支无人审批</td><td>白名单太长</td><td>月度审计</td><td>收紧白名单</td></tr></tbody></table></div>
+<p>第四行最典型。多数系统把配额做成"每日对一次账"，看着能用，实际上防不住批量调用——一个大客户的一次导入就能超支两个月。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>9.1 归因结果怎么用</h2>
+<p>归因不是为了让财务好看，是为了改行为。四个典型用法，按见效速度排：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>用法</th><th>从归因里看什么</th><th>见效</th></tr></thead><tbody><tr><td>砍兜底</td><td>外部 API 占三分之一成本</td><td>一周</td></tr><tr><td>缩短长回答</td><td>输出 token 集中在少数租户</td><td>两周</td></tr><tr><td>提缓存命中</td><td>某租户 cached 比例只有 40%</td><td>一月</td></tr><tr><td>调峰谷定价</td><td>峰时成本是谷时的 4 倍</td><td>一季度</td></tr></tbody></table></div>
+<p>第一条最快。外部 API 只占 5% 流量、三分之一成本，说明兜底策略太宽——其中 60% 的请求本可以自建模型答。把它从 5% 压到 2%，一年省 2,000 万（第 14 章的第 10 条降本措施就是这个）。</p>
+<p>第三条最容易被忽略。cached 比例 40% 意味着这个租户的系统提示里混了变量，前缀每次都不同（第 7 章）。改法不是加卡，是让他把变量挪到用户消息里——一行代码，成本降一半。</p>
+<p>这也是归因的真正价值：<strong>它把"成本高"这个模糊感受，变成了"这个租户的 cached 比例只有 40%"这种可执行的动作。</strong></p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>10. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>36% 必须分摊</td><td>租户数少于 3 个时，直接按合同谈固定费更简单</td></tr><tr><td>按用量 + 峰值组合摊</td><td>租户的用量曲线高度一致时，单一口径就够</td></tr><tr><td>95% 降级</td><td>租户明确要求"超了就直接停"时，跳过降级</td></tr><tr><td>实时预扣</td><td>内部系统、无计费诉求时，可以只做监控</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>11. 验收</h2>
+<ol><li>能说出你的系统里五维各是什么，明细表能不能支撑五维聚合。</li><li>能算出可直算成本与需分摊成本的比例。</li><li>能对两个用量曲线不同的租户，分别算出按用量摊和按峰值摊的金额差异。</li><li>能设计三档阈值，并说清每档的动作。</li></ol>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>12. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为成本归因是"把账算准"，实际差在 36% 的共享成本根本没有"准"可言——它只能"摊"，而摊法是个商务决策，不是技术决策。</p>
+</section>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>13. 延伸</h2>
+<ul><li>第 14 章：总成本怎么来的，本章是把它拆开</li><li>第 15 章：计量记录是归因的原料</li><li>第 17 章：归因结果怎么变成对外报价</li><li>第 25 章：配额与限流在网关上的实现</li></ul>
+<p>结论是：成本归因的上限不在计量精度，在共享成本的分摊口径。64% 可以直接算，36% 只能谈——而这 36% 恰好是决定租户公不公平的那部分，所以它必须是商务和技术的共同决策，技术单方面定一个摊法，一定会在下一次续约时被推翻。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="15-token-metering.html"><span>上一章</span><b>15 · Token 计量学：账单是怎么一分一分算出来的</b></a><a class="nav-next" href="31A-rsi-flywheel.html"><span>下一章</span><b>31A · RSI：数据飞轮与自我改进</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>
