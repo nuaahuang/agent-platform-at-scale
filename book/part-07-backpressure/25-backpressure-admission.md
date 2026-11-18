@@ -629,6 +629,101 @@ def plan(watermark, prev_pool, prev_ts, now):
 
 自研的判据只有一条：**这段代码是否承载你的业务概念（租户、SLO、钱）。** 承载就自研，不承载就用现成的。
 
+## 2.9 开源生态：能买到多少
+
+前面说自研要 9 人月。但 2026 年这个领域已经有成型的三层开源，实际自研量能再降一半。
+
+### 2.9.1 三层生态
+
+| 层 | 代表项目 | 覆盖什么 | 成熟度 |
+|---|---|---|---|
+| 推理平台 | AIBrix、llm-d、KServe、llmaz、OME、NVIDIA Dynamo | 部署、智能路由、扩缩容、KV 管理、PD 分离 | 中，快速演进 |
+| AI 网关 | Agent Router（原 Envoy AI Gateway）、APISIX AI Gateway | 多模型统一 API、配额、failover、用量归因 | 较高 |
+| 策略与调度 | OPA、KEDA、Kueue、Volcano | 策略即代码、事件驱动扩缩、批调度 | 高 |
+
+三层的分工是：推理平台管"模型怎么跑"，AI 网关管"请求怎么进"，策略层管"规则怎么表达"。
+
+### 2.9.2 网关层：Agent Router 的配额配置
+
+Envoy AI Gateway 2026 年改名 Agent Router，主体是 Envoy Gateway 之上的一层 CRD 控制面。它的 token 配额能配到这个程度：
+
+```yaml
+apiVersion: aigateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+spec:
+  rateLimit:
+    type: Global
+    global:
+      rules:
+        - clientSelectors:
+            - headers:
+                - name: x-tenant-id
+                  value: tenant-a
+          cost:
+            request:
+              from: Number
+              number: 1
+            response:
+              metadata:
+                # 按 token 计费，而不是按请求数
+                - metadataKey: llm_total_token
+                  type: TotalToken
+                # 或者用 CEL 自定义加权
+                - metadataKey: llm_weighted_cost
+                  type: CEL
+                  cel: "input_tokens + output_tokens * 3"
+```
+
+最后那行 CEL 值得看：`input_tokens + output_tokens * 3`——**输入按 1 倍算、输出按 3 倍算**。这正是第 14 章算出来的成本结构，开源项目已经把它做成一行表达式。
+
+这一层能覆盖的：按租户限流、按 token 计量、按权重计费、failover、多模型统一 API。基本等于我们说的"配额闸 + 限流闸"。
+
+### 2.9.3 平台层：AIBrix 做了什么
+
+AIBrix 是 vLLM 生态里的推理平台，2026 年 6 月到 v0.7，几个能力正好对上本书的章节：
+
+| AIBrix 能力 | 对应本书 |
+|---|---|
+| LLM-aware gateway（按 KV 利用率、队列深度路由）| 第 25 章池内选点 |
+| App-tailored autoscaling（按推理指标扩，不是 CPU）| 第 33 章弹性 |
+| 高密度 LoRA 动态加载 | 第 6 章多 LoRA |
+| 分布式 KV cache | 第 10B 章 |
+| PD 分离 | 第 11 章 |
+| 异构算力与 SLO 保障 | 第 13 章容量 |
+
+我们的"ring hash 前 3 选 1"和它的 LLM-aware routing 是同一类东西——它是按 KV 占用和队列深度选 pod，我们多了一层租户亲和。
+
+### 2.9.4 还缺什么：五块必须自己写
+
+开源到"配额"为止，再往下是"分账"，这一段没有通用解：
+
+| 缺口 | 为什么开源做不了 |
+|---|---|
+| 租户分账与计费 | 每家定价模型不同，CEL 能算钱但不能出账单 |
+| 池的动态配比（在线/离线共池）| 需要知道"哪些任务可以被打断"，这是业务属性 |
+| 请求级抢占 | 开源抢的是 pod，抢请求要改引擎 |
+| goodput 口径 | 每家 SLO 定义不同 |
+| 预扣与结算 | 涉及财务流程 |
+
+第三条最典型：Kueue、Volcano 都能抢占 pod，但没有哪个项目会去中断一个正在生成的请求——因为它不知道那个请求是 P0 还是 P2。
+
+### 2.9.5 一个实际的组合
+
+| 你要的 | 用什么 | 自研量 |
+|---|---|---|
+| 网关本体 | Agent Router 或 APISIX | 0 |
+| 租户限流与 token 配额 | Agent Router 的 CRD | 1 人月（写 CRD 与同步） |
+| 推理平台 | AIBrix 或 KServe | 0 |
+| 扩缩容 | KEDA + AIBrix autoscaler | 1 人月（调参） |
+| 策略表达 | OPA | 0.5 人月 |
+| **租户计费与分账** | 自研 | 3 人月 |
+| **池配比与请求级抢占** | 自研 | 2 人月 |
+| 引擎 patch（waiting 上限、abort）| 自研 | 1 人月 |
+
+合计约 8.5 人月，和纯自研的 9 人月差不多——**因为省下来的都是"通用机制"，而剩下的都是"你的业务"**。
+
+这个结果值得记住：开源省掉的是 20 人月里的 17 人月，但最后那 8.5 人月一块都省不掉。
+
 ## 3. 压力信号：看五个数，不看 CPU
 
 后端服务通常看 CPU 做扩缩容。LLM 服务不行：GPU 满载是正常状态，推理时本来就该跑满。
