@@ -352,22 +352,47 @@ GROUP BY tenant_id;</code></pre></figure>
 = 1,000 × 0.24 GB = 240 GB KV</code></pre></figure>
 <p>为什么不用"并发请求数"？因为一个 32K 请求占的 KV 是一个 2K 请求的 16 倍。按请求数预留，长请求的租户会挤爆短请求的租户。</p>
 <p>网关侧的实现就是两个计数：<code>reserved_kv_bytes</code> 和 <code>used_kv_bytes</code>。请求进来时按上下文长度预估占用，超过预留就排队。</p>
-<h3>4.3.2 能不能超卖，超多少</h3>
-<p>关键在于<strong>租户的峰值是否错开</strong>。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>预留占比</th><th>日峰值时刻</th><th>能否超卖</th></tr></thead><tbody><tr><td>售后</td><td>40%</td><td>20:00–21:00</td><td>能</td></tr><tr><td>物流</td><td>30%</td><td>09:00–10:00</td><td>能</td></tr><tr><td>营销</td><td>30%</td><td>不定时</td><td>不能</td></tr></tbody></table></div>
-<p>售后和物流的峰值错开 11 个小时，同时撞峰的概率很低，所以这两块可以超卖。营销是活动型，随叫随到，不能超卖。</p>
-<p>算一下：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>可错开的部分 70%，超卖 1.4 倍 → 物理需求 50%
-不可错开的部分 30%，超卖 1 倍 → 物理需求 30%
-合计物理需求 80%</code></pre></figure>
-<p>也就是预留出去 100% 的容量，实际只需要备 80% 的卡，省 20%：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2,512 × 20% = 502 卡 = 5,700 万/年</code></pre></figure>
-<p>1.4 这个系数不是拍的，是从历史数据算的：统计过去 90 天里"售后和物流同时达到 80% 峰值"的天数，如果只有 3 天，那同时撞峰的概率是 3.3%，1.4 倍是安全的；如果有 30 天，系数要降到 1.1。</p>
-<h3>4.3.3 真撞峰了怎么办</h3>
-<p>超卖的本质是"赌峰值不同时来"。赌输了必须有兜底，兜底按优先级：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>谁</th><th>撞峰时的处理</th></tr></thead><tbody><tr><td>P0</td><td>已付费的预留量</td><td>保证，从共享池挤</td></tr><tr><td>P1</td><td>按量付费的在线请求</td><td>排队，等 30–60 秒</td></tr><tr><td>P2</td><td>批处理与离线任务</td><td>直接中断，下次再来</td></tr></tbody></table></div>
-<p>挤的动作要能落地：从共享池里回收 P1/P2 的并发位给 P0，同时给被挤的请求返回 429 带 <code>Retry-After</code>。这个"抢占"能力必须在网关实现（第 25 章），不能靠人工。</p>
-<h3>4.3.4 商务上怎么定价</h3>
+<h3>4.3.2 超卖系数怎么算：不是概率，是两个数之比</h3>
+<p>系数不是估出来的，也不是概率，是<strong>两个可以直接从日志算出来的数之比</strong>：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>k = Σ 各租户的峰值  ÷  所有租户叠加曲线的峰值</code></pre></figure>
+<p>分子是"如果每个租户都独占容量，要备多少"；分母是"实际同时最多需要多少"。分子分母都能测。</p>
+<p>算一遍。四个租户的并发曲线：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>各自峰值</th><th>20:00 的并发</th><th>09:00 的并发</th></tr></thead><tbody><tr><td>售后</td><td>77,000</td><td>77,000</td><td>15,000</td></tr><tr><td>物流</td><td>42,000</td><td>21,000</td><td>42,000</td></tr><tr><td>营销</td><td>21,000</td><td>0</td><td>0</td></tr><tr><td>内部</td><td>7,000</td><td>7,000</td><td>7,000</td></tr><tr><td>合计</td><td><strong>147,000</strong></td><td><strong>105,000</strong></td><td>64,000</td></tr></tbody></table></div>
+<p>叠加曲线在 20:00 达到最高，105,000。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>k = 147,000 ÷ 105,000 = 1.40</code></pre></figure>
+<p>这意味着：租户各自预留加起来 147,000，实际只需要 105,000 的物理容量。多出来的 42,000 是"不同时发生"带来的红利。</p>
+<p>再乘一个安全系数（观测期只覆盖 90 天，未来可能更糟，取 1.1）：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>物理容量 = 105,000 × 1.1 = 115,500 并发</code></pre></figure>
+<p><strong>"撞峰概率"在这个算法里根本不出现。</strong> 它只在一种情况下有用：当你没有足够长的观测数据，只能用"90 天里有几次同时高峰"来粗估。有日志就直接算叠加峰值，不需要概率。</p>
+<p>写成一句话：<strong>超卖系数 = 各租户峰值之和 ÷ 叠加曲线的峰值。</strong> 峰值越错开，分母越小，k 越大。</p>
+<h3>4.3.3 资源池怎么划</h3>
+<p>算出来 115,500 并发，怎么落到物理池子上？两段式：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>总容量 C（例：2,512 卡当量）
+├─ 预留池 R = Σ 峰值 / k × 1.1     ← P0 保证，随时可回收
+└─ 共享池 S = C − R                ← P1/P2，随时可被抢占</code></pre></figure>
+<p>按上面的数：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>容量</th><th>装谁</th><th>特征</th></tr></thead><tbody><tr><td>预留池</td><td>115,500 并发</td><td>已付费预留的租户</td><td>空闲时可借出，要用时收回</td></tr><tr><td>共享池</td><td>C − 115,500</td><td>按量、批处理</td><td>随时可能被挤，价格便宜</td></tr></tbody></table></div>
+<p>三个规则决定它能不能用：</p>
+<p><strong>规则一：预留池平时借给共享流量。</strong> 否则预留池在非峰时段完全闲置，利用率掉到 20%。借用是默认行为，不是特批。</p>
+<p><strong>规则二：借来的随时要还。</strong> 预留租户的请求进来时，共享流量必须让位。让位方式见下一节。</p>
+<p><strong>规则三：共享池不能挤预留池。</strong> 方向是单向的——预留可以挤共享，共享不能挤预留。这是付费买的东西。</p>
+<p>借出和收回的记账要分开：租户看到的"预留量"是 115,500 里的他那一份，不管实际上有没有被借走；平台看到的"可用量"是实时的。两个数不一样，别混。</p>
+<h3>4.3.4 撞峰之后怎么办：四步</h3>
+<p>规则二说"共享流量必须让位"，具体动作分四步。</p>
+<p><strong>第一步，检测。</strong> 两个信号：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>预留租户当前需求 &gt; 它的 R_i        ← 它自己超了预留
+预留池已被共享流量占用的比例 &gt; 60%   ← 提前预警</code></pre></figure>
+<p>第二个是提前量。等第一个信号出现才开始动作，通常已经晚了 5–10 秒。</p>
+<p><strong>第二步，通知。</strong> 给被借用的共享流量发"即将回收"信号，给 5–10 秒的缓冲。</p>
+<p>为什么是 5–10 秒：一个 token 的生成周期是 20–50 ms，5 秒够收尾 100–250 个 token，用户能看到一句完整的话而不是半句。太短会让用户看到断流，太长会让预留租户等太久。</p>
+<p><strong>第三步，回收。</strong> 按"缺口"回收，不按比例：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>缺口 = Σ(预留租户当前需求 − 它的 R_i)</code></pre></figure>
+<p>缺多少收多少，多收一卡都是浪费。回收的顺序是先收 P2（批处理），再收 P1（按量在线）。</p>
+<p><strong>第四步，抢占。</strong> 缺口大于共享池能腾出的量时，才动抢占：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>谁</th><th>动作</th><th>用户感知</th></tr></thead><tbody><tr><td>P0</td><td>预留租户</td><td>保证供给</td><td>无</td></tr><tr><td>P1</td><td>按量在线</td><td>排队 30–60 秒</td><td>变慢</td></tr><tr><td>P2</td><td>批处理</td><td>直接中断，返回"稍后重试"</td><td>任务失败</td></tr></tbody></table></div>
+<p>P2 被中断是设计好的，不是事故——批处理的任务本来就有"可重试"的语义。如果某个批处理任务不能中断，它就不该跑在共享池里。</p>
+<p>这四步必须在网关实现（第 25 章）。靠人去"手动扩一下"，在峰值那 20 分钟里根本来不及。</p>
+<h3>4.3.5 商务上怎么定价</h3>
 <p>预留费按"预留容量 × 单位成本 × 系数"算：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>售后预留 40% 峰值容量 = 1,005 卡
 年成本 = 1,005 × 113,004 = 1.14 亿
