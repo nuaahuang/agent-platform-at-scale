@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：月底一张总账单</a><a href="#s2"><span>02</span>. 五维归因</a><a href="#s3"><span>03</span>. 能直接算的 64%，要分摊的 36%</a><a href="#s4"><span>04</span>. 分摊的三种口径</a><a href="#s5"><span>05</span>. 缓存池怎么摊</a><a href="#s6"><span>06</span>. 预算控制：三档阈值</a><a href="#s7"><span>07</span>. 配额怎么落地</a><a href="#s8"><span>08</span>. 超额之后的四种处理</a><a href="#s9"><span>09</span>一个月的预算是怎么跑的</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>归因结果怎么用</a><a href="#s12"><span>12</span>. 什么情况下这些结论不成立</a><a href="#s13"><span>13</span>. 验收</a><a href="#s14"><span>14</span>. 复盘卡</a><a href="#s15"><span>15</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：月底一张总账单</a><a href="#s2"><span>02</span>. 五维归因</a><a href="#s3"><span>03</span>. 能直接算的 64%，要分摊的 36%</a><a href="#s4"><span>04</span>. 分摊的三种口径</a><a href="#s5"><span>05</span>容量预留怎么做</a><a href="#s6"><span>06</span>. 缓存池怎么摊</a><a href="#s7"><span>07</span>. 预算控制：三档阈值</a><a href="#s8"><span>08</span>. 配额怎么落地</a><a href="#s9"><span>09</span>. 超额之后的四种处理</a><a href="#s10"><span>10</span>一个月的预算是怎么跑的</a><a href="#s11"><span>11</span>. 失败模式</a><a href="#s12"><span>12</span>归因结果怎么用</a><a href="#s13"><span>13</span>. 什么情况下这些结论不成立</a><a href="#s14"><span>14</span>. 验收</a><a href="#s15"><span>15</span>. 复盘卡</a><a href="#s16"><span>16</span>. 延伸</a></nav>
       <div class="rail-foot">Token 经济</div>
     </div>
   </aside>
@@ -339,7 +339,45 @@ GROUP BY tenant_id;</code></pre></figure>
 <ul><li>窗口取"连续四周的同一小时"，取平均，避免单次大促失真</li><li>长请求会跨窗口，要按重叠部分算，不能整条计入</li><li>峰值容量占比 = 该租户并发 ÷ 全部租户并发，再乘池子卡数</li></ul>
 <p>测出来之后，每月对一次，和上月比。<strong>占比变动超过 5 个点要解释原因</strong>——通常是新业务上线或某个租户改了调用模式，也可能是埋点坏了。</p>
 </section>
-<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 缓存池怎么摊</h2>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>4.3 容量预留怎么做</h2>
+<p>"预留容量"是卖容量这件事的核心。它和"按量付费"不是一回事：按量是用了才付，预留是不用也付，换来的是"峰值时你有位置"。</p>
+<p>三种实现，从硬到软：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方式</th><th>怎么做</th><th>保证程度</th><th>利用率</th></tr></thead><tbody><tr><td>物理隔离</td><td>给租户专属实例池</td><td>100%</td><td>20%–30%</td></tr><tr><td>逻辑预留</td><td>配额 + 优先级队列</td><td>取决于超卖</td><td>50%–60%</td></tr><tr><td>混合</td><td>基础量隔离 + 超出走共享池</td><td>高</td><td>40%–50%</td></tr></tbody></table></div>
+<p>物理隔离最稳，也最贵。给一个租户 100 张卡，他不用的时候你也不能用——利用率掉到 20%，剩下的 80% 由其他租户的单价来补。</p>
+<p>逻辑预留不隔离实例，只保证"配额内的请求能进"。它便宜，但有个前提：<strong>不能无限超卖</strong>。</p>
+<h3>4.3.1 预留的单位是什么</h3>
+<p>不能按卡数预留（那是物理隔离），也不该按 QPS（不同请求占的容量差 16 倍）。</p>
+<p>按<strong>并发 KV 占用</strong>预留，单位是"并发 × 上下文长度"：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>一个租户预留 1,000 个 2K 上下文的并发位
+= 1,000 × 0.24 GB = 240 GB KV</code></pre></figure>
+<p>为什么不用"并发请求数"？因为一个 32K 请求占的 KV 是一个 2K 请求的 16 倍。按请求数预留，长请求的租户会挤爆短请求的租户。</p>
+<p>网关侧的实现就是两个计数：<code>reserved_kv_bytes</code> 和 <code>used_kv_bytes</code>。请求进来时按上下文长度预估占用，超过预留就排队。</p>
+<h3>4.3.2 能不能超卖，超多少</h3>
+<p>关键在于<strong>租户的峰值是否错开</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>预留占比</th><th>日峰值时刻</th><th>能否超卖</th></tr></thead><tbody><tr><td>售后</td><td>40%</td><td>20:00–21:00</td><td>能</td></tr><tr><td>物流</td><td>30%</td><td>09:00–10:00</td><td>能</td></tr><tr><td>营销</td><td>30%</td><td>不定时</td><td>不能</td></tr></tbody></table></div>
+<p>售后和物流的峰值错开 11 个小时，同时撞峰的概率很低，所以这两块可以超卖。营销是活动型，随叫随到，不能超卖。</p>
+<p>算一下：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>可错开的部分 70%，超卖 1.4 倍 → 物理需求 50%
+不可错开的部分 30%，超卖 1 倍 → 物理需求 30%
+合计物理需求 80%</code></pre></figure>
+<p>也就是预留出去 100% 的容量，实际只需要备 80% 的卡，省 20%：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>2,512 × 20% = 502 卡 = 5,700 万/年</code></pre></figure>
+<p>1.4 这个系数不是拍的，是从历史数据算的：统计过去 90 天里"售后和物流同时达到 80% 峰值"的天数，如果只有 3 天，那同时撞峰的概率是 3.3%，1.4 倍是安全的；如果有 30 天，系数要降到 1.1。</p>
+<h3>4.3.3 真撞峰了怎么办</h3>
+<p>超卖的本质是"赌峰值不同时来"。赌输了必须有兜底，兜底按优先级：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>谁</th><th>撞峰时的处理</th></tr></thead><tbody><tr><td>P0</td><td>已付费的预留量</td><td>保证，从共享池挤</td></tr><tr><td>P1</td><td>按量付费的在线请求</td><td>排队，等 30–60 秒</td></tr><tr><td>P2</td><td>批处理与离线任务</td><td>直接中断，下次再来</td></tr></tbody></table></div>
+<p>挤的动作要能落地：从共享池里回收 P1/P2 的并发位给 P0，同时给被挤的请求返回 429 带 <code>Retry-After</code>。这个"抢占"能力必须在网关实现（第 25 章），不能靠人工。</p>
+<h3>4.3.4 商务上怎么定价</h3>
+<p>预留费按"预留容量 × 单位成本 × 系数"算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>售后预留 40% 峰值容量 = 1,005 卡
+年成本 = 1,005 × 113,004 = 1.14 亿
+月预留费 = 950 万（按 1.0 倍成本收）</code></pre></figure>
+<p>对租户来说，这比按量贵还是便宜？看他的用量曲线：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户类型</th><th>按量年费</th><th>预留年费</th><th>选哪个</th></tr></thead><tbody><tr><td>平稳高用量</td><td>高（全按峰值单价）</td><td>中</td><td>预留</td></tr><tr><td>突发低用量</td><td>低</td><td>高（闲置也付）</td><td>按量</td></tr><tr><td>活动型</td><td>中</td><td>很高</td><td>按量</td></tr></tbody></table></div>
+<p>所以预留费的本质是<strong>用确定换便宜</strong>：租户买的是价格可预测 + 峰值有保证，代价是闲置也要付。</p>
+<p>第三行的活动型租户最容易被销售推着买预留，买完发现大半时间在闲置——这是这类产品最常见的客诉来源。正确的做法是给他"预留 + 按量"的混合，预留只覆盖基础量。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>5. 缓存池怎么摊</h2>
 <p>还有一个更麻烦的共享资源：前缀缓存。</p>
 <p>A 租户的热门前缀占了缓存池的 40%，把 B 租户的挤出去了。B 的命中率因此从 90% 掉到 70%，成本上升。这笔账算谁的？</p>
 <p>三种处理：</p>
@@ -347,7 +385,7 @@ GROUP BY tenant_id;</code></pre></figure>
 <p>我们选第三种：缓存池共享，但计量时用各租户自己的 cached 比例。B 被挤掉了，它的 cached 少，付的钱就少——成本自动转给了占得多的人。</p>
 <p>这一条能成立，前提是第 15 章的计量记录里 cached 与 uncached 是分开的。</p>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 预算控制：三档阈值</h2>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>6. 预算控制：三档阈值</h2>
 <p>归因解决"花了多少"，预算控制解决"能不能继续花"。</p>
 <p>三个阈值，动作不同：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>用量</th><th>动作</th><th>谁收到通知</th><th>用户感知</th></tr></thead><tbody><tr><td>80%</td><td>软预警</td><td>租户管理员 + 平台</td><td>无</td></tr><tr><td>95%</td><td>降级</td><td>租户 + 平台</td><td>慢一点 / 短一点</td></tr><tr><td>100%</td><td>阻断新请求</td><td>租户 + 平台</td><td>429</td></tr></tbody></table></div>
@@ -356,7 +394,7 @@ GROUP BY tenant_id;</code></pre></figure>
 <ol><li>关深度思考（省 3.5 倍成本）</li><li>长回答截断到 200 token</li><li>非关键请求走 lite-8B</li><li>才轮到拒绝</li></ol>
 <p>这样做的好处是：预算用完的租户还能用，只是慢一点、笨一点。比直接 429 友好，也比"不设限"可控。</p>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 配额怎么落地</h2>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 配额怎么落地</h2>
 <p>配额要有三个属性：能实时扣、能预扣、能退。</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>请求进来
   → 查配额（Redis，O(1)）
@@ -382,39 +420,39 @@ quota:{tenant}:{month}:hold 冻结中（进行中的请求）</code></pre></figu
 <p>两级都扣，意味着同一笔消费在两个层级各记一次。这不是浪费存储，是为了让"哪个业务线超了"和"哪个租户超了"能分别回答。</p>
 <p>继承规则要定清楚：租户配额是业务线配额的子集，还是独立额度？前者简单（子集用完就停），后者灵活（业务线内部可调剂）。多数公司选后者——给业务线一个池子，线内自己分。</p>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 超额之后的四种处理</h2>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 超额之后的四种处理</h2>
 <p>100% 之后不是只有"拒绝"一个选项：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>处理</th><th>适用</th><th>实现</th></tr></thead><tbody><tr><td>拒绝新请求</td><td>默认</td><td>429 + Retry-After</td></tr><tr><td>允许透支到 120%</td><td>重要租户</td><td>白名单 + 事后补签</td></tr><tr><td>降级到共享池</td><td>有弹性</td><td>走慢速队列</td></tr><tr><td>转人工审批</td><td>突发大额</td><td>工单</td></tr></tbody></table></div>
 <p>透支的设计要小心：给谁透支、透支多少、谁批，都要写进合同。技术侧只负责执行——按租户配置一个 <code>overdraft_ratio</code>，0 表示不许透支。</p>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>8.1 一个月的预算是怎么跑的</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>8.1 一个月的预算是怎么跑的</h2>
 <p>配额不是设一次就完事，它按月滚动。一个典型流程：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>动作</th><th>谁做</th></tr></thead><tbody><tr><td>上月 20 日</td><td>出下月预测（按近 3 月趋势 + 已知活动）</td><td>财务 + 平台</td></tr><tr><td>上月 25 日</td><td>分到业务线，业务线分到租户</td><td>业务负责人</td></tr><tr><td>当月 1 日</td><td>配额生效</td><td>平台</td></tr><tr><td>每周一</td><td>用量周报，超 60% 的提前预警</td><td>平台</td></tr><tr><td>当月 20 日</td><td>中期检查，预测超支的申请追加</td><td>业务 + 财务</td></tr><tr><td>次月 3 日</td><td>结算，差异分析</td><td>财务</td></tr></tbody></table></div>
 <p>第二步最关键，也最容易糊弄：业务线拿到总额后，往往按上月的比例一分了事。结果用量涨了的租户月初就撞线，用量降了的租户预算闲置。</p>
 <p>正确做法是按"用量趋势"分，不是按"上月占比"分。趋势看两点：近四周的斜率，以及有没有已知的活动（大促、新品上线）。</p>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 失败模式</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>9. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>五个维度的数对不上</td><td>各建一套报表</td><td>交叉验证总和</td><td>统一从明细表聚合</td></tr><tr><td>归因误差超过 10%</td><td>共享成本按单一维度摊</td><td>对比两种摊法</td><td>改成用量 + 峰值组合</td></tr><tr><td>租户投诉被多收</td><td>缓存被挤占但仍按命中计</td><td>查 cached 比例</td><td>按实际命中率计量</td></tr><tr><td>预算打穿才发现</td><td>定时汇总而非实时扣</td><td>对比日终与实时</td><td>改预扣</td></tr><tr><td>降级没生效，直接拒绝</td><td>阈值配置写成同一档</td><td>查配置</td><td>80/95/100 三档分开</td></tr><tr><td>透支无人审批</td><td>白名单太长</td><td>月度审计</td><td>收紧白名单</td></tr></tbody></table></div>
 <p>第四行最典型。多数系统把配额做成"每日对一次账"，看着能用，实际上防不住批量调用——一个大客户的一次导入就能超支两个月。</p>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>9.1 归因结果怎么用</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>9.1 归因结果怎么用</h2>
 <p>归因不是为了让财务好看，是为了改行为。四个典型用法，按见效速度排：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>用法</th><th>从归因里看什么</th><th>见效</th></tr></thead><tbody><tr><td>砍兜底</td><td>外部 API 占三分之一成本</td><td>一周</td></tr><tr><td>缩短长回答</td><td>输出 token 集中在少数租户</td><td>两周</td></tr><tr><td>提缓存命中</td><td>某租户 cached 比例只有 40%</td><td>一月</td></tr><tr><td>调峰谷定价</td><td>峰时成本是谷时的 4 倍</td><td>一季度</td></tr></tbody></table></div>
 <p>第一条最快。外部 API 只占 5% 流量、三分之一成本，说明兜底策略太宽——其中 60% 的请求本可以自建模型答。把它从 5% 压到 2%，一年省 2,000 万（第 14 章的第 10 条降本措施就是这个）。</p>
 <p>第三条最容易被忽略。cached 比例 40% 意味着这个租户的系统提示里混了变量，前缀每次都不同（第 7 章）。改法不是加卡，是让他把变量挪到用户消息里——一行代码，成本降一半。</p>
 <p>这也是归因的真正价值：<strong>它把"成本高"这个模糊感受，变成了"这个租户的 cached 比例只有 40%"这种可执行的动作。</strong></p>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>10. 什么情况下这些结论不成立</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>10. 什么情况下这些结论不成立</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>36% 必须分摊</td><td>租户数少于 3 个时，直接按合同谈固定费更简单</td></tr><tr><td>按用量 + 峰值组合摊</td><td>租户的用量曲线高度一致时，单一口径就够</td></tr><tr><td>95% 降级</td><td>租户明确要求"超了就直接停"时，跳过降级</td></tr><tr><td>实时预扣</td><td>内部系统、无计费诉求时，可以只做监控</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>11. 验收</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>11. 验收</h2>
 <ol><li>能说出你的系统里五维各是什么，明细表能不能支撑五维聚合。</li><li>能算出可直算成本与需分摊成本的比例。</li><li>能对两个用量曲线不同的租户，分别算出按用量摊和按峰值摊的金额差异。</li><li>能设计三档阈值，并说清每档的动作。</li></ol>
 </section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>12. 复盘卡</h2>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>12. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
 <p>我原来以为成本归因是"把账算准"，实际差在 36% 的共享成本根本没有"准"可言——它只能"摊"，而摊法是个商务决策，不是技术决策。</p>
 </section>
-<section class="sec" id="s15"><h2><span class="sec-num">15</span>13. 延伸</h2>
+<section class="sec" id="s16"><h2><span class="sec-num">16</span>13. 延伸</h2>
 <ul><li>第 14 章：总成本怎么来的，本章是把它拆开</li><li>第 15 章：计量记录是归因的原料</li><li>第 17 章：归因结果怎么变成对外报价</li><li>第 25 章：配额与限流在网关上的实现</li></ul>
 <p>结论是：成本归因的上限不在计量精度，在共享成本的分摊口径。64% 可以直接算，36% 只能谈——而这 36% 恰好是决定租户公不公平的那部分，所以它必须是商务和技术的共同决策，技术单方面定一个摊法，一定会在下一次续约时被推翻。</p>
 </section></article>
