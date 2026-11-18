@@ -256,6 +256,29 @@ blockquote p{margin:.4em 0}
 <p>模型维度天然不均衡，可以顺手看出成本结构：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>模型</th><th>流量占比</th><th>成本占比</th></tr></thead><tbody><tr><td>200B MoE</td><td>55%</td><td>约三分之二</td></tr><tr><td>lite-8B</td><td>40%</td><td>约一成</td></tr><tr><td>外部 API</td><td>5%</td><td>约三分之一</td></tr></tbody></table></div>
 <p>最后一行是反差最大的：<strong>5% 的流量吃掉三分之一的成本</strong>，因为外部 API 单价 3.5 分/轮，是自建的 12 倍。这一行会直接推动"兜底能不能再少一点"的讨论。</p>
+<h3>3.2 那把全部成本摊进单价行不行</h3>
+<p>到这里会有一个自然的想法：既然单价里已经含了冗余（第 15 章的 ×1.56），那全部成本都在 token 价里了，按 token 算不就完了？何必再谈分摊？</p>
+<p>这个想法对了一半。</p>
+<p><strong>对的一半：收钱确实可以只按 token。</strong> 第 15 章那张价目表就是全成本单价——10.24 里面含了算力、冗余、运营。对外报价按它算，不会亏。</p>
+<p><strong>没解决的一半：内部管账不能只看 token。</strong> 因为"谁用了多少 token"和"谁导致了多少钱"不是一回事。</p>
+<p>看一个具体的例子。两条业务线的用量曲线完全不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>业务线</th><th>月度 token 占比</th><th>峰值容量占比</th><th>差</th></tr></thead><tbody><tr><td>售后（平稳）</td><td>80%</td><td>70%</td><td>−10 个点</td></tr><tr><td>营销（突发）</td><td>20%</td><td>30%</td><td>+10 个点</td></tr></tbody></table></div>
+<p>营销只在活动期间用，一个月用 20 天，但活动那几天要占三成容量。售后全天均匀，用得多但不拉高峰值。</p>
+<p>按统一 token 单价收钱：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>营销付 20%
+但它导致了 30% 的容量
+差额 10 个点 = 2,830 万/年</code></pre></figure>
+<p>这 2,830 万是售后替营销付的。这就是<strong>交叉补贴</strong>：用量平稳的租户，补贴用量突发的租户。</p>
+<p>电信业几十年前遇到过同样的问题：按流量计费、忙时闲时同价，结果闲时用户补贴忙时用户。解法是峰谷差价，本质就是回到分摊。</p>
+<p>所以统一 token 单价在技术上完全可行，它是一个<strong>商务选择</strong>：选择让平稳用户补贴突发用户。如果所有租户都接受这个约定，那没问题；只要有一方不接受，就必须回到"用量 + 容量"的双轨。</p>
+<h3>3.3 那缓存池的问题消失了吗</h3>
+<p>没有消失，只是从"看得见"变成"看不见"。</p>
+<p>统一单价下，缓存被挤占导致的命中率下降，不影响账单——因为 cached 和 uncached 同价。用户感觉不到，但成本真实发生了：B 租户命中率从 90% 掉到 70%，它要多算 20% 的 prefill token，只是账单上看不出来。</p>
+<p>结果是平台在补贴被挤占的租户。如果挤占长期存在，这笔钱会一直流出去，而且无人认领——直到某天发现"整体成本涨了 15%，但所有租户的用量都没变"。</p>
+<p>所以只要缓存是共享的，计量就必须区分 cached 与 uncached。这不是为了收钱，是为了让挤占这件事可见。</p>
+<h3>3.4 一句话的判据</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>统一 token 单价够不够</th></tr></thead><tbody><tr><td>对外报价、账单</td><td>够</td></tr><tr><td>业务线考核、预算</td><td>不够</td></tr><tr><td>容量规划、谁该扩容</td><td>不够</td></tr><tr><td>缓存/预留等共享资源</td><td>不够</td></tr></tbody></table></div>
+<p>判据是：<strong>你需要"总量"还是需要"归因"。</strong> 收钱只需要总量，管账需要归因。</p>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 分摊的三种口径</h2>
 <p>同一个 36%，三种摊法，结果差 20 个百分点。</p>
