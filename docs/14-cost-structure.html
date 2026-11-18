@@ -239,7 +239,21 @@ blockquote p{margin:.4em 0}
 <p>先拆到叶子，每一片都能验算。</p>
 <h3>2.1 折旧：7.17 亿分三年</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>总额</th><th>年折旧</th><th>占比</th></tr></thead><tbody><tr><td>GPU（2,512 × ¥215,000）</td><td>5.40 亿</td><td>1.80 亿</td><td>63.6%</td></tr><tr><td>服务器（314 台 × ¥180,000）</td><td>0.57 亿</td><td>0.19 亿</td><td>6.7%</td></tr><tr><td>网络（IB 交换机 + 光模块）</td><td>0.70 亿</td><td>0.23 亿</td><td>8.2%</td></tr><tr><td>机房改造（配电、制冷、消防）</td><td>0.50 亿</td><td>0.17 亿</td><td>5.9%</td></tr><tr><td>合计</td><td>7.17 亿</td><td>2.39 亿</td><td>84.5%</td></tr></tbody></table></div>
-<p>按三年直线折旧，年折旧 2.39 亿。</p>
+<h3>2.1.1 为什么按三年折旧</h3>
+<p>三年不是寿命，是<strong>经济寿命</strong>。这三个概念要分开：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>寿命</th><th>多长</th><th>由什么决定</th></tr></thead><tbody><tr><td>物理寿命</td><td>5–7 年</td><td>风扇、电容、HBM 的磨损</td></tr><tr><td>会计折旧</td><td>3–5 年</td><td>财务与税法口径</td></tr><tr><td><strong>经济寿命</strong></td><td><strong>2–3 年</strong></td><td><strong>新一代卡的性价比</strong></td></tr></tbody></table></div>
+<p>物理上 H100 跑七年没问题。问题是第三年的时候，新一代卡在同样功耗下算力可能翻一倍，你的旧卡不是坏了，是"同样的活它贵一倍"。</p>
+<p>所以三年折旧对应的是<strong>主力期</strong>。三年之后卡还在跑，只是不在主推理池里了。它的去向有四级：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>去处</th><th>干什么</th><th>还能用几年</th></tr></thead><tbody><tr><td>训练池</td><td>训练对延迟不敏感，旧卡划算</td><td>1–2 年</td></tr><tr><td>离线批处理</td><td>回刷、报表、评测</td><td>1–2 年</td></tr><tr><td>二手市场</td><td>残值 15%–25%</td><td>—</td></tr><tr><td>价格敏感的租户</td><td>便宜卖</td><td>视市场</td></tr></tbody></table></div>
+<p>换个折旧年限，账差三分之一：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>折旧年限</th><th>年成本</th><th>单卡时</th><th>单轮成本</th></tr></thead><tbody><tr><td>3 年</td><td>2.83 亿</td><td>¥12.86</td><td>0.517 分</td></tr><tr><td>4 年</td><td>2.23 亿</td><td>¥10.15</td><td>0.408 分</td></tr><tr><td>5 年</td><td>1.87 亿</td><td>¥8.52</td><td>0.342 分</td></tr></tbody></table></div>
+<p>五年折旧的数字好看得多——单轮便宜 34%。但这个数字有前提：<strong>第五年时这 2,512 卡还在满负荷跑主力任务。</strong></p>
+<p>如果实际第三年就被新卡挤到训练池，那后两年的真实产出只有前两年的一半，按五年的账算出来的"便宜"是假的，实际是把成本挪到了后面，同时还要承担一次资产减值。</p>
+<p>所以选三年有两个理由：</p>
+<p>第一，保守。不把未来的算力红利算进今天的成本。如果实际用了五年，那第四、五年就是白赚，成本低于模型预测；反过来（按五年算、三年就淘汰）是一次性减值，财报上很难看。</p>
+<p>第二，和采购节奏对齐。一年一采的话，每批卡的价格和性能都不同，按三年折完正好可以重新评估"这批要不要换"。</p>
+<p>反过来也有例外：如果业务确定不会因为新卡而迁移（比如给内部用的固定小模型），卡会用到物理寿命，那按五年折旧更准确。判断方法只有一个——<strong>看历史上你换卡的平均间隔</strong>，而不是看新卡发布的节奏。</p>
+<p>按三年直线折旧，年折旧 2.39 亿。按三年直线折旧，年折旧 2.39 亿。</p>
 <h3>2.2 运营：4,400 万一年</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>年成本</th><th>怎么算</th></tr></thead><tbody><tr><td>电费</td><td>1,620 万</td><td>2,512 × 700 W × 1.35 PUE × 8,760 h × ¥0.78/kWh</td></tr><tr><td>机位与机房</td><td>950 万</td><td>80 个机柜 × ¥9,900/柜/月</td></tr><tr><td>人力</td><td>1,000 万</td><td>11 人（第 3 章）</td></tr><tr><td>网络带宽</td><td>430 万</td><td>出口带宽 + 专线</td></tr><tr><td>监控、软件、备份</td><td>400 万</td><td>各类 SaaS 与自建服务</td></tr><tr><td>合计</td><td>4,400 万</td><td>15.5%</td></tr></tbody></table></div>
 <p>电费那一行值得自己算一遍：</p>
