@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：90 秒从正常到雪崩</a><a href="#s2"><span>02</span>. 完整链路：六跳，每跳都有闸</a><a href="#s3"><span>03</span>一个能落地的部署拓扑</a><a href="#s4"><span>04</span>控制面：数据怎么流回，指令怎么下去</a><a href="#s5"><span>05</span>K8s 能覆盖多少，还要自建什么</a><a href="#s6"><span>06</span>. 压力信号：看五个数，不看 CPU</a><a href="#s7"><span>07</span>逐跳传还是集中调度</a><a href="#s8"><span>08</span>. 平时调度：让离线任务吃掉余量</a><a href="#s9"><span>09</span>. 撞峰处理：带秒数的完整时序</a><a href="#s10"><span>10</span>. 恢复期：比崩溃更难</a><a href="#s11"><span>11</span>. 限流按 QPS 还是 token</a><a href="#s12"><span>12</span>. 拒绝的四种语义</a><a href="#s13"><span>13</span>. 队列为什么是雪崩放大器</a><a href="#s14"><span>14</span>. 配置</a><a href="#s15"><span>15</span>. 失败模式</a><a href="#s16"><span>16</span>. 什么情况下这些结论不成立</a><a href="#s17"><span>17</span>. 验收</a><a href="#s18"><span>18</span>. 复盘卡</a><a href="#s19"><span>19</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：90 秒从正常到雪崩</a><a href="#s2"><span>02</span>. 完整链路：六跳，每跳都有闸</a><a href="#s3"><span>03</span>一个能落地的部署拓扑</a><a href="#s4"><span>04</span>控制面：数据怎么流回，指令怎么下去</a><a href="#s5"><span>05</span>K8s 能覆盖多少，还要自建什么</a><a href="#s6"><span>06</span>自研怎么自研</a><a href="#s7"><span>07</span>. 压力信号：看五个数，不看 CPU</a><a href="#s8"><span>08</span>逐跳传还是集中调度</a><a href="#s9"><span>09</span>. 平时调度：让离线任务吃掉余量</a><a href="#s10"><span>10</span>. 撞峰处理：带秒数的完整时序</a><a href="#s11"><span>11</span>. 恢复期：比崩溃更难</a><a href="#s12"><span>12</span>. 限流按 QPS 还是 token</a><a href="#s13"><span>13</span>. 拒绝的四种语义</a><a href="#s14"><span>14</span>. 队列为什么是雪崩放大器</a><a href="#s15"><span>15</span>. 配置</a><a href="#s16"><span>16</span>. 失败模式</a><a href="#s17"><span>17</span>. 什么情况下这些结论不成立</a><a href="#s18"><span>18</span>. 验收</a><a href="#s19"><span>19</span>. 复盘卡</a><a href="#s20"><span>20</span>. 延伸</a></nav>
       <div class="rail-foot">接入与背压</div>
     </div>
   </aside>
@@ -411,11 +411,11 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <p><strong>没有任何一个组件挂了会导致服务不可用</strong>——这是设计目标。代价是"出事时反应慢半拍"，而不是"出事时全挂"。</p>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>2.7 K8s 能覆盖多少，还要自建什么</h2>
-<p>到这里会有一个自然的想法：这些能力 K8s 是不是都有了？装个 HPA、配个 readinessProbe 不就行了吗？</p>
+<p>到这里会有一个自然的想法：这些能力 K8s 是不是都有了？装个 HPA（Horizontal Pod Autoscaler）、配个 readinessProbe 不就行了吗？</p>
 <p>答案是 K8s 覆盖了大约四成，剩下六成必须自建。分界线很清楚：</p>
 <p><strong>K8s 管进程，你管请求。</strong></p>
 <h3>2.7.1 K8s 给得了的</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>能力</th><th>用什么</th><th>局限</th></tr></thead><tbody><tr><td>pod 放到哪台机器</td><td>kube-scheduler</td><td>只在启动时决策</td></tr><tr><td>按指标扩 pod</td><td>HPA（Horizontal Pod Autoscaler）/ KEDA（Kubernetes Event-driven Autoscaling）</td><td>周期 15 秒起，粒度是 pod</td></tr><tr><td>摘流</td><td>readinessProbe</td><td>只能整 pod 摘，不能按请求</td></tr><tr><td>优雅退出</td><td>preStop + gracePeriod</td><td>够用</td></tr><tr><td>pod 级优先级与抢占</td><td>PriorityClass</td><td>抢的是 pod，不是请求</td></tr><tr><td>故障域打散</td><td>topologySpreadConstraints</td><td>够用</td></tr><tr><td>最小可用保证</td><td>PodDisruptionBudget</td><td>够用</td></tr><tr><td>服务发现</td><td>Service / EndpointSlice</td><td>够用</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>能力</th><th>用什么</th><th>局限</th></tr></thead><tbody><tr><td>pod 放到哪台机器</td><td>kube-scheduler</td><td>只在启动时决策</td></tr><tr><td>按指标扩 pod</td><td>HPA / KEDA（Kubernetes Event-driven Autoscaling）</td><td>周期 15 秒起，粒度是 pod</td></tr><tr><td>摘流</td><td>readinessProbe</td><td>只能整 pod 摘，不能按请求</td></tr><tr><td>优雅退出</td><td>preStop + gracePeriod</td><td>够用</td></tr><tr><td>pod 级优先级与抢占</td><td>PriorityClass</td><td>抢的是 pod，不是请求</td></tr><tr><td>故障域打散</td><td>topologySpreadConstraints</td><td>够用</td></tr><tr><td>最小可用保证</td><td>PodDisruptionBudget</td><td>够用</td></tr><tr><td>服务发现</td><td>Service / EndpointSlice</td><td>够用</td></tr></tbody></table></div>
 <p>这八项是扎实的，尤其 preStop + grace 和 PDB，自研的话要写不少代码。</p>
 <h3>2.7.2 K8s 给不了的</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>能力</th><th>为什么 K8s 做不了</th></tr></thead><tbody><tr><td>请求级限流</td><td>它的单位是 pod，不是请求</td></tr><tr><td>租户配额</td><td>ResourceQuota 按 namespace，1 万租户管不过来</td></tr><tr><td>请求队列与优先级</td><td>没有请求队列这个概念</td></tr><tr><td>前缀缓存亲和</td><td>Service 的 sessionAffinity 只到 IP，到不了租户/会话</td></tr><tr><td>池的动态配比</td><td>没有"池"的概念，只有 label selector</td></tr><tr><td>请求级抢占</td><td>抢占的粒度是 pod</td></tr><tr><td>goodput</td><td>不认识业务 SLO</td></tr><tr><td>预算与预扣</td><td>不认识钱</td></tr></tbody></table></div>
@@ -435,7 +435,60 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <p>合计约 22 人月，其中 K8s 贡献 0。<strong>差异化的部分全在自研那 22 人月里。</strong></p>
 <p>所以"全部用 K8s"这个说法不成立——K8s 是地基，不是房子。</p>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>3. 压力信号：看五个数，不看 CPU</h2>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>2.8 自研怎么自研</h2>
+<p>前面说了要自研 22 人月。这个数字要修，而且"自研"也不是从零写。</p>
+<h3>2.8.1 工时：压缩 2.4 倍，不是 10 倍</h3>
+<p>AI 写代码确实快，但写代码只占工作量的一部分。按五项拆：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>占比</th><th>压缩比</th><th>压缩后占比</th></tr></thead><tbody><tr><td>写代码</td><td>40%</td><td>6 倍</td><td>7%</td></tr><tr><td>写测试</td><td>20%</td><td>5 倍</td><td>4%</td></tr><tr><td>调试联调</td><td>20%</td><td>2 倍</td><td>10%</td></tr><tr><td>设计与决策</td><td>10%</td><td>1 倍</td><td>10%</td></tr><tr><td>灰度与运维</td><td>10%</td><td>1 倍</td><td>10%</td></tr></tbody></table></div>
+<p>加权下来是 0.41，也就是<strong>整体压缩 2.4 倍</strong>。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>22 人月 → 9 人月</code></pre></figure>
+<p>还是按模块看一遍：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模块</th><th>传统</th><th>编码占比</th><th>现在</th></tr></thead><tbody><tr><td>网关</td><td>2</td><td>35%</td><td>0.9</td></tr><tr><td>限流</td><td>3</td><td>40%</td><td>1.2</td></tr><tr><td>控制面</td><td>6</td><td>35%</td><td>2.7</td></tr><tr><td>租户计费</td><td>8</td><td>40%</td><td>3.3</td></tr><tr><td>引擎改造</td><td>3</td><td>50%</td><td>1.0</td></tr><tr><td>合计</td><td>22</td><td>—</td><td><strong>9.0</strong></td></tr></tbody></table></div>
+<p>为什么不是 10 倍：<code>0.4 ÷ 10 = 0.04</code>，剩下 60% 一点没变——总时间还是原来的 64%。<strong>写代码快了，但你还要调、要测、要灰度。</strong></p>
+<p>真正被压缩的是"从想法到能跑"，没被压缩的是"从能跑到能上线"。</p>
+<h3>2.8.2 网关：不写网关，写配置生成器</h3>
+<p>不要从零写一个网关。Envoy 已经解决了 TLS、HTTP/2、连接池、重试、负载均衡。</p>
+<p>自研的部分只有两块：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>自研</th><th>内容</th><th>难度</th></tr></thead><tbody><tr><td>xDS 控制面</td><td>把池、租户、配额翻译成 Cluster/Subset/Route</td><td>中</td></tr><tr><td>自定义 filter</td><td>租户标签提取、配额检查、降级标记</td><td>低（WASM）</td></tr></tbody></table></div>
+<p>WASM filter 的好处是热更新，不用重编 Envoy。坏处是性能比 C++ filter 差 20%–30%——在 7,000 QPS 下可以接受。</p>
+<p>真正的难点不是写代码，是<strong>把业务标签接进路由</strong>：租户 ID 从哪来（header/JWT）、池标签怎么下发、subset 怎么和 EndpointSlice 对齐。</p>
+<h3>2.8.3 限流：三层，难点在一致性</h3>
+<p>限流分三层，各用不同机制：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>机制</th><th>精度</th><th>延迟</th></tr></thead><tbody><tr><td>本地令牌桶</td><td>Envoy，进程内存</td><td>粗（单实例视角）</td><td>0</td></tr><tr><td>全局配额</td><td>Redis Lua 原子扣减</td><td>准</td><td>1 RTT</td></tr><tr><td>配额分片</td><td>本地预分配 + 定期对账</td><td>中</td><td>0</td></tr></tbody></table></div>
+<p><strong>难点是多网关共享配额。</strong> 两个方案：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>做法</th><th>代价</th></tr></thead><tbody><tr><td>每请求查 Redis</td><td>每次 RTT 扣减</td><td>+1 ms 延迟，Redis 成热点</td></tr><tr><td>分片预分配</td><td>每个网关预领 1/N 额度，用完再领</td><td>误差 N 个请求，但零延迟</td></tr></tbody></table></div>
+<p>7,000 QPS 下每请求一次 Redis RTT 是不可接受的（Redis 单实例约 10 万 QPS，会打满）。所以选分片：6 个网关各预领 1,167 QPS，每 10 秒对账一次。</p>
+<p>误差是"某网关提前用完要等对账"，最多浪费几十个请求的额度——比每请求 RTT 划算得多。</p>
+<h3>2.8.4 控制面：四段，难点在控制律</h3>
+<p>四段代码量都不大，难在参数整定：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>段</th><th>干什么</th><th>代码量</th><th>难点</th></tr></thead><tbody><tr><td>采集适配</td><td>拉 Prometheus、转成内部结构</td><td>300 行</td><td>无</td></tr><tr><td>detector</td><td>算压力等级</td><td>200 行</td><td>阈值怎么定</td></tr><tr><td>planner</td><td>算池配比与配额</td><td>500 行</td><td><strong>控制律</strong></td></tr><tr><td>config server</td><td>下发与版本管理</td><td>400 行</td><td>一致性</td></tr></tbody></table></div>
+<p>planner 是核心。最简单的写法是阈值判断（if 水位 &gt; 80% 就缩），但它会震荡。正确的写法是带回滞的控制器：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def plan(watermark, prev_pool, prev_ts, now):
+    # 冷却：调整后 60 秒内不动
+    if now - prev_ts &lt; 60:
+        return prev_pool
+    # 滞回：扩在 60%，缩在 80%
+    if watermark &lt; 0.60 and prev_pool &lt; MAX_POOL:
+        return min(prev_pool * 1.10, MAX_POOL)   # 阻尼：每次 +10%
+    if watermark &gt; 0.80 and prev_pool &gt; MIN_POOL:
+        return max(prev_pool * 0.80, MIN_POOL)   # 阻尼：每次 -20%
+    return prev_pool</code></pre></figure>
+<p>三十行代码，但要调三个参数（0.6 / 0.8 / 1.1），每个都要用真实流量曲线试。<strong>这部分 AI 帮不上——它不知道你的流量形状。</strong></p>
+<h3>2.8.5 租户与计费：事件溯源，不要 CRUD</h3>
+<p>计费系统的坑全在"账要能对"。用 CRUD 写（update balance set x = x - y）迟早会错，因为并发扣减、重复回调、部分失败。</p>
+<p>正确做法是事件溯源（第 19 章）：每次消费写一条不可变事件，余额是事件的物化视图。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>表</th><th>内容</th><th>特性</th></tr></thead><tbody><tr><td><code>usage_event</code></td><td>每次请求一条，只插不改</td><td>不可变</td></tr><tr><td><code>quota_hold</code></td><td>预扣记录，可过期</td><td>有 TTL</td></tr><tr><td><code>balance_view</code></td><td>物化视图，可重算</td><td>派生</td></tr></tbody></table></div>
+<p>好处是任何时候都能"重放所有事件，重建余额"，和引擎账对不上就重放一遍找差异。</p>
+<p>这一块 AI 写代码快，但<strong>账务规则的边界</strong>（哪些算、哪些不算、退款怎么处理）要人来定，写错了不能靠测试发现，要靠对账。</p>
+<h3>2.8.6 引擎改造：最小 patch</h3>
+<p>改 vLLM 只改三处：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>改动</th><th>为什么</th><th>风险</th></tr></thead><tbody><tr><td>waiting 队列上限</td><td>防 OOM</td><td>低</td></tr><tr><td>abort 接口</td><td>支持抢占</td><td>低</td></tr><tr><td>指标导出</td><td>waiting/KV/batch</td><td>低</td></tr></tbody></table></div>
+<p>不要去改调度算法和 kernel。那部分改错的代价是性能掉一半，而且很难回滚。</p>
+<h3>2.8.7 什么不该自研</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>别做</th><th>为什么</th></tr></thead><tbody><tr><td>网关本体</td><td>Envoy 已经十年积累，重写是负收益</td></tr><tr><td>服务发现</td><td>K8s 够用</td></tr><tr><td>指标存储</td><td>Prometheus/VM 够用</td></tr><tr><td>消息队列</td><td>Kafka 够用</td></tr></tbody></table></div>
+<p>自研的判据只有一条：<strong>这段代码是否承载你的业务概念（租户、SLO、钱）。</strong> 承载就自研，不承载就用现成的。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>3. 压力信号：看五个数，不看 CPU</h2>
 <p>后端服务通常看 CPU 做扩缩容。LLM 服务不行：GPU 满载是正常状态，推理时本来就该跑满。</p>
 <p>五个真正有用的信号：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>信号</th><th>从哪取</th><th>阈值</th><th>说明</th></tr></thead><tbody><tr><td>waiting 队列长度</td><td>引擎 <code>Scheduler.waiting</code></td><td>&gt; 目标等待 × 吞吐</td><td>最直接</td></tr><tr><td>KV 块占用率</td><td>已用块 ÷ 总块</td><td>&gt; 90%</td><td>接近 OOM</td></tr><tr><td>TTFT p95</td><td>滚动 1 分钟</td><td>&gt; 1.5 × SLO（Service Level Objective）</td><td>体验开始崩</td></tr><tr><td>goodput</td><td>达标 ÷ 总请求</td><td>&lt; 95%</td><td>最终判据</td></tr><tr><td>拒绝率</td><td>429 ÷ 总请求</td><td>&gt; 5%</td><td>已经在丢了</td></tr></tbody></table></div>
@@ -445,7 +498,7 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>压力等级 = max(队列水位, KV 水位, TTFT 超线幅度, 1 − goodput)</code></pre></figure>
 <p>取最大，不取平均。因为过载时只要有一项爆了，就必须动作——平均会把单项的爆点抹平。</p>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>3.5 逐跳传还是集中调度</h2>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>3.5 逐跳传还是集中调度</h2>
 <p>到这里会有一个自然的疑问：既然压力信号都在，为什么不搞一个统一调度中心，收集所有信号、算一个全局最优解、再下发执行？那样不就不用"每跳自己猜"了吗？</p>
 <p>答案是一半对。<strong>五个时间尺度上，只有中间两层适合集中，两头必须分布。</strong></p>
 <div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>周期</th><th>决策什么</th><th>在哪做</th></tr></thead><tbody><tr><td>L1 请求准入</td><td>毫秒</td><td>收还是不收这一个请求</td><td>每个实例本地</td></tr><tr><td>L2 实例背压</td><td>秒</td><td>降速多少、要不要摘除</td><td>网关本地</td></tr><tr><td>L3 池调度</td><td>10 秒</td><td>弹性池扩缩多少</td><td><strong>集中</strong></td></tr><tr><td>L4 集群弹性</td><td>分钟</td><td>加卡还是减卡</td><td><strong>集中</strong></td></tr><tr><td>L5 容量规划</td><td>月</td><td>总共买多少卡</td><td>人</td></tr></tbody></table></div>
@@ -478,7 +531,7 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 中心需要 7,000 QPS 的处理能力，还要 5 个 9 的可用性</code></pre></figure>
 <p>这比推理服务本身还难做。所以业界主流的做法都是混合：Envoy 的本地令牌桶 + 全局配额服务（RLS），Kubernetes 的本地限流 + HPA。没有哪个生产系统把准入完全集中。</p>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>4. 平时调度：让离线任务吃掉余量</h2>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>4. 平时调度：让离线任务吃掉余量</h2>
 <p>这是本章最值钱的部分。前面几章反复算过：在线利用率只有 25%，剩下的 75% 不填就是白买。</p>
 <p>先算能填多少：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>在线峰值需要 2,512 卡
@@ -520,7 +573,7 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>检查</th><th>阈值</th><th>不过怎么办</th></tr></thead><tbody><tr><td>离线队列长度</td><td>&lt; 2 小时的量</td><td>拒绝提交，让用户明天再来</td></tr><tr><td>任务截止时间</td><td>至少还有 2 小时</td><td>拒绝，或建议走专用池</td></tr><tr><td>单任务规模</td><td>&lt; 弹性池的 30%</td><td>拆批提交</td></tr></tbody></table></div>
 <p>第三条很重要。一个占满弹性池的任务会把所有小任务饿死，而且一旦被回收，它自己也白跑。让它拆成小批，既能调度也能续跑。</p>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>5. 撞峰处理：带秒数的完整时序</h2>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>5. 撞峰处理：带秒数的完整时序</h2>
 <p>上面是平时。现在看真撞峰了怎么办。</p>
 <p>前提：检测到在线水位超过 80%，且持续 30 秒。所有动作由调度器自动执行，人只在告警后旁观。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>时刻</th><th>触发条件</th><th>动作</th><th>执行者</th><th>回收/影响</th></tr></thead><tbody><tr><td>T+0</td><td>在线队列 &gt; 60% 上限</td><td>告警，停止扩离线池</td><td>调度器</td><td>—</td></tr><tr><td>T+5s</td><td>goodput 跌破 98%</td><td>停止接新离线任务</td><td>调度器</td><td>离线队列冻结</td></tr><tr><td>T+10s</td><td>在线队列 &gt; 80%</td><td>开始回收：先停 L1</td><td>调度器</td><td>释放约 10% 弹性池</td></tr><tr><td>T+20s</td><td>队列仍涨</td><td>继续回收 L2、L3</td><td>调度器</td><td>弹性池归零</td></tr><tr><td>T+30s</td><td>排队 &gt; 30 秒</td><td>降级：关深度思考、截断长回答</td><td>网关</td><td>单请求成本降 3.5 倍</td></tr><tr><td>T+45s</td><td>goodput &lt; 95%</td><td>拒绝 P2 新请求</td><td>网关</td><td>只保 P0/P1</td></tr><tr><td>T+60s</td><td>仍恶化</td><td>抢占：P1 让位于 P0</td><td>LLM 网关</td><td>预留租户优先</td></tr><tr><td>T+120s</td><td>仍恶化</td><td>全局限流到容量 × 0.8</td><td>网关</td><td>主动丢 20%</td></tr><tr><td>恢复</td><td>goodput &gt; 99% 持续 5 分钟</td><td>每次放开 10%，间隔 2 分钟</td><td>调度器</td><td>渐进恢复</td></tr></tbody></table></div>
@@ -541,7 +594,7 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>谁</th><th>被抢占的代价</th><th>抢占顺序</th></tr></thead><tbody><tr><td>P0</td><td>已付费预留</td><td>不可接受</td><td>最后</td></tr><tr><td>P1</td><td>按量在线</td><td>用户等多 30 秒</td><td>第二</td></tr><tr><td>P2</td><td>离线批处理</td><td>任务重跑</td><td>第一</td></tr><tr><td>P3</td><td>内部调试</td><td>无</td><td>最先</td></tr></tbody></table></div>
 <p>P0 之间不抢占——同样付费的租户没有高低。真到了 P0 之间要抢的地步，说明容量模型错了（第 13 章），该扩卡而不是继续挤。</p>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>6. 恢复期：比崩溃更难</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>6. 恢复期：比崩溃更难</h2>
 <p>崩溃是"某个瞬间失效"，恢复是"逐渐回到正常"。恢复期有三个坑。</p>
 <p><strong>坑一：缓存是冷的。</strong> 过载时缓存被冲垮，恢复后命中率从 0 爬回 85% 要 10–20 分钟。这期间 prefill 成本是正常的 5 倍，TTFT 仍然偏高。</p>
 <p><strong>坑二：重试还在来。</strong> 客户端在崩溃期间积压的重试，会在恢复后涌入。所以恢复期的实际到达量高于真实需求。</p>
@@ -549,7 +602,7 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <p>应对是三条：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>措施</th><th>参数</th><th>作用</th></tr></thead><tbody><tr><td>渐进放开</td><td>每次 +10%，间隔 2 分钟</td><td>防止二次冲击</td></tr><tr><td>推迟扩离线</td><td>goodput 恢复后 10 分钟才允许</td><td>让缓存先热</td></tr><tr><td>恢复期限流</td><td>正常容量的 80%</td><td>留出重试的余量</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>7. 限流按 QPS 还是 token</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>7. 限流按 QPS 还是 token</h2>
 <p>这是最常被问的问题，答案是<strong>两个都要，用在不同层</strong>。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>按什么</th><th>为什么</th></tr></thead><tbody><tr><td>网关入口</td><td>QPS</td><td>便宜、快、防突发。此时还不知道 token 数</td></tr><tr><td>LLM 网关</td><td>并发请求数</td><td>能预估上下文长度，区分长短请求</td></tr><tr><td>引擎</td><td>token/秒 + KV 水位</td><td>最准，但已经进来了</td></tr></tbody></table></div>
 <p>入口按 QPS 防的是"异常流量"（爬虫、攻击、配置错误），特征是请求数异常。</p>
@@ -558,14 +611,14 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>并发 = QPS × 停留时间</code></pre></figure>
 <p>它同时反映请求数和时长，比单独的 QPS 准，又不需要预知 token 数。</p>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>8. 拒绝的四种语义</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>8. 拒绝的四种语义</h2>
 <p>拒绝不是只有"返回 503"。语义不同，客户端行为不同。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>语义</th><th>状态码</th><th>客户端该做什么</th><th>用在哪</th></tr></thead><tbody><tr><td>重试</td><td>503 + Retry-After</td><td>等 N 秒重试一次</td><td>临时过载</td></tr><tr><td>降级</td><td>200 + 降级标记</td><td>展示降级内容</td><td>质量可让</td></tr><tr><td>排队</td><td>202 + 位置</td><td>轮询或等待</td><td>异步任务</td></tr><tr><td>永久拒绝</td><td>429</td><td>不要重试，改配额</td><td>超配额</td></tr></tbody></table></div>
 <p><code>Retry-After</code> 必须是真数：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>Retry-After = 当前队列长度 ÷ 服务速率</code></pre></figure>
 <p>队列 12,000、速率 7,000/秒，就是 1.7 秒。写死了会两头错：写 30 秒但实际 3 秒就好，客户端白等；写 3 秒但实际要 30 秒，重试还是失败，加重拥塞。</p>
 </section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>9. 队列为什么是雪崩放大器</h2>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>9. 队列为什么是雪崩放大器</h2>
 <p>排队看起来温和（不拒绝用户），过载时却在加速崩溃。</p>
 <p>用利特尔法则：队列长度 = 到达率 × 等待时间。</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>到达 8,000 QPS，服务 7,000 QPS
@@ -577,7 +630,7 @@ T+21   在线并发余量 110×1,666 = 183,000</code></pre></figure>
 <p>超过 42 万，新请求的等待必然超过 60 秒，<strong>拒绝比排队好</strong>。</p>
 <p>这条上限的作用不是省资源，是止损：把"所有人都慢"变成"一部分人快、一部分人被拒"。</p>
 </section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>10. 配置</h2>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>10. 配置</h2>
 <p>三段核心配置（Envoy 风格）：</p>
 <figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code># ① 限流：令牌桶，防突发
 rate_limits:
@@ -607,20 +660,20 @@ outlier_detection:
     })</code></pre></figure>
 <p>后两个头是给运维的：出问题时不用翻日志，看响应头就知道系统在哪一格。</p>
 </section>
-<section class="sec" id="s15"><h2><span class="sec-num">15</span>11. 失败模式</h2>
+<section class="sec" id="s16"><h2><span class="sec-num">16</span>11. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>超 20% 就全崩</td><td>队列无上限</td><td>队列无界增长</td><td>设上限 + 超时</td></tr><tr><td>限流后仍崩</td><td>重试放大</td><td>实际到达 &gt; 真实需求</td><td>关自动重试或加大退避</td></tr><tr><td>离线任务被反复打断</td><td>弹性池太小</td><td>中断率 &gt; 30%</td><td>扩大弹性池，或降离线配额</td></tr><tr><td>回收后在线仍不够</td><td>两个池模型不同</td><td>回收耗时 2–3 分钟</td><td>统一模型</td></tr><tr><td>恢复要十几分钟</td><td>缓存被冲垮</td><td>命中率曲线</td><td>恢复期限流更严，先回填</td></tr><tr><td>长请求拖垮整池</td><td>无隔离</td><td>按长度看 TPOT（Time Per Output Token）</td><td>长请求独立池</td></tr><tr><td>离线任务饿死</td><td>大任务占满弹性池</td><td>队列里小任务等待久</td><td>单任务上限 30%</td></tr><tr><td>网关 429 但引擎还满</td><td>信号不同步</td><td>对比两边速率</td><td>统一信号源</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s16"><h2><span class="sec-num">16</span>12. 什么情况下这些结论不成立</h2>
+<section class="sec" id="s17"><h2><span class="sec-num">17</span>12. 什么情况下这些结论不成立</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>队列要设上限</td><td>纯离线批处理，等待无所谓，可以不设</td></tr><tr><td>拒绝比排队好</td><td>有充足余量且请求可等时，排队更友好</td></tr><tr><td>留 25% 在线专用</td><td>流量极平稳（无突发）时，可以全部混用</td></tr><tr><td>六跳都有闸</td><td>单体服务时，两道闸（限流 + 超时）就够</td></tr><tr><td>恢复比崩溃慢</td><td>缓存命中率很低（&lt;30%）时，恢复也快</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s17"><h2><span class="sec-num">17</span>13. 验收</h2>
+<section class="sec" id="s18"><h2><span class="sec-num">18</span>13. 验收</h2>
 <ol><li>能画出六跳链路，每跳说出信号、阈值、动作。</li><li>能算出队列上限，并解释为什么是这个数。</li><li>能算出你的离线可填容量，并说明弹性池怎么动态配比。</li><li>能写出撞峰时序表，含每一步的秒数和执行者。</li><li>能解释为什么恢复比崩溃慢。</li></ol>
 </section>
-<section class="sec" id="s18"><h2><span class="sec-num">18</span>14. 复盘卡</h2>
+<section class="sec" id="s19"><h2><span class="sec-num">19</span>14. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
 <p>我原来以为过载就是"变慢"，实际差在队列和重试会把它加速成雪崩；我原来以为离线任务只是"填谷"，实际它要能被秒级回收，否则填进去就是负债。</p>
 </section>
-<section class="sec" id="s19"><h2><span class="sec-num">19</span>15. 延伸</h2>
+<section class="sec" id="s20"><h2><span class="sec-num">20</span>15. 延伸</h2>
 <ul><li>第 10B 章：引擎 waiting 队列与并发上限</li><li>第 13 章：容量模型，本章的 2,512 卡来自那里</li><li>第 16 章：配额与容量预留，本章是它的执行层</li><li>第 33 章：弹性扩容，回答"为什么不靠扩机器解决"</li><li>第 35 章：降级阶梯，本章只用了其中两档</li><li>第 41 章：goodput 与 burn rate 的监控实现</li></ul>
 <p>结论是：过载保护的难点不在"限流多少"，在"压力怎么传、余量怎么用"。限流是入口的单点猜测，背压是每一跳的实时反馈；而真正提高利用率的是平时把离线任务塞进在线空出来的那 75%——但它必须能被秒级回收，否则填进去的每一张卡都是负债。</p>
 </section></article>
