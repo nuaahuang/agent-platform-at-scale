@@ -305,6 +305,39 @@ blockquote p{margin:.4em 0}
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>应付 = 用量费（按 token）+ 容量预留费（按峰值）
      = 64% 按用量 + 36% 按峰值</code></pre></figure>
 <p>这样 A 付 0.64×30% + 0.36×50% = 37.2%，B 付 0.64×50% + 0.36×30% = 42.8%，C 付 20%。比单纯的任一摊法都更容易接受。</p>
+<h3>4.1 一个能验算的完整分摊</h3>
+<p>上面讲的是原则，这里把它算完。用第 13、14 章的真实数字。</p>
+<p><strong>第一步，把 2,512 卡拆成"直接"和"共享"。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>池子</th><th>卡数</th><th>承担什么成本</th><th>按什么摊</th></tr></thead><tbody><tr><td>prefill</td><td>909</td><td>真的被请求用掉</td><td>该租户的 prefill token 占比</td></tr><tr><td>decode</td><td>700</td><td>真的被请求用掉</td><td>该租户的输出 token 占比</td></tr><tr><td>冗余与弹性</td><td>903</td><td>为峰值和故障常备</td><td>该租户的峰值容量占比</td></tr><tr><td>合计</td><td>2,512</td><td>2.83 亿</td><td>—</td></tr></tbody></table></div>
+<p>903 是这么来的：1,609 × 1.56 − 1,609 = 902，取整 903。</p>
+<p><strong>第二步，确定三个占比。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>月 token 占比</th><th>峰值容量占比</th></tr></thead><tbody><tr><td>售后（平稳）</td><td>72%</td><td>70%</td></tr><tr><td>物流（集中）</td><td>20%</td><td>20%</td></tr><tr><td>营销（活动型）</td><td>8%</td><td>10%</td></tr></tbody></table></div>
+<p>营销的 token 占 8%，但峰值占 10%——因为它只在活动期间爆发，平时不用，用的时候一起挤。逐池乘开就是下面这张表：</p>
+<p>营销的 token 占 8%，但峰值占 10%——因为它只在活动期间爆发，平时不用，用的时候一起挤。</p>
+<p><strong>第三步，逐池乘加。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>prefill 909×占比</th><th>decode 700×占比</th><th>共享 903×占比</th><th>合计卡数</th></tr></thead><tbody><tr><td>售后</td><td>636</td><td>490</td><td>632</td><td>1,758</td></tr><tr><td>物流</td><td>182</td><td>140</td><td>181</td><td>502</td></tr><tr><td>营销</td><td>91</td><td>70</td><td>90</td><td>251</td></tr><tr><td>合计</td><td>909</td><td>700</td><td>903</td><td>2,512</td></tr></tbody></table></div>
+<p><strong>第四步，换算成钱，并和"纯 token 摊"对比。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>租户</th><th>双轨分摊</th><th>纯 token 摊</th><th>差</th></tr></thead><tbody><tr><td>售后</td><td>1.987 亿</td><td>2.038 亿</td><td>多付 505 万</td></tr><tr><td>物流</td><td>0.568 亿</td><td>0.566 亿</td><td>少付 17 万</td></tr><tr><td>营销</td><td>0.284 亿</td><td>0.226 亿</td><td><strong>少付 575 万</strong></td></tr><tr><td>合计</td><td>2.83 亿</td><td>2.83 亿</td><td>0</td></tr></tbody></table></div>
+<p>这张表就是吵架的根源。纯按 token 摊，营销少付 575 万，这笔钱由售后补上。换成双轨，营销回到 0.284 亿——它自己造成的峰值容量，自己付。</p>
+<p><strong>数字怎么咬合：</strong></p>
+<ol><li>三个池子的卡数加起来 = 2,512，和容量模型一致</li><li>每行的卡数 × ¥113,004 ÷ 1e8 = 该行成本，三行加起来 = 2.83 亿</li><li>双轨与纯 token 的差额，三行相加 = 0（钱只是在租户之间转移）</li></ol>
+<p>只要这三条成立，分摊就是可审计的。</p>
+<h3>4.2 峰值容量占比怎么测</h3>
+<p>分摊能不能落地，全看这个数测不测得出来。它是能测的——从请求日志算峰值小时的并发。</p>
+<p>并发不是请求数，是同一时刻正在处理的请求数。对每个租户，在峰值那一小时里逐秒统计：</p>
+<figure class="code code--lang"><span class="code-lang">sql</span><button class="copy" type="button">复制</button><pre><code>SELECT tenant_id,
+       sum(concurrent_seconds) / 3600.0 AS avg_concurrency
+FROM (
+  SELECT tenant_id,
+         extract(epoch FROM least(ended_at, t_end) - greatest(started_at, t_start)) AS concurrent_seconds
+  FROM request_log, peak_window
+  WHERE started_at &lt; t_end AND ended_at &gt; t_start
+) t
+GROUP BY tenant_id;</code></pre></figure>
+<p>这段的意思是：把每个请求在峰值窗口内的存活时长加起来，除以窗口长度，就是平均并发。</p>
+<p>三个细节要注意：</p>
+<ul><li>窗口取"连续四周的同一小时"，取平均，避免单次大促失真</li><li>长请求会跨窗口，要按重叠部分算，不能整条计入</li><li>峰值容量占比 = 该租户并发 ÷ 全部租户并发，再乘池子卡数</li></ul>
+<p>测出来之后，每月对一次，和上月比。<strong>占比变动超过 5 个点要解释原因</strong>——通常是新业务上线或某个租户改了调用模式，也可能是埋点坏了。</p>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 缓存池怎么摊</h2>
 <p>还有一个更麻烦的共享资源：前缀缓存。</p>
