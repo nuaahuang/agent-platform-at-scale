@@ -391,7 +391,8 @@ GROUP BY tenant_id;</code></pre></figure>
 <p><strong>第四步，抢占。</strong> 缺口大于共享池能腾出的量时，才动抢占：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>谁</th><th>动作</th><th>用户感知</th></tr></thead><tbody><tr><td>P0</td><td>预留租户</td><td>保证供给</td><td>无</td></tr><tr><td>P1</td><td>按量在线</td><td>排队 30–60 秒</td><td>变慢</td></tr><tr><td>P2</td><td>批处理</td><td>直接中断，返回"稍后重试"</td><td>任务失败</td></tr></tbody></table></div>
 <p>P2 被中断是设计好的，不是事故——批处理的任务本来就有"可重试"的语义。如果某个批处理任务不能中断，它就不该跑在共享池里。</p>
-<p>这四步必须在网关实现（第 25 章）。靠人去"手动扩一下"，在峰值那 20 分钟里根本来不及。</p>
+<p>这四步必须在网关实现。靠人去"手动扩一下"，在峰值那 20 分钟里根本来不及。</p>
+<p>但这一节只定了<strong>商务规则和池子划分</strong>——谁预留多少、借出的怎么还、撞峰时谁让位。真正执行的四步（检测信号怎么采、通知怎么发、回收怎么落到具体请求、抢占怎么中断）属于运行时行为，是第 25 章的主题：过载保护的五道闸与逐跳背压。两章的分工是"本章定规则，第 25 章实现规则"。</p>
 <h3>4.3.5 商务上怎么定价</h3>
 <p>预留费按"预留容量 × 单位成本 × 系数"算：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>售后预留 40% 峰值容量 = 1,005 卡
