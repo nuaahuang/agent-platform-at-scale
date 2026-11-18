@@ -247,115 +247,107 @@ blockquote p{margin:.4em 0}
 <p>这也是为什么"在网关配个 7,000 QPS 的令牌桶"没用——它看不见第五跳的队列。</p>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>2.5 一个能落地的部署拓扑</h2>
-<p>前面的六跳是逻辑链路。落到物理部署上，一个 2000 万 DAU 的平台大概长这样：10 个网关、1,000 个 pod、3 个资源池。</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>                    ┌─ L4 负载均衡（ECMP / Anycast）
-                    │
-      ┌─────────────┼─────────────┐
-      ▼             ▼             ▼
-   网关-01       网关-05       网关-10       ← 10 个，各 700 QPS
-      │             │             │
-      └─────────────┼─────────────┘
-                    │  按「租户/优先级/离线标记」选池
-      ┌─────────────┼──────────────┐
-      ▼             ▼              ▼
-  专用池 60 pod  在线池 175 pod  弹性池 79 pod
-  480 卡         1,400 卡        632 卡
-  预留租户       常规在线        离线任务
-      │             │              │
-      └─────────────┴──────────────┘
-                    │
-              Harness 400 pod（编排/工具/检索）
-                    │
-              LLM 网关 120 pod（模型选择/重试）
-                    │
-              GPU 314 pod × 8 卡 = 2,512</code></pre></figure>
-<p>1,000 个 pod 的构成：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>角色</th><th>pod 数</th><th>卡</th><th>说明</th></tr></thead><tbody><tr><td>网关</td><td>10</td><td>0</td><td>无状态，按 QPS 扩</td></tr><tr><td>Harness</td><td>400</td><td>0</td><td>CPU 密集，编排与工具</td></tr><tr><td>LLM 网关</td><td>120</td><td>0</td><td>模型路由与重试</td></tr><tr><td>GPU 推理</td><td>314</td><td>2,512</td><td>8 卡一个 pod（TP8）</td></tr><tr><td>工具代理 / 检索</td><td>156</td><td>0</td><td>MCP 与向量检索</td></tr><tr><td>合计</td><td>1,000</td><td>2,512</td><td>—</td></tr></tbody></table></div>
-<p>GPU pod 分三个池，占比和理由：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>pod</th><th>卡</th><th>占比</th><th>装谁</th><th>为什么这么大</th></tr></thead><tbody><tr><td>专用池</td><td>60</td><td>480</td><td>19%</td><td>三个预留租户</td><td>按第 16 章的预留算</td></tr><tr><td>在线池</td><td>175</td><td>1,400</td><td>56%</td><td>常规在线</td><td>要扛峰值</td></tr><tr><td>弹性池</td><td>79</td><td>632</td><td>25%</td><td>离线任务</td><td>在线空闲的变现</td></tr></tbody></table></div>
-<h3>2.5.1 流量按什么条件落到哪个池</h3>
+<p>前面的六跳是逻辑链路。落到物理部署上，每个角色的 pod 数都不是拍的，要从账本推。</p>
+<h3>2.5.1 每个角色怎么算</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>角色</th><th>单 pod 能力</th><th>需求来自哪</th><th>算法</th></tr></thead><tbody><tr><td>GPU 推理</td><td>8 卡，1,666 并发（2K）</td><td>2,512 卡（第 13 章）</td><td>2,512 ÷ 8 = 314</td></tr><tr><td>网关</td><td>5 万长连接</td><td>峰值并发连接</td><td>140,000 ÷ 50,000 ≈ 3，加冗余 6</td></tr><tr><td>Harness</td><td>8 核，异步 IO</td><td>每请求 15 ms CPU</td><td>7,000 × 15 ms = 105 核 ÷ 8 = 13，×1.5 = 20</td></tr><tr><td>LLM 网关</td><td>8 核</td><td>每请求 1.5 ms CPU</td><td>7,000 × 1.5 ms = 10.5 核 → 4</td></tr><tr><td>检索代理</td><td>1,000 QPS</td><td>每请求一次检索</td><td>7,000 ÷ 1,000 = 7 → 8</td></tr><tr><td>工具代理</td><td>800 QPS</td><td>40% 请求调工具</td><td>2,800 ÷ 800 ≈ 4</td></tr></tbody></table></div>
+<p>网关那个数字值得解释。它不按 QPS 算，按<strong>长连接数</strong>算：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>峰值并发连接 = 7,000 QPS × 20 秒平均驻留 = 140,000
+单 pod 承载 5 万连接（16 GB 内存，每连接约 50 KB）
+→ 3 个 pod 够用，加 N+1 和灰度并行 = 6 个</code></pre></figure>
+<p>如果按 QPS 算，2 个 pod 就够了——会漏掉连接数这个真正的约束。</p>
+<p>Harness 反过来，按 CPU 算：一次请求平均 15 ms 的编排 CPU（多轮循环、JSON 序列化、工具参数组装），7,000 QPS 就是 105 核。</p>
+<h3>2.5.2 结果：356 个 pod，不是 1,000 个</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>角色</th><th>pod 数</th><th>卡</th><th>占比</th></tr></thead><tbody><tr><td>GPU 推理</td><td>314</td><td>2,512</td><td>88%</td></tr><tr><td>Harness</td><td>20</td><td>0</td><td>6%</td></tr><tr><td>检索代理</td><td>8</td><td>0</td><td>2%</td></tr><tr><td>网关</td><td>6</td><td>0</td><td>2%</td></tr><tr><td>LLM 网关</td><td>4</td><td>0</td><td>1%</td></tr><tr><td>工具代理</td><td>4</td><td>0</td><td>1%</td></tr><tr><td>合计</td><td><strong>356</strong></td><td>2,512</td><td>100%</td></tr></tbody></table></div>
+<p><strong>88% 的 pod 是 GPU。</strong> CPU 侧只有 42 个 pod——这个比例很反直觉，因为传统互联网系统里 CPU pod 是绝对多数。</p>
+<p>原因是：LLM 服务把绝大部分计算压到了 GPU 上，Harness 只剩编排逻辑。这也是为什么"加机器"在这个系统里几乎总是"加卡"，很少是"加 CPU"。</p>
+<p>如果有人跟你说这个规模要 1,000 个 pod，多半是把 sidecar、租户隔离实例、监控组件都算进去了——那些确实存在，但不承担业务流量。</p>
+<h3>2.5.3 三个池怎么分</h3>
+<p>这里的分配逻辑和第 16 章的容量预留直接相关。峰值并发 140,000，其中预留租户叠加后占 105,000：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>池</th><th>服务对象</th><th>并发</th><th>pod</th><th>卡</th></tr></thead><tbody><tr><td>专用池</td><td>预留租户的保底</td><td>105,000</td><td>63</td><td>504</td></tr><tr><td>在线池</td><td>非预留租户</td><td>35,000</td><td>21</td><td>168</td></tr><tr><td>弹性池</td><td>离线任务，峰值可回收</td><td>—</td><td><strong>230</strong></td><td><strong>1,840</strong></td></tr><tr><td>合计</td><td>—</td><td>140,000</td><td>314</td><td>2,512</td></tr></tbody></table></div>
+<p>弹性池占了 73%，这是本章最重要的一个设计：<strong>它不是一个"离线专用池"，而是"没有被预留的容量"。</strong> 平时跑离线任务，峰值时逐级回收给在线。</p>
+<p>这样一张卡有三种状态，按时间切换：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>平时    ：专用池 25% 负载跑在线 + 弹性池 100% 跑离线
+小高峰   ：弹性池回收 50% 给在线
+大高峰   ：弹性池回收 100%，全部给在线</code></pre></figure>
+<p>把"冗余"和"离线"合成一个池，是利用率从 25% 提到 60% 的关键——第 4 节展开。</p>
+<h3>2.5.4 流量按什么条件落到哪个池</h3>
 <p>网关收到请求，按四步决策，顺序不能换：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>序</th><th>判据</th><th>目标</th><th>判错会怎样</th></tr></thead><tbody><tr><td>1</td><td>租户在预留名单</td><td>专用池</td><td>预留租户被挤，违约</td></tr><tr><td>2</td><td><code>X-Offline: true</code></td><td>弹性池</td><td>离线抢占在线容量</td></tr><tr><td>3</td><td>上下文 &gt; 16K</td><td>在线池的长文子集</td><td>长请求挤占短请求</td></tr><tr><td>4</td><td>其余</td><td>在线池</td><td>默认</td></tr></tbody></table></div>
 <p>第一步必须在最前。如果先判"离线"再判"预留"，一个预留租户的离线任务会跑进弹性池——看起来没问题，但它占的额度是从预留里扣的，账就乱了。</p>
-<p>第三步的"长文子集"不是单独的池，是在线池里的一个标签。长请求单独走一组 pod 的理由是它们占 KV 太多（32K 请求的 KV 是 2K 的 16 倍），混在一起会把短请求的并发挤掉。</p>
-<h3>2.5.2 池内怎么选 pod</h3>
-<p>选定池之后，两件事：亲和性和负载。</p>
-<p><strong>亲和性决定缓存命中率。</strong> 同一租户的请求尽量落到同一批 pod，这样前缀缓存能复用。做法是一致性哈希：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>pod = ring_hash(tenant_id) 的顺时针第一个</code></pre></figure>
-<p>但纯哈希会造成热点——大租户的流量集中到几个 pod，把这几个打满。所以要加容量上限：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>候选 = ring 上顺时针前 3 个 pod
+<h3>2.5.5 池内怎么选 pod</h3>
+<p>选定池之后两件事：亲和性和负载。</p>
+<p><strong>亲和性决定缓存命中率。</strong> 同一租户尽量落到同一批 pod，前缀缓存才能复用。用一致性哈希，但要加容量上限防热点：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>候选 = ring_hash(tenant_id) 顺时针前 3 个 pod
 可用 = 候选里 KV 占用 &lt; 80% 的
 结果 = 可用里 waiting 队列最短的</code></pre></figure>
-<p>这个"前 3 选 1"的设计很关键：它保留了亲和性（大多数时候选第一个），又能在第一个过载时溢出。</p>
-<p><strong>会话亲和比分请求亲和更重要。</strong> 同一会话的连续请求必须落到同一 pod，否则 KV 一次都命中不了。键用 <code>session_id</code>，不是 <code>request_id</code>。</p>
-<h3>2.5.3 网关配置</h3>
-<p>一个可用的 Envoy 片段，三个池做成了三个 subset：</p>
-<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code>static_resources:
-  clusters:
-    - name: llm_inference
-      type: EDS
-      lb_policy: RING_HASH
-      ring_hash_lb_config:
-        minimum_ring_size: 1024        # 每 pod 约 3 个虚拟节点
-      circuit_breakers:
-        thresholds:
-          - priority: DEFAULT
-            max_connections: 30000
-            max_pending_requests: 420000   # 队列上限（第 9 节）
-            max_requests: 140000
-      outlier_detection:
-        consecutive_5xx: 5
-        interval: 10s
-        base_ejection_time: 30s
-        max_ejection_percent: 30
-      subsets:
-        - name: dedicated
-          filter_metadata: {pool: dedicated}
-        - name: online
-          filter_metadata: {pool: online}
-        - name: elastic
-          filter_metadata: {pool: elastic}
+<p>"前 3 选 1"同时满足两件事：保留亲和性（多数时候选第一个），又能溢出（第一个满了自动到第二个）。</p>
+<p><strong>会话亲和比分请求亲和更重要。</strong> 同一会话必须落到同一 pod，否则 KV 一次都命中不了。哈希键用 <code>session_id</code>，不是 <code>request_id</code>。</p>
+<h3>2.5.6 网关配置</h3>
+<p>一个可用的 Envoy 片段：</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code>clusters:
+  - name: llm_inference
+    type: EDS
+    lb_policy: RING_HASH
+    ring_hash_lb_config:
+      minimum_ring_size: 1024        # 314 pod × 约 3
+    circuit_breakers:
+      thresholds:
+        - priority: DEFAULT
+          max_connections: 30000
+          max_pending_requests: 420000   # 队列上限（第 9 节）
+          max_requests: 140000
+    outlier_detection:
+      consecutive_5xx: 5
+      interval: 10s
+      base_ejection_time: 30s
+      max_ejection_percent: 30
+    subsets:
+      - name: dedicated
+        filter_metadata: {pool: dedicated}
+      - name: online
+        filter_metadata: {pool: online}
+      - name: elastic
+        filter_metadata: {pool: elastic}
 
-  routes:
-    - match: {prefix: &quot;/v1/chat&quot;}
-      route:
-        cluster: llm_inference
-        hash_policy:
-          - header: {header_name: &quot;x-tenant-id&quot;}
-        retry_policy:
-          retry_on: &quot;5xx&quot;
-          num_retries: 1          # 只重试一次，防放大
-          per_try_timeout: 9s</code></pre></figure>
+routes:
+  - match: {prefix: &quot;/v1/chat&quot;}
+    route:
+      cluster: llm_inference
+      hash_policy:
+        - header: {header_name: &quot;x-tenant-id&quot;}
+      retry_policy:
+        retry_on: &quot;5xx&quot;
+        num_retries: 1              # 只重试一次，防放大
+        per_try_timeout: 9s</code></pre></figure>
 <p>四个参数值得单独说：</p>
-<ul><li><code>minimum_ring_size: 1024</code> → 314 个 pod 每个约 3 个虚拟节点，哈希分布够均匀</li><li><code>max_pending_requests: 420000</code> → 队列上限，由 SLO 反推（第 9 节）</li><li><code>num_retries: 1</code> → <strong>只重试一次</strong>。重试两次会在过载时把流量放大 3 倍</li><li><code>base_ejection_time: 30s</code> → 摘除 30 秒，够实例恢复</li></ul>
-<h3>2.5.4 控制面每 10 秒下发什么</h3>
-<p>控制面不是下发路由，路由是静态的。它下发的是<strong>配额和权重</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>参数</th><th>值</th><th>为什么是这个数</th></tr></thead><tbody><tr><td><code>minimum_ring_size</code></td><td>1024</td><td>314 pod × 3 虚拟节点，分布够均匀</td></tr><tr><td><code>max_pending_requests</code></td><td>420,000</td><td>队列上限，由 SLO 反推（第 9 节）</td></tr><tr><td><code>num_retries</code></td><td>1</td><td>重试两次会在过载时放大 3 倍</td></tr><tr><td><code>base_ejection_time</code></td><td>30 s</td><td>够实例恢复，又不至于长期少一个</td></tr></tbody></table></div>
+<h3>2.5.7 控制面每 10 秒下发什么</h3>
+<p>控制面不下发路由（路由是静态的），它下发<strong>配额和降级档</strong>：</p>
 <figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
   &quot;ts&quot;: &quot;2026-11-18T15:00:10Z&quot;,
   &quot;pools&quot;: {
-    &quot;dedicated&quot;: {&quot;pods&quot;: 60, &quot;max_concurrency&quot;: 22000},
-    &quot;online&quot;:    {&quot;pods&quot;: 175, &quot;max_concurrency&quot;: 64000},
-    &quot;elastic&quot;:   {&quot;pods&quot;: 79,  &quot;max_concurrency&quot;: 29000}
+    &quot;dedicated&quot;: {&quot;pods&quot;: 63, &quot;max_concurrency&quot;: 105000},
+    &quot;online&quot;:    {&quot;pods&quot;: 21, &quot;max_concurrency&quot;: 35000},
+    &quot;elastic&quot;:   {&quot;pods&quot;: 230, &quot;max_concurrency&quot;: 383000}
   },
   &quot;tenants&quot;: {
-    &quot;tenant-a&quot;: {&quot;pool&quot;: &quot;dedicated&quot;, &quot;quota_qps&quot;: 2500, &quot;reserved_conc&quot;: 18000},
+    &quot;tenant-a&quot;: {&quot;pool&quot;: &quot;dedicated&quot;, &quot;quota_qps&quot;: 2500, &quot;reserved_conc&quot;: 46000},
     &quot;tenant-b&quot;: {&quot;pool&quot;: &quot;online&quot;,    &quot;quota_qps&quot;: 1200, &quot;burst&quot;: 1800}
   },
   &quot;degrade_level&quot;: 0,
   &quot;reject_p2&quot;: false
 }</code></pre></figure>
-<p>网关拿到这份数据后自己执行：超过 <code>quota_qps</code> 返回 429，<code>degrade_level</code> 变了就切换降级策略，<code>reject_p2</code> 为真就拒离线。</p>
-<p><strong>控制面不在请求路径上</strong>——网关挂了控制面照样工作，用的是上一份下发。这一点是分层的价值和代价：可用性高，实时性差（最多 10 秒滞后）。</p>
-<h3>2.5.5 一次请求的完整耗时</h3>
-<p>以 TTFB 为目标，看每一跳花多少：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>跳</th><th>耗时</th><th>说明</th></tr></thead><tbody><tr><td>客户端 → LB</td><td>2 ms</td><td>就近接入</td></tr><tr><td>LB → 网关</td><td>1 ms</td><td>同机房</td></tr><tr><td>鉴权 + 配额</td><td>3 ms</td><td>Redis 查询</td></tr><tr><td>选池 + 选 pod</td><td>1 ms</td><td>内存哈希</td></tr><tr><td>→ Harness</td><td>2 ms</td><td>—</td></tr><tr><td>RAG 检索</td><td>180 ms</td><td>向量检索 + 重排</td></tr><tr><td>→ LLM 网关</td><td>1 ms</td><td>—</td></tr><tr><td>→ 引擎</td><td>2 ms</td><td>—</td></tr><tr><td>排队</td><td>50 ms</td><td>当前水位</td></tr><tr><td>prefill</td><td>15 ms</td><td>缓存命中（未命中 270 ms）</td></tr><tr><td>首 token</td><td>1 ms</td><td>—</td></tr><tr><td><strong>合计 TTFT</strong></td><td><strong>258 ms</strong></td><td>SLO 是 800 ms</td></tr></tbody></table></div>
-<p>这张表说明两件事：<strong>网络和网关的开销可以忽略（7 ms），真正的时间花在检索（180 ms）和 prefill（15 或 270 ms）上。</strong></p>
-<p>所以优化 TTFT 不该去优化网关，该去优化检索和缓存命中率。</p>
-<h3>2.5.6 一个池挂了会怎样</h3>
-<p>最后看故障：专用池的 60 个 pod 全挂。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>会发生什么</th><th>谁兜底</th></tr></thead><tbody><tr><td>0–10 s</td><td>outlier detection 摘除失败 pod</td><td>Envoy</td></tr><tr><td>10 s</td><td>预留租户的请求无处可去</td><td>网关</td></tr><tr><td>10–20 s</td><td>按优先级压到在线池</td><td>控制面改 <code>pool</code> 字段</td></tr><tr><td>20 s+</td><td>在线池被挤，goodput 下降</td><td>降级 + 拒绝 P2</td></tr></tbody></table></div>
-<p>关键是第 3 行：<strong>预留池挂了要能把租户临时"降级"到在线池</strong>，而不是直接拒绝。这需要控制面支持"池迁移"，而不是把池写死在租户配置里。</p>
-<p>如果写死了，专用池一挂，三个大租户全部不可用——这是故障演练里最常见的发现。</p>
+<p>网关拿到后自己执行：超 <code>quota_qps</code> 返 429，<code>degrade_level</code> 变了切降级策略，<code>reject_p2</code> 为真拒离线。</p>
+<p><strong>控制面不在请求路径上。</strong> 它挂了，网关照旧用上一份下发工作——这是分层的价值和代价：可用性高，实时性差（最多滞后 10 秒）。</p>
+<h3>2.5.8 一次请求的耗时分布</h3>
+<p>以首 token（TTFT）为目标，看每一跳花多少：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>跳</th><th>耗时</th><th>说明</th></tr></thead><tbody><tr><td>客户端 → LB</td><td>2 ms</td><td>就近接入</td></tr><tr><td>LB → 网关</td><td>1 ms</td><td>同机房</td></tr><tr><td>鉴权 + 配额</td><td>3 ms</td><td>Redis 查询</td></tr><tr><td>选池 + 选 pod</td><td>1 ms</td><td>内存哈希</td></tr><tr><td>→ Harness</td><td>2 ms</td><td>—</td></tr><tr><td>RAG 检索</td><td>180 ms</td><td>向量检索 + 重排</td></tr><tr><td>→ LLM 网关</td><td>1 ms</td><td>—</td></tr><tr><td>→ 引擎</td><td>2 ms</td><td>—</td></tr><tr><td>排队</td><td>50 ms</td><td>当前水位</td></tr><tr><td>prefill</td><td>15 ms</td><td>缓存命中（未命中 270 ms）</td></tr><tr><td>首 token</td><td>1 ms</td><td>—</td></tr><tr><td><strong>合计</strong></td><td><strong>258 ms</strong></td><td>SLO 是 800 ms</td></tr></tbody></table></div>
+<p>两个结论：<strong>网关总共只占 7 ms</strong>，优化 TTFT 不该优化网关；<strong>检索 180 ms 是大头</strong>，缓存命中与否差 18 倍（15 ms 对 270 ms）。</p>
+<h3>2.5.9 一个池全挂会怎样</h3>
+<p>最后看故障：专用池 63 个 pod 全挂。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>会发生什么</th><th>谁兜底</th></tr></thead><tbody><tr><td>0–10 s</td><td>outlier detection 摘除失败 pod</td><td>Envoy</td></tr><tr><td>10 s</td><td>预留租户的请求无处可去</td><td>网关</td></tr><tr><td>10–20 s</td><td>控制面把租户临时迁到在线池</td><td>控制面</td></tr><tr><td>20 s+</td><td>在线池被挤，goodput 下降</td><td>降级 + 拒绝 P2</td></tr></tbody></table></div>
+<p>关键是第三行：<strong>预留池挂了要能把租户临时"降级"到在线池</strong>，而不是直接拒绝。</p>
+<p>如果租户配置里把池写死了（<code>pool: dedicated</code> 固化在租户表），专用池一挂，三个大租户全部不可用。这是故障演练里最常见的发现。</p>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>3. 压力信号：看五个数，不看 CPU</h2>
 <p>后端服务通常看 CPU 做扩缩容。LLM 服务不行：GPU 满载是正常状态，推理时本来就该跑满。</p>
