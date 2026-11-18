@@ -283,7 +283,27 @@ blockquote p{margin:.4em 0}
 350 × 6.42 = 2,247
 合计 5,246 → 0.525 分/轮</code></pre></figure>
 <p>和第 1 章的 0.517 差 1.5%，差在"命中输入"给了一个名义价而不是零。</p>
-<h3>2.6 那为什么大家说"输出比输入贵四倍"</h3>
+<h3>2.6 利用率为什么只有个位数</h3>
+<p>3.7% 这个数看着像浪费。拆开看，它是三个乘数乘出来的，每一个都有原因。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>prefill 利用率 = 峰均比倒数 × 缓存过滤 = 24.8% × 15% = 3.7%</code></pre></figure>
+<p><strong>第一个乘数：峰值是均值的 4 倍。</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>日均 QPS 1,736，峰值 7,000，峰均比 4.03</code></pre></figure>
+<p>客服场景的作息决定的：早 9 点到晚 9 点是主时段，晚 8 点到 9 点是一天最高峰，深夜只有白天的一成。容量必须按峰值配——按均值配的话，每天有 8 个小时在排队。</p>
+<p>所以<strong>只要按峰值配、按均值摊销，利用率的天花板就是 25%</strong>。这一条和系统做得好不好无关。</p>
+<p><strong>第二个乘数：缓存把 85% 的输入挡掉了。</strong></p>
+<p>容量按"缓存全失效"配（第 13 章的理由：版本切换那刻会归零），实际运行时 85% 命中。所以真正被计算的只有 15%。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>25% × 15% = 3.7%</code></pre></figure>
+<p>这一条是主动选择的结果：宁可平时闲，也不要在版本切换时全线超时。</p>
+<p>decode 的账多一层。它按峰值并发 140,000 配，平均并发只有 34,720，占 24%。但按 token 产出算只有 9.4%，因为批量小的时候每卡产出低：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>并发</th><th>单步时间</th><th>每实例产出</th></tr></thead><tbody><tr><td>397（平均）</td><td>11.0 ms</td><td>36,032 token/s</td></tr><tr><td>1,666（满）</td><td>22.4 ms</td><td>74,435 token/s</td></tr></tbody></table></div>
+<p>平均并发下带宽喂不满，每实例产出只有满负荷的 48%。所以 token 口径的利用率 = 24% × 48% ≈ 11.5%，和实测的 9.4% 是一回事（差在平均值取的区间）。</p>
+<h3>2.7 低利用率是该修还是该认</h3>
+<p>先把话说清：<strong>低利用率不等于浪费，它是为峰值和故障买的保险。</strong> 问题只在于保险买得对不对。</p>
+<p>三条能提高利用率的路，代价各不相同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>利用率</th><th>代价</th></tr></thead><tbody><tr><td>削峰（排队 + 预约）</td><td>25% → 31%</td><td>峰值等 30–60 秒</td></tr><tr><td>按缓存命中率配容量</td><td>prefill 3.7% → 15%</td><td>版本切换时 TTFT（Time To First Token）破线</td></tr><tr><td>闲置算力卖出去</td><td>可到 60% 以上</td><td>要能接纳批处理的业务</td></tr></tbody></table></div>
+<p>第三条最实在，也最常被忽略：prefill 池那 96% 的空闲不是"没有"，是可以给离线任务用的。第 33 章的错峰、附录 B 的训练占用，都是往这个池子里填东西。</p>
+<p>判断标准很简单：如果你的池子长期低于 20% 利用率，又不打算填，那它要么是买多了，要么是峰值系数定高了——两者都是钱。</p>
+<h3>2.8 那为什么大家说"输出比输入贵四倍"</h3>
 <p>因为对外的输入价报的是<strong>混合价</strong>：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>混合输入 = (285 × 10.24 + 1,615 × 0.05) ÷ 1,900 = ¥1.58/百万
 输出 ¥6.42/百万
