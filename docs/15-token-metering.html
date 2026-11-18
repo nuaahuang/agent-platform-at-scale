@@ -314,7 +314,22 @@ blockquote p{margin:.4em 0}
 每月一次 = ¥110 万/年
 净省 = 8,700 − 110 = 8,590 万/年</code></pre></figure>
 <p>利用率从 3.7% 提到 24.8%，6.7 倍。</p>
-<p>这就是第一级台阶：<strong>按常态配容量，按极端临时扩。</strong></p>
+<h3>2.8.1 削峰具体削什么</h3>
+<p>峰均比从 4.03 降到 3.2，要吸收 1,445 QPS。四个手段按"代价从轻到重"排，顺序不能反。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>顺序</th><th>手段</th><th>吸收什么</th><th>代价</th><th>谁受损</th></tr></thead><tbody><tr><td>1</td><td>剥离批量任务</td><td>回刷、报表、批量分类</td><td>完成时间从分钟变小时</td><td>没人（本来就不急）</td></tr><tr><td>2</td><td>降级</td><td>长回答截断、关深度思考</td><td>质量</td><td>用得到的人</td></tr><tr><td>3</td><td>排队</td><td>超出容量就等</td><td>30–60 秒</td><td>所有人</td></tr><tr><td>4</td><td>拒绝</td><td>超配额返回 429</td><td>服务不可用</td><td>低优先级租户</td></tr></tbody></table></div>
+<p><strong>第一招最有效，因为批量任务通常占 15%–25% 的请求量，而它们的截止时间本来就是"今天之内"。</strong></p>
+<p>算一下：批量任务占 18%，挪到夜间之后：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>峰值 7,000 × 82% = 5,740 QPS
+峰均比 = 5,740 ÷ 1,736 = 3.31</code></pre></figure>
+<p>一步就到 3.31，离目标 3.2 只差 185 QPS。剩下的靠排队吸收即可，对用户体验的影响极小。</p>
+<p>反过来，如果一上来就排队，要吸收 1,445 QPS（20%），意味着峰值时段五个人里有一个在等——这个代价比"报表晚几小时出"大得多。</p>
+<p>四招的落地方式：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>谁执行</th><th>具体做法</th></tr></thead><tbody><tr><td>剥离批量</td><td>调度器</td><td>给任务标 deadline，谷时执行；实时链路直接拒收批量请求</td></tr><tr><td>降级</td><td>网关</td><td>按第 35 章的 L0–L5 阶梯，峰值自动切到 L2（长回答截断）</td></tr><tr><td>排队</td><td>网关</td><td>令牌桶 + 优先级队列，队列上限 = 目标等待 × 吞吐</td></tr><tr><td>拒绝</td><td>网关</td><td>按租户配额，超了返 429 带 Retry-After</td></tr></tbody></table></div>
+<p>排队那一行的上限要算准。按第 10B 章的公式，目标等待 60 秒、吞吐 2.8 QPS/卡，2,512 卡能排：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>60 秒 × 2.8 × 2,512 = 42 万条</code></pre></figure>
+<p>超过这个长度，排队时间会失控增长，必须开始拒绝。所以队列不是越大越好，它有一个由吞吐决定的上限。</p>
+<p>还有一个前提条件容易被忽略：<strong>排队必须告诉用户要等多久</strong>。没有预期等待提示，60 秒的排队在用户眼里就是"卡死了"，流失率和直接拒绝差不多。</p>
+<p>这就是第一级台阶：<strong>按常态配容量，按极端临时扩。</strong>这就是第一级台阶：<strong>按常态配容量，按极端临时扩。</strong></p>
 <p>第二级是削峰。峰均比 4.03 降到 3.2（排队 + 预约），全舰队省 20% 卡，利用率到 31%。代价是峰值等 30–60 秒。</p>
 <p>第三级是填谷。前两级之后，25%–31% 就是"按峰值配"的天花板——再往上压，只能在谷底塞别的东西：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>填什么</th><th>怎么填</th><th>能填多少</th></tr></thead><tbody><tr><td>离线批处理</td><td>历史工单回刷、意图重分类</td><td>夜间填 60%–80%</td></tr><tr><td>评测与回放</td><td>第 4 章的 L2/L3</td><td>随时可打断，填 20%</td></tr><tr><td>RL 训练 rollout</td><td>附录 B 的 rollout 池</td><td>夜间大块占用</td></tr><tr><td>对外租售</td><td>把闲置卖出去</td><td>取决于商务</td></tr></tbody></table></div>
