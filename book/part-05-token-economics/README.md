@@ -4,6 +4,6 @@
 |---|---|---|---|---|
 | 15 | [Token 计量学](15-token-metering.md) | 四类 token 怎么算？取消的算不算？ | 计量 schema | ✅ |
 | 16 | [成本归因与预算控制](16-cost-attribution.md) | 五维归因怎么落？硬限额与软预警？ | 归因模型 + 配额方案 | ✅ |
-| 17 | 定价、毛利与对账 | 按 token/按次/订阅？三套数字对不上？ | 定价模型 + 对账报告 | ⬜ 待写 |
+| 17 | [定价、毛利与对账](17-pricing-margin-reconciliation.md) | 按 token/按次/订阅？三套数字对不上？ | 定价模型 + 对账报告 | ✅ |
 
 > 正文文件命名：`NN-slug.md`。模板见 [../README.md](../README.md)。
