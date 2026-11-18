@@ -302,6 +302,25 @@ blockquote p{margin:.4em 0}
 <p>三条能提高利用率的路，代价各不相同：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>手段</th><th>利用率</th><th>代价</th></tr></thead><tbody><tr><td>削峰（排队 + 预约）</td><td>25% → 31%</td><td>峰值等 30–60 秒</td></tr><tr><td>按缓存命中率配容量</td><td>prefill 3.7% → 15%</td><td>版本切换时 TTFT（Time To First Token）破线</td></tr><tr><td>闲置算力卖出去</td><td>可到 60% 以上</td><td>要能接纳批处理的业务</td></tr></tbody></table></div>
 <p>第三条最实在，也最常被忽略：prefill 池那 96% 的空闲不是"没有"，是可以给离线任务用的。第 33 章的错峰、附录 B 的训练占用，都是往这个池子里填东西。</p>
+<h3>2.8 从 3.7% 往上压的三级台阶</h3>
+<p>上面说 3.7% 是"买保险"，但保险买多少是可以谈的。3.7% 里真正被浪费的是第二段——按"缓存永远失效"配的那部分。</p>
+<p>prefill 池的 909 卡是这么来的：峰值 7,000 QPS × 全部 1,900 token，一个缓存命中都不算。而实际运行时 85% 命中，等于按最坏情况买、按平均情况用。</p>
+<p>如果改成按"峰值 + 实际命中率"配：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>峰值要算的 token = 7,000 × 1,900 × 15% = 2.0e6 token/s
+卡数 = 2.0e6 ÷ 14,838 = 134 卡</code></pre></figure>
+<p>从 909 降到 134，省 775 卡、每年 8,700 万。</p>
+<p>代价是版本切换那一刻缓存归零，峰值需求回到 896 卡。所以切换窗口要临时补 762 卡：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>租 762 卡 × 4 小时 × ¥30/卡时 = ¥9.1 万/次
+每月一次 = ¥110 万/年
+净省 = 8,700 − 110 = 8,590 万/年</code></pre></figure>
+<p>利用率从 3.7% 提到 24.8%，6.7 倍。</p>
+<p>这就是第一级台阶：<strong>按常态配容量，按极端临时扩。</strong></p>
+<p>第二级是削峰。峰均比 4.03 降到 3.2（排队 + 预约），全舰队省 20% 卡，利用率到 31%。代价是峰值等 30–60 秒。</p>
+<p>第三级是填谷。前两级之后，25%–31% 就是"按峰值配"的天花板——再往上压，只能在谷底塞别的东西：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>填什么</th><th>怎么填</th><th>能填多少</th></tr></thead><tbody><tr><td>离线批处理</td><td>历史工单回刷、意图重分类</td><td>夜间填 60%–80%</td></tr><tr><td>评测与回放</td><td>第 4 章的 L2/L3</td><td>随时可打断，填 20%</td></tr><tr><td>RL 训练 rollout</td><td>附录 B 的 rollout 池</td><td>夜间大块占用</td></tr><tr><td>对外租售</td><td>把闲置卖出去</td><td>取决于商务</td></tr></tbody></table></div>
+<p>三级下来，利用率能从 3.7% 走到 60% 以上：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>台阶</th><th>做什么</th><th>利用率</th><th>年省</th></tr></thead><tbody><tr><td>现状</td><td>峰值 + 零缓存</td><td>3.7%</td><td>—</td></tr><tr><td>一级</td><td>按命中率配</td><td>24.8%</td><td>8,590 万</td></tr><tr><td>二级</td><td>削峰到 3.2</td><td>31%</td><td>再省约 5,600 万</td></tr><tr><td>三级</td><td>填谷</td><td>60%+</td><td>等于卡数不变、产能翻倍</td></tr></tbody></table></div>
+<p>但要说清一个边界：<strong>24.8% 是"按峰值配"的物理上限</strong>，因为容量必须覆盖峰值，而峰值只占一天的 25%。想突破这个数，只能靠填谷，不能靠"提高效率"。</p>
 <p>判断标准很简单：如果你的池子长期低于 20% 利用率，又不打算填，那它要么是买多了，要么是峰值系数定高了——两者都是钱。</p>
 <h3>2.8 那为什么大家说"输出比输入贵四倍"</h3>
 <p>因为对外的输入价报的是<strong>混合价</strong>：</p>
