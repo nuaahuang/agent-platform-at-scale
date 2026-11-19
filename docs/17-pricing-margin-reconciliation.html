@@ -261,7 +261,24 @@ blockquote p{margin:.4em 0}
 <p>这不是极端情况——RAG 类应用很容易把上下文推到 8K 以上。</p>
 <p>所以按次定价必须配三条防线：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>防线</th><th>做法</th></tr></thead><tbody><tr><td>输入上限</td><td>单次请求输入 &gt; 8K 的部分按 token 加收</td></tr><tr><td>输出上限</td><td><code>max_tokens</code> 默认 1,000，超出加收</td></tr><tr><td>长度分层</td><td>短中长三档，分别定价</td></tr></tbody></table></div>
-<p>第一条是根本解：<strong>看起来按次，实际按 token 封顶</strong>。客户仍觉得简单，平台也不会被薅。</p>
+<p>第一条是根本解：<strong>看起来按次，实际按 token 封顶。</strong></p>
+<p>这句话的意思是：<strong>对客户报价的单位是"次"，但每一次里面含多少 token 是有额度的，超出部分另算。</strong></p>
+<p>具体形态：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>基础价：0.8 分/次
+含      ：2,500 输入 + 500 输出
+超出    ：输入按 15.36 分/百万、输出按 9.63 分/百万加收
+单次上限：32K，超过直接拒或要求改用长文档接口</code></pre></figure>
+<p>客户看到的是"一次 0.8 分"，简单。平台看到的是"每次最多含 3,000 token，多了按量收"，不会被薅。</p>
+<p>三种客户算一遍，看它怎么起作用：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>客户</th><th>月请求</th><th>平均 token</th><th>纯按次收入</th><th>新方案收入</th><th>成本</th><th>纯按次毛利</th><th>新方案毛利</th></tr></thead><tbody><tr><td>A 轻度</td><td>10 万</td><td>1,200 / 200</td><td>800</td><td>800</td><td>318</td><td>60%</td><td>60%</td></tr><tr><td>B 典型</td><td>100 万</td><td>1,900 / 350</td><td>8,000</td><td>8,000</td><td>5,246</td><td>34%</td><td>34%</td></tr><tr><td>C 长文</td><td>10 万</td><td>20,000 / 500</td><td>800</td><td>4,951</td><td>3,478</td><td><strong>−335%</strong></td><td>30%</td></tr></tbody></table></div>
+<p>前两行两种方案一样——因为他们的请求都在额度内，客户感受不到"按 token"的存在。</p>
+<p>第三行是分水岭。C 每个月 10 万次长文档请求，纯按次收 800 元，成本 3,478 元，<strong>一个月亏 2,678 元，毛利 −335%</strong>。加了额度之后收 4,951 元，毛利 30%。</p>
+<p>这就是"封顶"的作用：<strong>它不改变客户的心智模型，只把超额部分的风险还给客户。</strong></p>
+<p>有三个设计细节要注意：</p>
+<p><strong>额度定在哪。</strong> 定低了（比如 1,000），多数客户会触发超额，他们会觉得"说好按次又加钱"，体验很差。定高了（比如 10,000），长请求照样被补贴。按我们的分布，平均输入 1,900、P90 约 4,200，所以 2,500 覆盖六七成、4,000 覆盖九成。选 2,500 是让多数人不触发，同时把长尾挡住。</p>
+<p><strong>超额单价用哪个。</strong> 不能用未命中输入的 15.36——因为长请求也有一部分命中缓存，按 15.36 收会多收。要用引擎返回的实际 cached/uncached 拆分，分开计价。这也是为什么第 15 章要强制记录 cached 与 uncached。</p>
+<p><strong>单次上限必须硬。</strong> 32K 之上直接拒绝，不是加钱就行。因为一个 128K 的请求会占掉半台机器的 KV，加钱也不该卖。</p>
+<p>这套设计的本质是"两段式定价"：前一段按次（卖简单），后一段按量（卖公平）。两段的交界点就是额度。</p>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 订阅：可预测，但风险全在平台</h2>
 <p>订阅按 DAU 收，每用户每月固定价。</p>
