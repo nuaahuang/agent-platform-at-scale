@@ -313,6 +313,32 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>内容</th></tr></thead><tbody><tr><td>检测</td><td>输出/输入 token 比，基线 0.18，&gt; 1.0 报警</td></tr><tr><td>根因</td><td>prompt 模板里写了"详细""完整""不少于"</td></tr><tr><td>处置</td><td><code>max_tokens</code> 默认 1,000，显式要长才放开；帮客户改模板</td></tr><tr><td>别做</td><td>偷偷截断——客户会觉得模型变笨了</td></tr></tbody></table></div>
 <p><strong>③ 缓存投毒</strong></p>
 <div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>内容</th></tr></thead><tbody><tr><td>检测</td><td>按租户统计命中率，长期 &lt; 40% 进排查名单</td></tr><tr><td>根因</td><td>系统提示里有变量（时间戳、用户 ID、trace_id、随机 salt）</td></tr><tr><td>处置</td><td>给客户看命中率报表，指出"这 3 个字段让命中率从 85% 掉到 0"；把变量挪到用户消息里</td></tr><tr><td>别做</td><td>平台私自改客户 prompt——那是篡改</td></tr></tbody></table></div>
+<h4>一个真实的结构问题：变量放错了位置</h4>
+<p>最常见的一种"事故"不是加了时间戳，是<strong>模板结构本身让缓存失效</strong>。看一个真实的中医减重助手提示词，结构是这样的：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code># 角色        ← 静态，80 token
+# 输入
+  就诊单原文：{{变量A}}     ← 变量在这里
+  医患周期：  {{变量B}}
+# 任务        ← 静态，900 token
+# 安全边界    ← 静态，250 token</code></pre></figure>
+<p>变量出现在第 100 个 token 附近。前缀缓存从 token 0 开始算，所以<strong>只有前 100 个 token 能命中</strong>，后面的 1,200 个静态 token 虽然每次完全一样，但因为位置在变量之后，全都没法复用。</p>
+<p>算账（静态 1,230 + 变量 800 + 输出 350）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>结构</th><th>命中</th><th>未命中</th><th>成本</th></tr></thead><tbody><tr><td>现状（变量在前）</td><td>100</td><td>1,930</td><td>2.20 分</td></tr><tr><td>改后（变量在后）</td><td>1,230</td><td>800</td><td>1.05 分</td></tr></tbody></table></div>
+<p><strong>省 52%，命中率从 5% 到 61%。</strong></p>
+<p>改法只有一条：把所有静态内容前置，变量全部后置。</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code># 角色        ← 静态
+# 任务        ← 静态
+# 安全边界    ← 静态
+# 输入（最后）
+  就诊单原文：{{变量A}}
+  医患周期：  {{变量B}}
+# 输出纪律    ← 静态简版，30 token</code></pre></figure>
+<p>最后那行"输出纪律"是个技巧：安全边界放前面能缓存，但模型对末尾内容更敏感。所以在变量之后再放一个 30 词的简版（"只输出 JSON，不编造数值"），只损失 30 token 的缓存，换来近位强化。</p>
+<p>三个判断要点：</p>
+<p><strong>第一，这不算投毒。</strong> 投毒是有意为之，这里是设计疏忽。但两种情况的成本后果一样——都是命中率归零，所以处理方式也一样：改结构。</p>
+<p><strong>第二，模板越统一，缓存越有效。</strong> 如果每个医院、每个科室的模板开头都改几个字，跨客户就完全不能共享。所以模板要做成"参数化"的：医院名、科室名放变量区，不要放标题。</p>
+<p><strong>第三，变量里的 PII 要注意隔离。</strong> 静态前缀跨租户共享是安全的（里面没有患者数据），但缓存键要带租户盐（第 10B 章），否则同名模板的不同租户会共享 KV——一旦未来模板里混入租户特定内容，就是数据泄露。</p>
+<p>验证方法很简单：调一次接口，看返回的 <code>cached_tokens</code>。如果它等于"静态前缀的 token 数"，结构就是对的；如果只有几十，说明变量放早了。</p>
 <p>这一条的处置最有意思：<strong>你不需要惩罚客户，只需要告诉他</strong>。多数客户看到"你的命中率是 0，改一下能省 4 倍钱"会立刻改。</p>
 <p><strong>④ 填充攻击</strong></p>
 <div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>内容</th></tr></thead><tbody><tr><td>检测</td><td>重复率（唯一 token / 总 token），正常 &gt; 0.8，&lt; 0.5 报警</td></tr><tr><td>根因</td><td>恶意，或客户在试"lost in the middle"</td></tr><tr><td>处置</td><td>输入上限 + 重复段落压缩；恶意账号限速</td></tr><tr><td>别做</td><td>无差别做语义压缩——会改变模型行为</td></tr></tbody></table></div>
