@@ -413,6 +413,36 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>在线</th><th>离线</th></tr></thead><tbody><tr><td>时机</td><td>请求进来时</td><td>事后（分钟级）</td></tr><tr><td>手段</td><td>规则 + 0.5B 分类器</td><td>大模型审核 + 人工抽检</td></tr><tr><td>延迟预算</td><td>34 ms</td><td>无限制</td></tr><tr><td>处置</td><td>阻断/标记</td><td>告警/下线/追罚</td></tr></tbody></table></div>
 <p>离线的数据从哪来：第 15 章的用量事件里带输入哈希，采样 1% 送进 Kafka，离线服务消费。发现违规就按租户聚合，第二天出报告。</p>
 <p>两套的分工是：<strong>在线防"显性越界"，离线防"批量趋势"</strong>。在线不可能用大模型（延迟不允许），离线不需要快（准确性优先）。</p>
+<h3>④.1.0.2 离线审计：五类任务，一条闭环</h3>
+<p>离线不是"把在线再做一遍"，它是<strong>规则的孵化器</strong>——发现新模式、验证新规则、出报表、追责任。</p>
+<p>先说数据从哪来。在线网关每请求写一条 500 字节摘要进 Kafka（第 25 章）：<code>request_id</code>、租户、输入哈希、输出哈希、在线审核结论、拒因。三类采样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>数据</th><th>比例</th><th>量（日）</th><th>用途</th></tr></thead><tbody><tr><td>摘要行</td><td>100%</td><td>1.5 亿条</td><td>趋势、报表、回溯</td></tr><tr><td>完整输入输出</td><td>1%</td><td>150 万条</td><td>大模型深度审核</td></tr><tr><td>被在线标记的</td><td>100%</td><td>约 5 万条</td><td>必查</td></tr></tbody></table></div>
+<p>第二行为什么是 1%？算一下算力：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>全量审：1.5 亿请求 × 1,000 token = 1,500 亿 token/日
+主负载才 2,850 亿 token/日（909 卡）
+→ 全量审核要额外 478 卡
+
+1% 采样：15 亿 token/日
+→ 4.8 卡，年成本约 54 万</code></pre></figure>
+<p><strong>全量审核的算力等于主业务的一半</strong>，没人这么干。1% 是成本和覆盖的平衡点——150 万样本/日，足够发现任何有规模的问题。</p>
+<p>五类离线任务，按运行频率排：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>任务</th><th>频率</th><th>做什么</th><th>产出</th></tr></thead><tbody><tr><td>规则回放</td><td>每次改规则前</td><td>用过去 7 天数据重跑新规则</td><td>误杀率、漏杀率</td></tr><tr><td>深度审核</td><td>每小时</td><td>大模型审 1% 全文</td><td>违规样本池</td></tr><tr><td>趋势检测</td><td>每小时</td><td>按租户聚合相似输入</td><td>异常租户榜</td></tr><tr><td>漏杀回溯</td><td>事件驱动</td><td>事故后反查同类样本量</td><td>影响面评估</td></tr><tr><td>报表与考核</td><td>每日</td><td>按租户出违规率</td><td>商务依据</td></tr></tbody></table></div>
+<p><strong>第一类最有价值。</strong> 新规则上线前必须回放：拿过去 7 天的 150 万样本跑一遍，看会误杀多少、漏杀多少。没有这一步，规则只能靠线上试错，代价是一次误伤。</p>
+<p>回放的成本也要算：150 万样本 × 1,000 token = 15 亿 token，约 5 卡时。一次回放几小时，成本可以忽略。<strong>但能避免一次上线事故。</strong></p>
+<p>第三类值得展开。趋势检测不看单条，看模式：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>某租户一小时内出现 3,000 条相似输入（哈希前缀相同）→ 可能是批量刷
+某租户的输入平均长度突增 5 倍 → 可能是填充攻击
+某租户的命中率从 85% 掉到 5% → 提示词结构变了</code></pre></figure>
+<p>这三种都是"单条看没问题、聚合看才发现"的，只能离线做。</p>
+<h3>离线能做什么，不能做什么</h3>
+<p><strong>不能事后阻断。</strong> 请求已经返回给用户了，离线再发现也收不回。所以离线的处置只有四种：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>处置</th><th>场景</th></tr></thead><tbody><tr><td>告警</td><td>全部异常</td></tr><tr><td>租户限速/降额</td><td>确认违规且反复</td></tr><tr><td>追罚/谈判</td><td>商务层面</td></tr><tr><td>改进在线规则</td><td>闭环</td></tr></tbody></table></div>
+<p>最后一条才是离线的真正价值——<strong>它负责把"新发现的模式"变成"上线的新规则"</strong>。</p>
+<p>闭环长这样：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>离线发现新模式 → 写成候选规则 → 回放验证（误杀&lt;2%、漏杀&lt;5%）
+             → 小流量灰度为在线规则 → 全量</code></pre></figure>
+<p>这个过程一周一轮。没有这个循环，规则库会越来越旧——攻击手法在变，规则不动就是失效。</p>
+<p>两套的分工是：<strong>在线防"显性越界"，离线防"批量趋势"</strong>。在线不可能用大模型（延迟不允许），离线不需要快（准确性优先）。</p>
 <h4>④.1.1 末尾那 30 token 靠什么定</h4>
 <p>两个东西决定：<strong>长度由成本上限和注意力窗口的交点定，内容由 badcase 排序定。</strong></p>
 <p>先说长度。末尾这段永远不命中缓存（它前面是变量，位置每次都变），所以每一轮都要付 prefill：</p>
