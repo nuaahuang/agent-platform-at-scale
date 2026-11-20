@@ -386,7 +386,43 @@ blockquote p{margin:.4em 0}
 <p>跑一个 A/B：同一批 badcase，加末尾纪律 vs 不加，看通过率。</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>结果</th><th>说明</th></tr></thead><tbody><tr><td>提升 &gt; 10 个点</td><td><strong>前文结构有问题</strong>，末尾在补漏</td></tr><tr><td>提升 2–10 个点</td><td>正常，末尾起了提醒作用</td></tr><tr><td>提升 &lt; 2 个点</td><td>这 30 token 白花，删掉</td></tr></tbody></table></div>
 <p>第一种情况最值得注意：如果靠末尾一句才能守住规则，说明前面的安全边界写得太弱，或者被中间的变量稀释了。这是结构问题，不该靠末尾补。</p>
-<p>第二种情况才是它该有的样子——<strong>完整规范在前（可缓存），执行提醒在后（不可缓存）</strong>，像合同正文加最后一页的要点确认。</p>
+<h3>④.1.3 这 30 词是怎么落地的：软约束，要靠硬校验兜底</h3>
+<p>先把机制说清：<strong>没有额外的机制。它就是你拼在 prompt 末尾的一段静态文本，跟变量一起发给模型。</strong></p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>prompt = STATIC_PREFIX + user_variables + EXECUTION_REMINDER
+resp = call_llm(prompt)</code></pre></figure>
+<p>模型读到这句话，试图遵守。<strong>遵不遵守取决于模型的指令遵循能力，代码不保证。</strong></p>
+<p>所以它是软约束。可靠度大概是这样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>规则类型</th><th>遵守率</th><th>例子</th></tr></thead><tbody><tr><td>格式类</td><td>97%–99%</td><td>"只输出 JSON，不加围栏"</td></tr><tr><td>枚举类</td><td>90%–97%</td><td>"不出现药品、方剂、代餐"</td></tr><tr><td>判断类</td><td>75%–90%</td><td>"符合当前证型"</td></tr></tbody></table></div>
+<p>第三行是最弱的——因为"符合证型"需要模型自己判断，而它没有客观标准。</p>
+<p><strong>所以真正保证输出正确的不是这 30 词，是它后面的三道硬校验。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>谁执行</th><th>保证什么</th><th>失效后果</th></tr></thead><tbody><tr><td>提示词（30 词）</td><td>模型</td><td>大概率对</td><td>偶发违规</td></tr><tr><td>JSON Schema 校验</td><td>代码</td><td>结构 100%</td><td>直接重试</td></tr><tr><td>业务规则校验</td><td>代码</td><td>可编程规则 100%</td><td>拒绝/降级</td></tr><tr><td>兜底</td><td>编排</td><td>不把错的给用户</td><td>转人工</td></tr></tbody></table></div>
+<p>对应到你的场景：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def validate(data):
+    # 结构
+    assert set(data) == {&quot;height_cm&quot;,&quot;weight_kg&quot;,&quot;waist_cm&quot;,&quot;bmi&quot;,
+                         &quot;clinic_syndrome&quot;,&quot;constitution&quot;,&quot;recipe&quot;,&quot;exercise&quot;}
+    # 数值范围
+    for k, lo, hi in [(&quot;height_cm&quot;,100,250),(&quot;weight_kg&quot;,30,300),(&quot;waist_cm&quot;,40,200)]:
+        if data[k] is not None:
+            assert lo &lt;= data[k] &lt;= hi, k
+    # 业务禁用
+    BANNED = (&quot;药&quot;, &quot;方剂&quot;, &quot;代餐&quot;, &quot;酵素&quot;, &quot;根治&quot;, &quot;治愈&quot;, &quot;保证瘦&quot;)
+    assert not any(w in json.dumps(data, ensure_ascii=False) for w in BANNED)
+    # 结构完整性
+    assert len(data[&quot;recipe&quot;]) == 7
+    assert [d[&quot;day&quot;] for d in data[&quot;recipe&quot;]] == list(range(1, 8))
+    assert [e[&quot;intensity&quot;] for e in data[&quot;exercise&quot;]] == [1, 2, 3]
+    return True</code></pre></figure>
+<p>校验不过怎么办，三档：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>情况</th><th>动作</th></tr></thead><tbody><tr><td>结构错（少了字段、JSON 坏了）</td><td>重试一次，把错误信息附在末尾</td></tr><tr><td>规则错（出现禁用词、数值越界）</td><td>重试一次，明确说"你违反了第 X 条"</td></tr><tr><td>重试仍错</td><td>返回兜底结果，转人工</td></tr></tbody></table></div>
+<p>重试要带反馈，不能原样再发一遍——原样发送大概率还是错。带反馈的重试成功率通常从 0% 提到 60% 以上。</p>
+<h3>④.1.4 提示词与校验必须一致</h3>
+<p>这是最容易踩的坑：<strong>提示词说的和代码校验的规则对不上。</strong></p>
+<div class="table-wrap"><table class="table"><thead><tr><th>提示词说</th><th>校验做</th><th>结果</th></tr></thead><tbody><tr><td>缺失填 null</td><td>断言字段不能为 null</td><td>永远重试，永远失败</td></tr><tr><td>输出 1–7 天</td><td>断言 day 是 0–6</td><td>全量失败</td></tr><tr><td>不用"根治"等词</td><td>禁用词表里还有"改善"</td><td>误杀率超过 30%</td></tr></tbody></table></div>
+<p>第二种最隐蔽——模型按 1–7 输出（对的），校验按 0–6 判（错的），你会以为模型不听话，其实是对齐没做。</p>
+<p>所以提示词和校验函数要放在同一个文件里维护，改一个必须改另一个。或者更好：<strong>从同一份 schema 生成提示词里的字段说明和校验代码</strong>。</p>
+<p>最后一句总结：<strong>提示词负责让模型大概率做对，代码负责保证不做错。</strong> 只有前者，偶发违规会流到用户；只有后者，重试率会高到成本失控。两者必须配套。</p>
+<p>第二种情况才是它该有的样子——<strong>完整规范在前（可缓存），执行提醒在后（不可缓存）</strong>，像合同正文加最后一页的要点确认。第二种情况才是它该有的样子——<strong>完整规范在前（可缓存），执行提醒在后（不可缓存）</strong>，像合同正文加最后一页的要点确认。</p>
 <h3>④.2 这 34 ms 对 TTFT 和 TPOT 有什么影响</h3>
 <p>先看 TTFT（Time To First Token，首 token 延迟）预算：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>基线</th><th>加防御后</th></tr></thead><tbody><tr><td>客户端到网关</td><td>7 ms</td><td>7 ms</td></tr><tr><td>裁剪、检测、审核</td><td>0</td><td>34 ms</td></tr><tr><td>RAG 检索</td><td>180 ms</td><td>180 ms</td></tr><tr><td>排队</td><td>50 ms</td><td>50 ms</td></tr><tr><td>prefill（缓存命中）</td><td>15 ms</td><td>18 ms</td></tr><tr><td><strong>合计</strong></td><td><strong>258 ms</strong></td><td><strong>295 ms</strong></td></tr></tbody></table></div>
