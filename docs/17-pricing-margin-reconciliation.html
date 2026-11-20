@@ -342,14 +342,14 @@ blockquote p{margin:.4em 0}
 <p>这一条的处置最有意思：<strong>你不需要惩罚客户，只需要告诉他</strong>。多数客户看到"你的命中率是 0，改一下能省 4 倍钱"会立刻改。</p>
 <p><strong>④ 填充攻击</strong></p>
 <p>这一类最需要单独讲，因为它和其他五种不一样：<strong>其他五种主要是多花钱，它还会让模型忽略你的安全边界。</strong></p>
-<p>先说清它是什么。填充攻击指在 prompt 里插入大量<strong>低信息量</strong>内容，目的有两个：</p>
+<p>先说清它是什么。填充攻击指在 prompt 里插入成千上万个<strong>低信息量</strong> token，目的有两个：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>目的</th><th>怎么做</th></tr></thead><tbody><tr><td>刷成本</td><td>按次或订阅定价下，塞多少都一个价</td></tr><tr><td>操纵行为</td><td>用无关内容稀释指令，让模型"忘记"前面的约束</td></tr></tbody></table></div>
 <p>五种常见形态：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>长什么样</th><th>真实动机</th></tr></thead><tbody><tr><td>重复指令</td><td>"请仔细阅读"连写 50 遍</td><td>以为能强化指令（误解）</td></tr><tr><td>无关段落</td><td>公司简介、免责声明、产品介绍</td><td>模板臃肿（法务要求）</td></tr><tr><td>位置操纵</td><td>真指令藏在第 8,000 token</td><td><strong>恶意</strong>，利用 lost in the middle</td></tr><tr><td>JSON 膨胀</td><td>无关字段没裁剪，一堆空值</td><td>系统 bug</td></tr><tr><td>编码混淆</td><td>base64、零宽字符、同形字</td><td><strong>恶意</strong>，绕过内容审核</td></tr></tbody></table></div>
 <p>前两种是事故，后两种是 bug，中间和最后是攻击。</p>
 <p>为什么危险，三个层面：</p>
 <p><strong>成本。</strong> 12,000 token 的输入，如果每次内容相同（缓存命中 85%），成本 2.12 分，是基线 0.52 分的 4 倍；如果每次不同（命中 0%），12.5 分，<strong>24 倍</strong>。</p>
-<p><strong>行为。</strong> 这一条最要命。模型对上下文不同位置的注意力不均匀：开头和结尾强，中间弱。攻击者把真正的指令放在第 8,000 个 token 处，它就被"埋"在大量正常文本里——模型可能照做，而你的安全边界写在第 200 个 token，早就被稀释了。</p>
+<p><strong>行为。</strong> 这一条最要命。模型对上下文不同位置的注意力不均匀：开头和结尾强，中间弱。攻击者把真正的指令放在第 8,000 个 token 处，它就被"埋"在几千个正常 token 里——模型可能照做，而你的安全边界写在第 200 个 token，早就被稀释了。</p>
 <p><strong>审核。</strong> 多数内容审核只看输入的前 1,000 个字符。填充把敏感内容推到第 8,000 字符之后，审核就看不到了。这是"绕过"而不是"攻击"，但对平台是一回事。</p>
 <p>所以对填充的防御不能只靠"限长"，要三条一起：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>措施</th><th>防什么</th></tr></thead><tbody><tr><td>重复率检测</td><td>形态 1、3、5</td></tr><tr><td>输入硬上限（如 32K）</td><td>全部</td></tr><tr><td><strong>安全约束在输入之后再声明一次</strong></td><td>位置操纵（最有效）</td></tr></tbody></table></div>
@@ -359,6 +359,34 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>内容类型</th><th>正常值</th><th>报警线</th></tr></thead><tbody><tr><td>自然语言</td><td>0.85–0.95</td><td>&lt; 0.7</td></tr><tr><td>代码</td><td>0.6–0.8</td><td>&lt; 0.45</td></tr><tr><td>JSON / 表格</td><td>0.3–0.6</td><td>&lt; 0.2</td></tr></tbody></table></div>
 <p><strong>不能用一个阈值卡所有类型。</strong> 结构化数据的 key 天然重复，JSON 的重复率 0.3 是正常的——那个"0.31"的案例之所以可疑，是因为它是自然语言话术，本该在 0.85 以上。</p>
 <p>处置就三步：先看重复的是不是结构化数据（不是就报警）；再看重复内容是不是模板带进来的（是就改模板）；最后才谈限速。多数情况走到第二步就解决了。</p>
+<h4>④.1 防御流水线：36 ms 换五道防线</h4>
+<p>"怎么防"要落到具体动作上。一条请求进网关后，按这个顺序过：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>动作</th><th>耗时</th><th>拦住什么</th></tr></thead><tbody><tr><td>1</td><td>字符数粗估，&gt; 40K 字符直接 413</td><td>0 ms</td><td>超长请求</td></tr><tr><td>2</td><td>tokenize，精确 token 数，&gt; 32K 拒</td><td>2 ms</td><td>超长请求（精确）</td></tr><tr><td>3</td><td>JSON 字段白名单裁剪</td><td>0 ms，还可能省</td><td>JSON 膨胀</td></tr><tr><td>4</td><td>重复率（MinHash，采样 64 个片段）</td><td>2 ms</td><td>重复指令、填充</td></tr><tr><td>5</td><td>小模型输入审核（0.5B 分类器）</td><td>30 ms</td><td>位置操纵、编码混淆</td></tr><tr><td>6</td><td>拼接：静态前缀 + 变量 + 末尾 30 词纪律</td><td>2.7 ms（prefill）</td><td>指令稀释</td></tr></tbody></table></div>
+<p>合计 36.7 ms。第 1、3 步可以和第 2、4 步并行，实际墙钟约 34 ms。</p>
+<p>三个设计点：</p>
+<p><strong>第一步用字符数而不是 token 数。</strong> 因为精确计数要先 tokenize，而 tokenize 一个 100 万字符的输入本身就是攻击面。字符数粗估（中文 1 字≈0.7 token）能在 0 成本挡住十倍的异常量。</p>
+<p><strong>第三步是唯一"负成本"的防御。</strong> JSON 字段白名单裁剪掉的 token 不用 prefill，既防了膨胀又降了成本。这一步应该默认开启，不是可选项。</p>
+<p><strong>第五步是唯一的大头（30 ms）。</strong> 用 0.5B 的分类模型做二分类（"这段输入里有没有试图操纵模型的指令"），比用大模型审核便宜 10 倍。准确率不必很高——它是漏斗的第一层，不是最终判决。</p>
+<h3>④.2 这 34 ms 对 TTFT 和 TPOT 有什么影响</h3>
+<p>先看 TTFT（Time To First Token，首 token 延迟）预算：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>基线</th><th>加防御后</th></tr></thead><tbody><tr><td>客户端到网关</td><td>7 ms</td><td>7 ms</td></tr><tr><td>裁剪、检测、审核</td><td>0</td><td>34 ms</td></tr><tr><td>RAG 检索</td><td>180 ms</td><td>180 ms</td></tr><tr><td>排队</td><td>50 ms</td><td>50 ms</td></tr><tr><td>prefill（缓存命中）</td><td>15 ms</td><td>18 ms</td></tr><tr><td><strong>合计</strong></td><td><strong>258 ms</strong></td><td><strong>295 ms</strong></td></tr></tbody></table></div>
+<p>800 ms 的预算，用了 37%。还有 505 ms 余量。</p>
+<p><strong>TPOT（Time Per Output Token，每 token 间隔）完全不受影响。</strong> 因为它是 decode 阶段每生成一个 token 的间隔，而上面六步全在 prefill 之前完成。请求进入 decode 之后，防御已经结束了。</p>
+<p>唯一的例外是过载时的抢占（第 25 章），那是另一套机制。</p>
+<h3>④.3 什么时候这套不够</h3>
+<p>如果第五步换成大模型审核（200–500 ms），预算立刻爆掉：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>258 + 450 = 708 ms，只剩 92 ms 余量</code></pre></figure>
+<p>一次流量抖动就破线。所以大模型审核只能用在两个地方：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>做法</th></tr></thead><tbody><tr><td>高风险行业（医疗、金融）</td><td>同步审核，但把 TTFT 预算提到 1,500 ms</td></tr><tr><td>通用场景</td><td>异步审核：先返回，后台判，命中就撤回并告警</td></tr></tbody></table></div>
+<p>第一种是"用 SLO（Service Level Objective）换安全"，第二种是"用风险换体验"。医疗这类不能撤回的场景，只能选第一种——<strong>把 TTFT 目标从 800 ms 改成 1,500 ms</strong>，比事后出事便宜。</p>
+<h3>④.4 真正威胁 TTFT 的不是防御</h3>
+<p>前面算过：防御只花 34 ms。但缓存命中与否，差 255 ms：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>命中：prefill 15 ms
+未命中：prefill 270 ms</code></pre></figure>
+<p>也就是说，<strong>把命中率从 0 提到 85%，比砍掉全部防御措施（34 ms）划算 7 倍。</strong></p>
+<p>所以保证 TTFT 的优先级是：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>做什么</th><th>收益</th></tr></thead><tbody><tr><td>1</td><td>提示词结构改对（静态前置）</td><td>命中率 5% → 61%，省 180 ms</td></tr><tr><td>2</td><td>预热常见前缀（第 7 章）</td><td>冷启动 270 → 15 ms</td></tr><tr><td>3</td><td>削减防御开销</td><td>最多省 34 ms</td></tr></tbody></table></div>
+<p>第三条排最后。<strong>不要为了省 30 ms 的审核去掉安全防线</strong>——那是拿 34 ms 换一次事故。</p>
 <p><strong>④ 填充攻击</strong></p>
 <div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>内容</th></tr></thead><tbody><tr><td>检测</td><td>重复率（唯一 token / 总 token），正常 &gt; 0.8，&lt; 0.5 报警</td></tr><tr><td>根因</td><td>恶意，或客户在试"lost in the middle"</td></tr><tr><td>处置</td><td>输入上限 + 重复段落压缩；恶意账号限速</td></tr><tr><td>别做</td><td>无差别做语义压缩——会改变模型行为</td></tr></tbody></table></div>
 <p><strong>⑤ 反复重试</strong></p>
