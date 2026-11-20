@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>内容安全：守卫模型与分层防御 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">安全合规 · 第 39A 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：一句"根治"引发的下线</a><a href="#s2"><span>02</span>. 守卫模型是什么</a><a href="#s3"><span>03</span>. 三层防御</a><a href="#s4"><span>04</span>. 守卫模型怎么设计</a><a href="#s5"><span>05</span>. 性能：30 ms 从哪来，怎么保住 TTFT</a><a href="#s6"><span>06</span>守卫服务怎么部署</a><a href="#s7"><span>07</span>. 持续进化：守卫模型多久重训一次</a><a href="#s8"><span>08</span>. 一个完整的落地清单</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <div class="rail-foot">安全合规</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">39A</div><div class="ch-kicker">安全合规</div><h1>内容安全：守卫模型与分层防御</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>守卫模型是什么，和第 39 章讲的威胁模型有什么区别？</li><li>三层防御怎么分工，每层的误杀率和延迟是多少？</li><li>0.5B 分类器和 7B 生成式审核，什么时候用哪个？</li><li>守卫模型吃掉 30 ms，TTFT（Time To First Token）还保得住吗？</li><li>守卫模型怎么持续进化，多久重训一次？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：一句"根治"引发的下线</h2>
+<p>一个中医诊后管理助手，上线两个月，被投诉到监管。原因是给某个患者生成的建议里出现了"从根源改善体质"——这属于疗效承诺，违反广告法。</p>
+<p>查日志才发现，这条不是模型自己编的，是患者的就诊记录里医生写了"从根源调理"，模型照抄进了输出。</p>
+<p>三个问题同时暴露：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>表现</th></tr></thead><tbody><tr><td>提示词写了禁止项，但没兜住</td><td>安全边界里明确写了"不使用根治、治愈"</td></tr><tr><td>没有输出侧校验</td><td>模型输出了违规词，直接返回给用户</td></tr><tr><td>没有离线回溯</td><td>同类问题已存在两个月，无人发现</td></tr></tbody></table></div>
+<p>这一章讲的就是怎么把这三件事补上：<strong>在线怎么拦、离线怎么发现、守卫模型怎么设计</strong>。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 守卫模型是什么</h2>
+<p>先说清概念。<strong>守卫模型（Guard Model）是一个独立的小模型，专门判断"这段输入或输出该不该放行"。</strong></p>
+<p>它和第 39 章的威胁模型不是一回事：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>威胁模型（第 39 章）</th><th>守卫模型（本章）</th></tr></thead><tbody><tr><td>是什么</td><td>一张分析表，列出谁会怎么攻击</td><td>一个跑在推理链路上的分类器</td></tr><tr><td>产出</td><td>攻击面与防御点</td><td>放行 / 拦截 / 标记</td></tr><tr><td>运行方式</td><td>人写，季度更新</td><td>每请求调用，毫秒级</td></tr><tr><td>失败表现</td><td>漏掉某个攻击面</td><td>误杀或漏杀</td></tr></tbody></table></div>
+<p>守卫模型不是"内容审核 API"。商用审核 API 判的是通用违规（色情、暴力、政治），而你的业务违规是"疗效承诺""超范围诊疗""推荐药品"——这些通用 API 判不出来，必须自己训。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 三层防御</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>手段</th><th>延迟</th><th>误杀率</th><th>漏杀率</th><th>覆盖</th></tr></thead><tbody><tr><td>L1 规则</td><td>正则、关键词、句式</td><td>1 ms</td><td>3%–8%</td><td>40%–60%</td><td>显性违规词</td></tr><tr><td>L2 小模型</td><td>0.5B 分类器</td><td>30 ms</td><td>1%–3%</td><td>15%–25%</td><td>语义级违规</td></tr><tr><td>L3 大模型</td><td>7B 生成式审核</td><td>200 ms</td><td>0.5%–1%</td><td>5%–10%</td><td>复杂判断</td></tr><tr><td>人工</td><td>抽检</td><td>分钟</td><td>—</td><td>—</td><td>兜底</td></tr></tbody></table></div>
+<p>三层不是串联，是<strong>并联后取最严</strong>：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>L1 命中 → 直接拦（不用再跑 L2/L3）
+L1 不命中 → L2 判断
+L2 可疑 → L3 复核（异步或同步，看场景）</code></pre></figure>
+<p>为什么要三层而不是直接上 L3：<strong>延迟</strong>。L3 要 200 ms，而首 token 预算只有 800 ms，占了四分之一。所以 L3 只能用在"L2 标记可疑"的少数请求上（约 3%–5%），平均延迟增加约 10 ms。</p>
+<h3>3.1 每层的职责边界</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>管什么</th><th>不管什么</th></tr></thead><tbody><tr><td>L1</td><td>"根治""治愈""保证瘦"这类词</td><td>"从根本上调理"这种变体</td></tr><tr><td>L2</td><td>语义等价、意图判断、超范围</td><td>需要专业知识才判的（如证型是否匹配）</td></tr><tr><td>L3</td><td>复杂上下文、多轮累积违规</td><td>实时性要求高的场景</td></tr></tbody></table></div>
+<p>L1 的边界最清楚：<strong>它只能抓显性词</strong>。"根治"能抓，"从根源改善"抓不到——后者要 L2。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 守卫模型怎么设计</h2>
+<h3>4.1 先定任务形态</h3>
+<p>三种可选，成本差 10 倍：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>输出</th><th>模型</th><th>延迟</th><th>适用</th></tr></thead><tbody><tr><td>二分类</td><td>违规/正常</td><td>0.5B</td><td>30 ms</td><td>单一违规类型</td></tr><tr><td>多分类</td><td>违规类型</td><td>0.5B–1B</td><td>35 ms</td><td>5–10 类违规</td></tr><tr><td>生成式</td><td>判定 + 理由</td><td>7B</td><td>200 ms</td><td>需要解释、需要引用条款</td></tr></tbody></table></div>
+<p>多数场景选第二种。生成式的价值在"能告诉你为什么违规、引用了哪条规则"，适合做 L3 复核和人工辅助，不适合做在线第一道。</p>
+<h3>4.2 训练数据从哪来</h3>
+<p>这是守卫模型最难的一步——<strong>你没有标注数据</strong>。</p>
+<p>四个来源，按可用性排：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>来源</th><th>量</th><th>质量</th><th>怎么拿</th></tr></thead><tbody><tr><td>规则命中的样本</td><td>中</td><td>高（正样本）</td><td>L1 的命中记录</td></tr><tr><td>用户投诉/申诉</td><td>低</td><td>极高</td><td>客服工单</td></tr><tr><td>人工构造的对抗样本</td><td>低</td><td>高</td><td>安全团队红队</td></tr><tr><td>大模型标注 + 人工抽检</td><td>高</td><td>中</td><td>用 L3 打标，人抽 10%</td></tr></tbody></table></div>
+<p>第三行最容易被忽略。<strong>红队构造的对抗样本是唯一能提前发现新攻击面的方式</strong>——等线上出事故再补，代价是下线。</p>
+<p>一个可用的启动量：<strong>每类违规 2,000 条正样本 + 10,000 条负样本</strong>。少于这个量，0.5B 模型学不动。</p>
+<h3>4.3 评估指标不是准确率</h3>
+<p>守卫模型的评估和普通分类器不同，因为<strong>误杀和漏杀的代价不对称</strong>：</p>
+<div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>定义</th><th>目标</th></tr></thead><tbody><tr><td>误杀率</td><td>正常内容被拦的比例</td><td>&lt; 2%</td></tr><tr><td>漏杀率</td><td>违规内容被放行的比例</td><td>&lt; 5%</td></tr><tr><td>延迟 p99</td><td>判定耗时</td><td>&lt; 50 ms</td></tr></tbody></table></div>
+<p>误杀率高会赶走正常用户（"怎么什么都拦"），漏杀率高会出事。两个都重要，但<strong>调节阈值时优先保误杀率</strong>——因为漏杀的后果是延迟的（可能几个月后才发现），误杀的后果是立刻的（用户当天就投诉）。</p>
+<p>这也解释了为什么第一层用规则：规则误杀率 3%–8% 偏高，但它的命中可以<strong>只标记不拦截</strong>，交给 L2 判断。</p>
+<h3>4.4 多租户：一套模型还是多套</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>一套通用模型</td><td>维护成本低</td><td>不同行业规则冲突</td></tr><tr><td>每行业一套</td><td>精准</td><td>训练数据要按行业分</td></tr><tr><td>一套 + 租户规则层</td><td>折中</td><td>规则层要能配</td></tr></tbody></table></div>
+<p>推荐第三种：模型通用，规则租户可配。中医的"疗效承诺"和电商的"绝对化用语"是同一类问题（夸大宣传），模型能共用，只是关键词表不同。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 性能：30 ms 从哪来，怎么保住 TTFT</h2>
+<h3>5.1 延迟分解</h3>
+<p>一条请求进网关后，防御的耗时：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>在哪</th><th>耗时</th></tr></thead><tbody><tr><td>字符粗估</td><td>网关进程内</td><td>0.001 ms</td></tr><tr><td>tokenize</td><td>网关进程内（Rust）</td><td>2 ms</td></tr><tr><td>结构化裁剪</td><td>网关进程内</td><td>0.01 ms</td></tr><tr><td>重复率 MinHash</td><td>网关进程内</td><td>2 ms</td></tr><tr><td><strong>守卫模型</strong></td><td><strong>独立 GPU 服务</strong></td><td><strong>30 ms</strong></td></tr><tr><td>拼接</td><td>Harness</td><td>0.001 ms</td></tr></tbody></table></div>
+<p>34 ms，其中守卫模型占 88%。</p>
+<h3>5.2 首 token 延迟预算</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>基线</th><th>加防御</th></tr></thead><tbody><tr><td>客户端到网关</td><td>7</td><td>7</td></tr><tr><td>裁剪、检测、审核</td><td>0</td><td>34</td></tr><tr><td>RAG 检索</td><td>180</td><td>180</td></tr><tr><td>排队</td><td>50</td><td>50</td></tr><tr><td>prefill（缓存命中）</td><td>15</td><td>18</td></tr><tr><td><strong>合计</strong></td><td><strong>258</strong></td><td><strong>295</strong></td></tr></tbody></table></div>
+<p>800 ms 预算用掉 37%，还剩 505 ms。</p>
+<h3>5.3 守卫模型不影响 TPOT（Time Per Output Token）</h3>
+<p>TPOT 是 decode 阶段每 token 的间隔，守卫模型在 prefill 之前就结束了。唯一例外是过载时的抢占，那是第 25 章的机制。</p>
+<h3>5.4 什么时候这套不够</h3>
+<p>换成 7B 生成式审核（200–500 ms）：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>258 + 450 = 708 ms，只剩 92 ms</code></pre></figure>
+<p>一次抖动就破线。三条出路：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>出路</th><th>做法</th><th>代价</th></tr></thead><tbody><tr><td>上调 SLO</td><td>TTFT 从 800 提到 1,500 ms（SLO 同步放宽）</td><td>体验变差</td></tr><tr><td>异步审核</td><td>先返回，后台判，命中就撤回</td><td>医疗场景不可撤回</td></tr><tr><td>只审 L2 可疑的</td><td>5% 请求走 L3，平均只加 10 ms</td><td>漏杀率略升</td></tr></tbody></table></div>
+<p>第三条是通用解：<strong>用 5% 的覆盖率换 90% 的延迟节省</strong>。</p>
+<h3>5.5 真正威胁 TTFT 的不是守卫</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>守卫开销：   34 ms
+缓存命中与否：255 ms</code></pre></figure>
+<p>把命中率从 0 提到 85%，比砍掉全部防御划算 7 倍。所以优先级是：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>优先级</th><th>做什么</th><th>收益</th></tr></thead><tbody><tr><td>1</td><td>提示词结构改对（静态前置）</td><td>省 180 ms</td></tr><tr><td>2</td><td>预热常见前缀（第 7 章）</td><td>冷启动 270 → 15 ms</td></tr><tr><td>3</td><td>削减守卫开销</td><td>最多省 34 ms</td></tr></tbody></table></div>
+<p><strong>不要为了省 30 ms 去掉守卫</strong>——那是拿 34 ms 换一次下线。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>5.6 守卫服务怎么部署</h2>
+<p>守卫模型是独立服务，不是嵌在网关里的一个函数。三个理由：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>理由</th><th>说明</th></tr></thead><tbody><tr><td>它是 GPU 推理</td><td>0.5B 模型装不进网关的 CPU 进程</td></tr><tr><td>它要独立扩缩容</td><td>拦截率升高时，守卫的负载先涨</td></tr><tr><td>它要独立灰度</td><td>换模型版本不能带着主服务一起发</td></tr></tbody></table></div>
+<p>部署形态：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>网关 ──gRPC──&gt; 守卫服务（N 副本）──&gt; 模型（0.5B）
+                    │
+                    └─ 缓存：相同输入的判定结果（LRU，60 秒）</code></pre></figure>
+<p><strong>缓存很重要。</strong> 同一段输入在 60 秒内重复送审很常见（重试、多轮），判定结果缓存能把守卫的 QPS 降 30%–50%。</p>
+<p>四个运行参数：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>参数</th><th>值</th><th>说明</th></tr></thead><tbody><tr><td>超时</td><td>50 ms</td><td>超过就走 fail-open/close</td></tr><tr><td>并发上限</td><td>每副本 200</td><td>超过就排队</td></tr><tr><td>降级</td><td>规则兜底</td><td>守卫全挂时只跑 L1</td></tr><tr><td>采样</td><td>1% 全量存</td><td>给离线训练用</td></tr></tbody></table></div>
+<p>第三行最关键：<strong>守卫服务挂了不能让主链路挂</strong>。降级策略是"只用规则层"，误杀率不变、漏杀率升到 40%，但服务可用。</p>
+<p>这和第 25 章的分层是同一个思路：<strong>任何单点都允许失效，只要失效时是降级而不是崩。</strong></p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>6. 持续进化：守卫模型多久重训一次</h2>
+<p>守卫模型会衰减。攻击手法在变，新的违规变体每季度都会出现。三个机制保它不旧。</p>
+<h3>6.1 数据闭环</h3>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>在线拦截/标记 → 摘要进 Kafka → 离线大模型复核 → 人工抽检
+            → 新的正样本 → 进训练集 → 重训 → 灰度</code></pre></figure>
+<p>周期：<strong>数据每日入库，模型每月重训，规则每周更新。</strong></p>
+<p>为什么模型不能每周重训：训练本身几小时，但评估、灰度、回归要一周。而规则（L1）可以每周改，因为它没有训练成本。</p>
+<h3>6.2 漂移监控</h3>
+<p>守卫模型最危险的不是"判错"，是"悄悄失效"。三个监控指标：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>指标</th><th>正常</th><th>异常说明</th></tr></thead><tbody><tr><td>拦截率</td><td>3%–5%</td><td>突然降到 1% → 模型失效或被绕过</td></tr><tr><td>误杀率（人工抽检）</td><td>&lt; 2%</td><td>升到 5% → 阈值太严</td></tr><tr><td>输入分布</td><td>稳定</td><td>长度/类型突变 → 业务变了，模型要重训</td></tr></tbody></table></div>
+<p>第二个靠人工抽检：每周抽 200 条被拦截的，人工判有多少是误杀。这个是唯一可信的误杀率来源。</p>
+<h3>6.3 红队常态化</h3>
+<p>等线上出事故再补，代价是下线。所以要有主动找问题的机制：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方式</th><th>频率</th><th>产出</th></tr></thead><tbody><tr><td>内部红队</td><td>每月</td><td>20–50 条新对抗样本</td></tr><tr><td>外部众测</td><td>每季度</td><td>100+ 条</td></tr><tr><td>监管通报跟踪</td><td>持续</td><td>同类产品的处罚案例</td></tr></tbody></table></div>
+<p>第三行最实用：<strong>看同行被罚什么，就补什么规则</strong>。这是最便宜的威胁情报。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 一个完整的落地清单</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>内容</th><th>优先级</th></tr></thead><tbody><tr><td>L1 规则</td><td>显性违规词表 + 正则</td><td>P0</td></tr><tr><td>L2 模型</td><td>0.5B 多分类，每类 2,000 正样本</td><td>P0</td></tr><tr><td>输出校验</td><td>JSON Schema + 业务规则</td><td>P0</td></tr><tr><td>离线审计</td><td>1% 采样 + 大模型复核</td><td>P1</td></tr><tr><td>L3 复核</td><td>7B，只审 L2 可疑的 5%</td><td>P1</td></tr><tr><td>红队</td><td>每月一轮</td><td>P1</td></tr><tr><td>漂移监控</td><td>拦截率/误杀率/分布</td><td>P1</td></tr></tbody></table></div>
+<p>前三项不做完，不要上线。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>违规内容上线两个月才发现</td><td>没有离线审计</td><td>事后才知道</td><td>补 1% 采样</td></tr><tr><td>正常用户被批量拦截</td><td>阈值太严</td><td>误杀率监控</td><td>降阈值，改由 L2 判</td></tr><tr><td>守卫模型拦截率从 4% 掉到 1%</td><td>模型衰减或被绕过</td><td>拦截率曲线</td><td>重训 + 红队</td></tr><tr><td>加了守卫 TTFT 破线</td><td>用了 7B 同步审</td><td>TTFT p95</td><td>改异步或只审可疑</td></tr><tr><td>同一内容 A 租户拦 B 租户放</td><td>规则没隔离</td><td>比对两个租户</td><td>规则按租户配置</td></tr><tr><td>提示词说一套校验做一套</td><td>两处维护</td><td>全量失败</td><td>从同一 schema 生成</td></tr></tbody></table></div>
+<p>第六行最常见：提示词写"缺失填 null"，校验却断言不能为 null——模型永远重试，永远失败，团队以为模型不听话。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>守卫模型必须自训</td><td>业务违规就是通用违规（色情/暴力）时，用商用 API 更划算</td></tr><tr><td>三层防御</td><td>单一租户、单一场景时，规则 + 输出校验就够</td></tr><tr><td>L3 只审 5%</td><td>监管要求全量审核时，只能同步全审并上调 SLO</td></tr><tr><td>每月重训</td><td>业务规则极稳定（如只做格式转换）时，季度重训即可</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 验收</h2>
+<ol><li>能画出你的三层防御，每层说出误杀率、漏杀率、延迟。</li><li>能说出守卫模型的训练数据从哪来，每类多少条。</li><li>能算出加守卫后的 TTFT，并说明是否在预算内。</li><li>能设计漂移监控的三个指标。</li></ol>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为提示词里写了禁止项就够了，实际差在没有输出侧校验——模型会照抄输入里的违规词，而提示词管不住这个。</p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 延伸</h2>
+<ul><li>第 39 章：威胁模型，本章是它在内容维度的落地</li><li>第 40 章：合规与数据治理，留存与审计</li><li>第 7 章：提示词结构与缓存，本章的 30 ms 优化依赖它</li><li>第 25 章：背压，守卫服务的可用性要求</li><li>第 17 章：成本，守卫算力与离线审计的账</li></ul>
+<p>结论是：内容安全不是"加一个审核 API"，是三层分工——规则抓显性、小模型抓语义、大模型抓复杂，再加一条离线闭环把新发现的模式变成新规则。守卫模型吃 30 ms，但真正决定 TTFT 的是缓存命中率，不是它。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="33-autoscaling.html"><span>上一章</span><b>33 · 扩缩容与弹性</b></a><a class="nav-next" href="A-model-physics.html"><span>下一章</span><b>A · 模型层的物理：显存、带宽、算力</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>
