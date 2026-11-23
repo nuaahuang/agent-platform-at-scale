@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会话日志与重放：一份事实，四种看法 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 19 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 结论：日志是唯一真源，其余全是投影</a><a href="#s2"><span>02</span>. 事件的形状</a><a href="#s3"><span>03</span>. surfaceOp：一条事件怎么进入"模型看到的世界"</a><a href="#s4"><span>04</span>. 压缩写的三个事件</a><a href="#s5"><span>05</span>. 请求头也在日志里</a><a href="#s6"><span>06</span>. 持久化：一个 seam，两个后端</a><a href="#s7"><span>07</span>. 崩溃恢复：不修复，只补一条</a><a href="#s8"><span>08</span>. 重放与 fork</a><a href="#s9"><span>09</span>. 格式迁移</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下这套设计不成立</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">19</div><div class="ch-kicker">Harness</div><h1>会话日志与重放：一份事实，四种看法</h1><div class="ch-rule"></div></header>
+<blockquote><p>第 18B 章画过一条虚线：压缩时写 <code>surfaceOp</code>。这一章把那条虚线展开。</p><p>一个 Agent 系统最难的不是"记住对话"，而是"同一段对话，模型看到的、人看到的、账上记的，为什么可以不一样，却不会互相矛盾"。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 结论：日志是唯一真源，其余全是投影</h2>
+<p>DSH 的会话层只有一种数据：<strong>仅追加的事件日志</strong>。类型叫 <code>SessionEvent</code>，存在 <code>Session</code> 里。</p>
+<p>模型的对话历史不存在任何地方。它每次要发请求时，从日志<strong>算</strong>出来（<code>deriveMessages()</code>）。人看到的对话文本也是算出来的（transcript 投影）。账单上的 token 数同样是算出来的（usage 事件求和）。</p>
+<p>四个投影读同一份日志：</p>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  EV[&quot;运行时发生的事&lt;br/&gt;turn / step / tool / message&quot;] --&gt; LOG[&quot;会话日志&lt;br/&gt;仅追加，seq 连续&quot;]
+  LOG --&gt; S[&quot;surface 投影&lt;br/&gt;给模型看的&quot;]
+  LOG --&gt; TR[&quot;transcript 投影&lt;br/&gt;给人看的&quot;]
+  LOG --&gt; BILL[&quot;计费投影&lt;br/&gt;token 与价格&quot;]
+  LOG --&gt; UI[&quot;客户端投影&lt;br/&gt;列表与标题&quot;]
+  S -.-&gt;|&quot;压缩时写 surfaceOp&quot;| LOG</pre></figure>
+<p>这张图值得盯两秒：<strong>虚线是唯一一条从投影回到日志的边</strong>，而且它写的不是"删掉前面"，是"从 seq 118 到 240 用我替换"。</p>
+<p>只要这条边只允许写"遮蔽指令"，日志就永远不可能被破坏。这是整个设计的支点。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 事件的形状</h2>
+<p>每条事件有一个封套和一份载荷：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
+  &quot;seq&quot;: 119,
+  &quot;type&quot;: &quot;tool/result&quot;,
+  &quot;time&quot;: 1763887441223,
+  &quot;data&quot;: { &quot;turn&quot;: 3, &quot;step&quot;: 2, &quot;callId&quot;: &quot;call_7&quot;, &quot;content&quot;: [...] },
+  &quot;surfaceOp&quot;: &quot;append&quot;
+}</code></pre></figure>
+<p><code>seq</code> 从 0 开始连续，不跳号。一条事件的 JSON 大约 0.5–1KB（带 stream 的 <code>assistant/message</code> 能到几 KB）。这条约束比看起来重要：它让"从 118 到 240"这种区间表达成为可能，也让崩溃恢复能判断"尾部是不是被撕掉了"。</p>
+<p>核心事件 13 类，按用途分四组：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>组</th><th>事件</th><th>用途</th></tr></thead><tbody><tr><td>循环骨架</td><td><code>turn/start</code> <code>turn/end</code> <code>step/start</code> <code>step/end</code></td><td>划出重放的时间轴</td></tr><tr><td>输入</td><td><code>user/message</code> <code>system/message</code> <code>developer/message</code></td><td>进入模型的输入</td></tr><tr><td>输出</td><td><code>assistant/message</code> <code>assistant/attempt</code></td><td>模型产出，含 stream 与 usage</td></tr><tr><td>工具</td><td><code>tool/call</code> <code>tool/result</code></td><td>调用与结果</td></tr><tr><td>元信息</td><td><code>request/header</code> <code>session/end-seed</code></td><td>请求信封与 fork 边界</td></tr></tbody></table></div>
+<p><code>assistant/attempt</code> 是容易被忽略的一条：模型这次调用失败了、被重试了、被取消了，都要留一条记录，但<strong>不能</strong>伪装成一条历史消息。所以它进日志、不进 surface。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. surfaceOp：一条事件怎么进入"模型看到的世界"</h2>
+<p>产生消息的那几类事件叫 <code>SurfaceEventType</code>：<code>system/message</code>、<code>developer/message</code>、<code>user/message</code>、<code>assistant/message</code>、<code>tool/result</code>。只有它们必须带 <code>surfaceOp</code>。</p>
+<p>两种取值：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>&#x27;append&#x27;                                  // 追加到尾部
+{ op: &#x27;replace&#x27;, startSeq, endSeq }       // 遮蔽闭区间，并在原位置插入自己</code></pre></figure>
+<p><code>replace</code> 遮蔽的是 <strong>surface 上的位置区间</strong>，不是数字区间。日志里 seq 是连续的，但 surface 上可能已经缺了几段——被更早的 replace 遮蔽掉了。所以区间端点必须指向"当前 surface 里还活着的事件"，而且那些事件必须比新事件更早。</p>
+<p>折叠一个会话的 surface，逻辑只有十几行：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>nodes = []
+for e in events:
+    if e.surfaceOp == &#x27;append&#x27;:
+        nodes.append(e.seq)
+    else:                       // replace
+        i = nodes.index(startSeq)
+        j = nodes.index(endSeq)
+        nodes[i:j+1] = [e.seq]  // 闭区间整体换成一个</code></pre></figure>
+<p>跑完之后 <code>nodes</code> 就是模型看到的消息顺序。每次 replace 提交，<code>replaceGeneration</code> 加一；每次 replace 或有插件改了消息内容，<code>contentGeneration</code> 加一。增量消费方靠这两个计数器区分"只是尾部长了"和"中间被重写了"——前者可以增量读，后者必须重新投影。</p>
+<p>举个具体的。假设日志有 240 条事件，surface 上有 60 条消息。压缩把 seq 20 到 180 之间的 40 条消息概括成一条摘要，写进 seq 241：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
+  &quot;seq&quot;: 241,
+  &quot;type&quot;: &quot;user/message&quot;,
+  &quot;data&quot;: { &quot;role&quot;: &quot;user&quot;, &quot;content&quot;: [{ &quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;前 40 轮的摘要：…&quot; }] },
+  &quot;surfaceOp&quot;: { &quot;op&quot;: &quot;replace&quot;, &quot;startSeq&quot;: 21, &quot;endSeq&quot;: 179 }
+}</code></pre></figure>
+<p>折叠后 surface 变成 21 条消息，日志还是 241 条。原文一条没少，只是被挡住了。</p>
+<h3>3.1 为什么区间用 seq 而不是下标</h3>
+<p>因为下标会漂。压缩发生一次，后面所有下标都要重算；如果同时有两个并发的 replace，谁先谁后都说不清。</p>
+<p>seq 是绝对的。一条事件诞生时号码就固定了，永远不会因为别的事件插入而改变。用 seq 表达"遮蔽哪一段"，这个意图在日志里是<strong>静止的</strong>——一百年后重放，结果一样。</p>
+<h3>3.2 遮蔽不等于删除，且遮蔽可以嵌套</h3>
+<p>被遮蔽的事件仍在日志里，可以被别的 replace 再次引用。所以会出现"摘要的摘要"：第一层把 20–180 收成一条，第二层把 20–300 收成另一条，中间那一层自己也进了遮蔽范围。</p>
+<p>折叠算法天然支持这种嵌套，因为它只维护一个"当前还活着"的节点列表。代价是：想还原某一层的历史，得重新折叠到那一步。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 压缩写的三个事件</h2>
+<p>压缩不是一个原子操作，日志里能看到它的三段：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>事件</th><th>载荷</th><th>作用</th></tr></thead><tbody><tr><td><code>compaction/start</code></td><td><code>{ turn, step, trigger }</code></td><td>开始，带锁语义</td></tr><tr><td><code>compaction/summary</code></td><td><code>{ range, summary, tokens }</code></td><td>摘要内容</td></tr><tr><td><code>compaction/end</code></td><td><code>{ status }</code></td><td>结束或失败</td></tr></tbody></table></div>
+<p><code>trigger</code> 有两种：<code>'pressure'</code>（超过阈值主动压）和 <code>'context-overflow'</code>（已经被上游拒了，被迫压）。</p>
+<p>三条都有 <code>start</code> 无 <code>end</code>，就说明上一次压缩中途挂了。这是可以检测的遗留锁——重启时扫一遍就知道要不要清理，不需要额外的锁表。</p>
+<p>压缩前会先调 <code>ctx.toolResultPruner</code> 剪一遍工具结果，再让 <code>ctx.tokenMeter</code> 重测。<strong>先剪后压</strong>的顺序不能反：剪枝是无损的（原文还能从 spill 里取回），压缩是有损的，能少压一点就少压一点。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 请求头也在日志里</h2>
+<p>一个细节：发给模型的请求里，除了消息还有一段"信封"——用了哪个适配器、什么参数、工具 schema 长什么样。它叫 <code>request/header</code>，同样进日志。</p>
+<p>四种写入原因：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>reason</th><th>什么时候写</th></tr></thead><tbody><tr><td><code>initial</code></td><td>会话第一条请求</td></tr><tr><td><code>resume</code></td><td>进程重启后恢复</td></tr><tr><td><code>change</code></td><td>参数或工具集变了</td></tr><tr><td><code>series</code></td><td>没变，但开了一条新的消息序列</td></tr></tbody></table></div>
+<p><code>foldRequestHeader(events)</code> 取最新快照就能重建当前信封。于是<strong>每一个请求都可以是日志的纯函数</strong>：给定前缀，重放出来的请求和当时一模一样。</p>
+<p>为什么值得把请求头也存下来？因为调试线上问题最常见的一句话是"当时到底发了什么"。如果只存消息不存参数，温度、top_p、工具集任何一个变了都解释不了输出差异——而这些东西恰恰是每次发布都会动的。</p>
+<p><code>request/header</code> 不进 surface，它不产生消息。system prompt 也不在信封里，它作为 surface 第 0 号节点上的 <code>system/message</code> 存在。所以改提示词是追加一条系统消息，信封保持不变。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 持久化：一个 seam，两个后端</h2>
+<p>写盘不是 <code>Session</code> 的事。会话层只管内存，落盘走能力 seam：<code>ctx.sessionPersistence</code>。</p>
+<p>接口四个方法：<code>create</code> / <code>open</code> / <code>stat</code> / <code>list</code>，<code>create</code> 和 <code>open</code> 返回一个 <code>SessionHandle</code>（<code>read</code> / <code>append</code> / <code>flush</code> / <code>close</code>）。所有日志访问都走句柄，句柄自带<strong>单写者所有权</strong>——同一个会话 id 同时只有一个写句柄，这是靠文件 lease 保证的。</p>
+<p>两个后端：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>后端</th><th>形态</th><th>适合</th></tr></thead><tbody><tr><td><code>persistence-jsonl</code></td><td>每会话一个仅追加文件，默认 Zstd 帧带 checksum，逐批 fsync</td><td>默认，单机、可导出、易排查</td></tr><tr><td><code>persistence-sqlite</code></td><td>逻辑 JSON 事件 + 索引元数据，按帧压缩</td><td>需要按时间/用户查询，首次打开时导入现有 JSONL</td></tr></tbody></table></div>
+<p>JSONL 后端的实现细节值得学：<strong>原子实体化</strong>（先写临时文件再 rename）、<strong>逐批 fsync</strong>（不是逐事件）、<strong>第一次新 append 前截断撕裂尾部</strong>。这三件事分别解决"写了一半断电"、"fsync 太慢"、"尾部损坏"。</p>
+<h3>6.1 写窗口：为什么不是来一条写一条</h3>
+<p><code>session/event</code> 是同步通知，但后端不立刻落盘，而是进一个有界 write-behind 窗口：</p>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant L as agent-loop
+  participant S as Session
+  participant B as JSONL 后端
+  participant D as 磁盘
+  L-&gt;&gt;S: append(tool/result)
+  S-&gt;&gt;S: seq++ 并校验
+  S--&gt;&gt;B: session/event（同步通知）
+  B-&gt;&gt;B: 入窗口，开固定截止时间
+  Note over B: 后续事件加入，但不重置截止时间
+  B-&gt;&gt;D: 窗口到期：一次 append + fsync
+  L-&gt;&gt;S: session/flush
+  S-&gt;&gt;B: 取消等待，排空
+  B--&gt;&gt;L: 落盘确认</pre></figure>
+<p>关键在"<strong>后续事件不重置截止时间</strong>"。如果每来一条都重置，高频工具输出会让窗口永远不到期——批量写入变成无限推迟。固定截止时间保证最坏延迟有上界。</p>
+<p>算一笔账：一个 5 步的请求约 47 条事件、47KB。逐条 fsync 是 47 次磁盘同步，批量是 1–2 次。fsync 在 SSD 上 1ms 上下，在云盘上能到 10ms——47 次就是半秒，足够把 TTFT 的预算吃掉一半。</p>
+<p><code>session/flush</code> 是顺序检查点：loop 在领取下一轮输入前调它，拿到"前面都落盘了"的确认。崩溃时能丢的只有窗口里那几条，不会丢一整轮。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 崩溃恢复：不修复，只补一条</h2>
+<p>进程在 turn 中间崩了，日志的尾部是这样的：<code>turn/start</code> 有，<code>turn/end</code> 没有，中间可能还有一个没闭合的 <code>step/end</code>，以及几个只发了 <code>tool/call</code> 没等到 <code>tool/result</code> 的调用。</p>
+<p>DSH 的做法是<strong>不截断、不修复</strong>。理由很实在：长任务的一个 turn 能到 20 个 step、上千条事件，那些事件在崩溃前已经持久追加了，删掉等于丢数据。</p>
+<p>恢复发生在 resume 时，<code>agent-loop</code> 读日志，算出几样东西再补：</p>
+<ul><li>每个没有结果的 <code>tool/call</code> → 补一条错误结果</li><li>每个没闭合的 <code>step</code> → 补 <code>step/end</code></li><li>一个合成的 <code>turn/end</code>，reason 是 <code>{ kind: 'interrupted' }</code></li></ul>
+<p>这些作为<strong>普通批次</strong>通过同一个句柄追加。<code>interrupted</code> 是唯一一个不是由循环发出的结束原因——它由恢复逻辑发。</p>
+<p>只有一种东西会被丢弃：撕裂的物理尾部，也就是那次从未完成的 append 留下的残缺记录。JSONL 后端能部分解码撕裂的 Zstd 帧，把还能读的完整记录重写回去，再截断残渣。</p>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant R as resume
+  participant H as SessionHandle
+  participant S as Session
+  R-&gt;&gt;H: read() 全部事件
+  H--&gt;&gt;R: 物理有效的连续日志
+  R-&gt;&gt;R: 找未闭合 turn / step / tool call
+  R-&gt;&gt;H: append(补的 tool/result + step/end + turn/end)
+  H--&gt;&gt;S: 发布 Session
+  Note over R,S: interrupted 是唯一的非循环结束原因</pre></figure>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 重放与 fork</h2>
+<p>重放不是"再跑一遍模型"，是<strong>从同一组事件重新派生</strong>。</p>
+<p><code>ctx.sessions.create(id, { seed, meta })</code> 就是原语：传入一批事件作种子，新会话从 seq 0 开始把它们当自己的历史。派生出消息、surface、请求头，和原会话一模一样。</p>
+<p>fork 用的是同一个原语，区别在种子必须是父日志<strong>从 seq 0 开始的一段连续前缀</strong>。这条约束很硬：</p>
+<ul><li>从 seq 0 开始，保证没有悬空引用</li><li>连续，保证 <code>seq</code> 不跳号</li><li>前缀，保证不会凭空出现"父亲还没发生的事"</li></ul>
+<p>所以子 agent 一旦创建，父的历史就固定在那一刻了。父后面发生的事，子看不见——这不是缺陷，是隔离。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 格式迁移</h2>
+<p>日志是有版本的，而且版本只能往前。</p>
+<ul><li><code>SessionFormatUnsupportedError</code>：这个构建读不懂这份日志（版本太新），数据没坏</li><li><code>SessionPersistenceCorruptionError</code>：数据坏了</li></ul>
+<p>两个错误分开报，因为处置方式完全不同：前者要升级程序，后者要恢复数据。</p>
+<p>迁移规则里有两条容易踩：当前格式恢复<strong>保留</strong>带 <code>ignorable: true</code> 的未知事件（向前兼容），历史 v0/v1/v2 迁移则<strong>拒绝</strong>未知类型，哪怕它标了 ignorable（旧格式没有可靠的前向兼容语义）。另外，只要存在比当前构建更高的 generation，就拒绝打开——避免旧程序把新数据写坏。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>压缩后模型说"你之前说过"但内容对不上</td><td>摘要丢了关键约束</td><td>对比摘要与原文的关键实体</td><td>摘要里强制保留约束清单</td></tr><tr><td>seq 跳号</td><td>并发写入没串行化</td><td>重放时报区间找不到</td><td>单写者句柄加锁</td></tr><tr><td>surface 与 transcript 条数不一致</td><td>有人拿 transcript 当真源</td><td>对比 append 次数</td><td>只从日志派生</td></tr><tr><td>崩溃后同一轮执行两次</td><td>补 closer 时重放了工具调用</td><td>查 turn/end 的 reason</td><td>补 closer 只写结果，不重执行</td></tr><tr><td>请求头对不上</td><td>system prompt 被塞进 header</td><td>对比 header 与 surface 节点 0</td><td>提示词走系统消息</td></tr></tbody></table></div>
+<p>最后一条值得展开：把 system prompt 放进 <code>request/header</code> 会让信封随着提示词变而变，缓存前缀立刻失效；更糟的是同一个会话里两个请求的 header 不一致，重放时无法确定用哪个。DSH 把它放在 surface 节点上，就是为了让"改提示词"和"改参数"变成两件独立的事。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 什么情况下这套设计不成立</h2>
+<ul><li><strong>事件量到千亿级且写放大敏感</strong>：每条事件一次 JSON 序列化加校验，1 亿会话 × 500 条就到千亿级，需要换列存或二进制编码。</li><li><strong>需要强一致的多写者</strong>：单写者所有权是这套设计的前提。多人同时往一个会话里写，得先改成 CRDT 或加中心仲裁。</li><li><strong>需要按内容检索历史</strong>：仅追加日志不适合做全文检索，得外挂索引，索引与日志的一致性要自己保证。</li></ul>
+<p>这三条里，第二条最容易在"多人协作 Agent"场景被撞上。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收</h2>
+<ol><li>能说清 <code>replace</code> 为什么用 seq 而不是下标。</li><li>能写出 <code>foldSurface</code> 的十行伪代码。</li><li>能解释为什么崩溃恢复不截断日志。</li><li>能指出把 system prompt 放进 request/header 的两个后果。</li></ol>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为"会话历史"就是一份消息数组，压缩就是删掉前面的。实际差在"真源与投影"这层分离——把删除改成遮蔽，日志就变成了不可破坏的事实，而模型、人、账本可以各看各的。</p>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 延伸</h2>
+<ul><li>第 18 章：日志为什么是唯一真源</li><li>第 18B 章：十张图里图 4、图 5、图 8</li><li>源码：<code>packages/core/session/src/types.ts</code>、<code>packages/session/session-persistence-jsonl</code></li></ul>
+<p>小结：会话层的全部机制可以压成一句——<strong>只追加事件，其余全部现算</strong>。压缩遮蔽区间、崩溃补一条 closer、fork 借一段前缀，三件事都是这句话的推论。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="18B-dsh-diagrams.html"><span>上一章</span><b>18B · DSH 的架构图、流程图与时序图</b></a><a class="nav-next" href="19A-capability-layer.html"><span>下一章</span><b>19A · 能力层：那 90 个插件包在做什么</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>

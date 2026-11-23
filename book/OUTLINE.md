@@ -109,6 +109,8 @@
 | 18 | [Harness 全景：以 DeepSeek Harness 为样板](part-06-harness/18-runtime-overview.md) | 插件树/三域事件/seam/turn 流程？它是不是 ReAct？ | 架构拆解 + 源码索引 |
 | 18A | [插件怎么管：代码组织、依赖与语言](part-06-harness/18A-plugin-and-code-organization.md) | 插件在文件层面是什么？开关改哪个字段？101 个包怎么分组？为什么全用 TS？ | 装包五道门 + 十一组清单 + 语言构成 |
 | 18B | [DSH 的架构图、流程图与时序图](part-06-harness/18B-dsh-diagrams.md) | DSH 自己的分层怎么画？一次 turn 的事件顺序？三域怎么分？101 个包怎么协调？ | 十张图 + 四条协调规则 |
+| 19 | [会话日志与重放：一份事实，四种看法](part-06-harness/19-session-log-and-replay.md) | 日志怎么存？压缩为什么不删？崩溃后怎么恢复？fork 借什么？ | surfaceOp 折叠 + 写窗口 + closer 补齐 |
+| 19A | [能力层：那 90 个插件包在做什么](part-06-harness/19A-capability-layer.md) | 核心与能力怎么分？工具是几件东西拼的？为什么不建向量索引？ | 八类地图 + 命名约定 |
 | 19 | 事件溯源与状态机 | 会话怎么重放？幂等怎么做？ | 事件表 + 重放实验 |
 | 20 | 上下文工程 | L0–L7、压缩、记忆分层、检索 | 上下文预算表 |
 | 21 | 工具层：MCP / 权限 / 沙箱 | schema、幂等、限流、最小权限 | MCP 清单 + 权限矩阵 |
