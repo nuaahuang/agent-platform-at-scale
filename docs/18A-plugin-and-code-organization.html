@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>插件怎么管：代码组织、依赖与语言选择 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 18A 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 一个插件就是一个 npm 包</a><a href="#s2"><span>02</span>. 管理：一个 profile 就是三个文件</a><a href="#s3"><span>03</span>. 装一个包要过几道门</a><a href="#s4"><span>04</span>. 代码怎么组织：两级目录的 monorepo</a><a href="#s5"><span>05</span>. 一个生产级 harness 有多少插件</a><a href="#s6"><span>06</span>. 语言：96% 是 TypeScript</a><a href="#s7"><span>07</span>. 代价</a><a href="#s8"><span>08</span>. 对我们的启示</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">18A</div><div class="ch-kicker">Harness</div><h1>插件怎么管：代码组织、依赖与语言选择</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>一个"插件"在文件层面到底是什么？</li><li>开一个插件、装一个插件，分别改了哪个文件的哪一行？</li><li>一个生产级 harness 大概有多少个插件，怎么分组？</li><li>为什么全用 TypeScript，哪些地方不得不用别的语言？</li><li>这套组织方式的代价是什么？</li></ol></aside>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 一个插件就是一个 npm 包</h2>
+<p>先说结论：<strong>插件不是框架里的一个对象，是一个独立的 npm 包。</strong> 全仓 101 个依赖包，每个都对应 <code>packages/</code> 下的一个目录。</p>
+<p>以 dsh 的核心工具包为例，它的清单是这样：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{
+  &quot;name&quot;: &quot;@deepseek-ai/dsh-tools&quot;,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;main&quot;: &quot;lib/index.js&quot;,
+  &quot;exports&quot;: {
+    &quot;.&quot;: { &quot;types&quot;: &quot;./lib/types/index.d.ts&quot;, &quot;default&quot;: &quot;./lib/index.js&quot; }
+  },
+  &quot;peerDependencies&quot;: {
+    &quot;@deepseek-ai/cordis&quot;: &quot;workspace:~&quot;,
+    &quot;@deepseek-ai/dsh-session&quot;: &quot;workspace:*&quot;,
+    &quot;@deepseek-ai/dsh-llm&quot;: &quot;workspace:*&quot;
+  }
+}</code></pre></figure>
+<p>这个清单里有三行值得看（<code>exports</code> 一共 5 个子路径，<code>peerDependencies</code> 一共 7 项，<code>dependencies</code> 只剩 2 项）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>含义</th></tr></thead><tbody><tr><td><code>type: module</code></td><td>纯 ESM，没有 CommonJS 兼容层</td></tr><tr><td><code>main: lib/index.js</code></td><td>发布的是编译产物，<code>src/</code> 也一起发（方便调试）</td></tr><tr><td><code>peerDependencies</code></td><td>核心包<strong>不打包</strong>，由宿主提供</td></tr></tbody></table></div>
+<p>最后一行是关键设计。如果每个插件都把自己的 <code>dsh-session</code> 打进产物，装了 20 个插件就会加载 20 份会话日志模块，20 个互不相认的 <code>ctx.sessions</code>——内存多占 20 倍，状态却谁也看不见谁。用 <code>peerDependencies</code> 声明，宿主只提供一份，<strong>所有插件共享同一个实例</strong>。</p>
+<p>这也解释了为什么插件之间没法"私有通信"——它们本来就在同一个进程、同一个 <code>ctx</code> 里。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 管理：一个 profile 就是三个文件</h2>
+<p>运行时的一切管理动作，最终都落在 profile 目录的三个文件上。这三个文件加起来通常不到 40 行：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>文件</th><th>作用</th></tr></thead><tbody><tr><td><code>package.json</code></td><td>依赖声明 + <code>dsh.profile.bundles</code> 有序列表</td></tr><tr><td><code>cordis.patch.yml</code></td><td>覆盖项：改某个插件的配置或开关</td></tr><tr><td><code>compatibility.json</code></td><td>版本豁免：允许某个包在特定运行时版本下运行</td></tr></tbody></table></div>
+<p>下面这张表是"你想做的事 → 实际改了哪"：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>操作</th><th>改哪个文件</th><th>具体怎么改</th></tr></thead><tbody><tr><td>关掉一个插件</td><td><code>cordis.patch.yml</code></td><td>找到最后一条匹配的覆盖项，改 <code>disabled: true</code></td></tr><tr><td>没有匹配的覆盖项</td><td><code>cordis.patch.yml</code></td><td>追加一条只含 <code>id</code> 和 <code>disabled</code> 的条目</td></tr><tr><td>开一个新组合包</td><td><code>package.json</code></td><td>往 <code>dsh.profile.bundles</code> 列表末尾追加</td></tr><tr><td>关一个组合包</td><td><code>package.json</code></td><td>从列表移除，但依赖保留</td></tr><tr><td>装一个第三方包</td><td><code>package.json</code> + 锁文件</td><td><code>pnpm add</code>，<code>expected</code> 校验包名和版本</td></tr><tr><td>允许某包在不兼容版本跑</td><td><code>compatibility.json</code></td><td>写 <code>package@version</code> → 运行时版本列表</td></tr></tbody></table></div>
+<p>第二条有个反直觉的细节：<strong>如果组合包层已经让这个插件处于你要的状态，那条只含 <code>id</code> 和 <code>disabled</code> 的覆盖项会被删掉。</strong></p>
+<p>也就是说，<code>cordis.patch.yml</code> 里只记录"与组合包不同的设置"。你开了又关回去，文件会恢复原样，不留垃圾。这个设计让 patch 文件始终保持最小，几个月后还能读懂。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 装一个包要过几道门</h2>
+<p>安装不是 <code>pnpm add</code> 就完事。dsh 在真正下载之前和之后一共五道检查，任何一道不过就中止或回滚：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>检查</th><th>不通过的结果</th></tr></thead><tbody><tr><td>装之前</td><td>spec 是否指向一个包</td><td><code>not-found</code> / <code>not-a-package</code></td></tr><tr><td>装之前</td><td>是否声明了组合包</td><td><code>not-bundle</code></td></tr><tr><td>装之前</td><td><code>engines.dsh</code> 与 DSH peer 版本</td><td><code>incompatible-version</code></td></tr><tr><td>装之后</td><td>实际装的包名与版本是否等于预期</td><td><code>unexpected-package</code>，回滚</td></tr><tr><td>装之后</td><td>构建脚本是否被批准</td><td><code>pendingBuilds</code>，等用户授权</td></tr></tbody></table></div>
+<p>第四道最值得说。命令里带 <code>expected: { name, version }</code>，装完核对：如果装进来的是别的包、别的版本，或者顺带改动了其他直接依赖，<strong>整个操作回滚</strong>——<code>package.json</code>、<code>pnpm-lock.yaml</code>、<code>node_modules</code> 全部恢复。</p>
+<p>这是防供应链投毒的基本动作：你请求的是 <code>foo@1.2.3</code>，注册表返回的却是 <code>foo@1.2.3</code> 加一个恶意 <code>postinstall</code>，回滚能挡住后半段。</p>
+<p>注册表也有顺序：先问你指定的，再问配置的，最后问 <code>fallbackRegistries</code>（默认 npmmirror）。<strong>但私有源永远不会落到公共源</strong>——如果 pnpm 自己指向的是私有源，只问它自己。这条规则防止内部包名泄露到公网。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 代码怎么组织：两级目录的 monorepo</h2>
+<p>源码是一个 pnpm workspace，<code>pnpm-workspace.yaml</code> 里 8 类目录，其中 <code>packages/<em>/</em></code> 是主体：</p>
+<figure class="code code--lang"><span class="code-lang">yaml</span><button class="copy" type="button">复制</button><pre><code>packages:
+  - packages/*/*        # 两级：域/包
+  - apps/*
+  - vendor/*
+  - native/system
+  - python/sdk-runtime</code></pre></figure>
+<p><code>packages/<em>/</em></code> 这个两级结构是刻意的：第一级是<strong>域</strong>，全仓 15 个（core、llm、fs、session、tool、subagent、compaction、spill、storage、web、boot、bundle、client、api、util），第二级是<strong>包</strong>。找东西时先想域，再想包——平均每个域 6.7 个包。找东西时先想域，再想包。</p>
+<p>版本策略是<strong>锁步</strong>：所有包同一个版本号（写作时是 <code>0.2.3-alpha.2</code>）。101 个包各自独立发版会让 <code>peerDependencies</code> 立刻变成地狱，锁步版本牺牲了"单独发一个小修复"的灵活性，换来了"装哪个组合都一致"。</p>
+<p>构建链是三件套：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>工具</th></tr></thead><tbody><tr><td>库打包</td><td>tsdown（<code>^0.22.2</code>）</td></tr><tr><td>Web 客户端</td><td>Vite（<code>8.2.2</code>）</td></tr><tr><td>测试</td><td>Vitest（<code>^4.1.11</code>）</td></tr><tr><td>语言</td><td>TypeScript（<code>^6.0.3</code>）</td></tr><tr><td>运行时</td><td>Node `^24.22.3 \</td><td>\</td><td>&gt;=26.13.1`，纯 ESM</td></tr></tbody></table></div>
+<p>仓库的 <code>devDependencies</code> 有 96 项，其中真正参与运行时的不到 5 项。另外还有几个自检脚本，比如 <code>verify-type-equiv</code>（校验文档里的类型代码块与源码一致）、<code>verify-application-entrypoints</code>（保证所有可执行入口都走 <code>dsh</code> 启动器）。这类脚本不产生功能，但缺了文档和代码会在几个月内漂移。</p>
+<p>依赖脚本默认全部拒绝（pnpm 11 的 <code>strictDepBuilds</code>），<code>allowBuilds</code> 只白名单三个：<code>esbuild</code>（要下原生二进制）、<code>node-pty</code>（PTY 后端）、<code>lefthook</code>（git hooks）。<strong>默认拒绝、逐个批准</strong>，这是供应链安全里成本最低的一条。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 一个生产级 harness 有多少插件</h2>
+<p>dsh 的 <code>dsh-base</code> 组合包依赖 <strong>101 个包</strong>。按职责分组大致是这样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>组</th><th>代表包</th><th>干什么</th></tr></thead><tbody><tr><td>循环与状态</td><td><code>agent</code>、<code>agent-loop</code>、<code>session</code>、<code>system-prompt</code>、<code>tools</code> 等 5 个</td><td>主干</td></tr><tr><td>模型接入</td><td><code>llm-deepseek-api-key</code>、<code>llm-deepseek-account</code>、<code>llm-retry</code></td><td>适配器与重试</td></tr><tr><td>工具</td><td><code>tool-bash</code>、<code>tool-fs</code>、<code>tool-fs-search</code>、<code>tool-web</code>、<code>tool-todo</code></td><td>模型能调的动作</td></tr><tr><td>执行器</td><td><code>tool-executor-native</code>、<code>tool-executor-ptc</code></td><td>单次调用 / 程序内批量调用</td></tr><tr><td>子 agent</td><td><code>subagent</code>、<code>subagent-fork-in-process</code>、<code>subagent-spawn-in-process</code></td><td>派生与恢复</td></tr><tr><td>上下文</td><td><code>compaction-basic</code>、<code>compaction-tool-result-pruner</code>、<code>spill-local</code>、<code>token-meter</code></td><td>四道工序</td></tr><tr><td>会话存储</td><td><code>session-persistence-jsonl</code>、<code>session-query-sqlite</code>、<code>session-projection</code></td><td>落盘与查询</td></tr><tr><td>沙箱与审批</td><td><code>sandbox-policy</code>、<code>bash-sandbox</code>、<code>fs-observation-policy</code>、<code>user-approval</code></td><td>权限边界</td></tr><tr><td>检索与技能</td><td><code>skill</code>、<code>skill-filesystem</code>、<code>mcp-resources</code></td><td>按需加载知识</td></tr><tr><td>观测</td><td><code>otel</code>、<code>session-telemetry-otel</code>、<code>api-gateway</code></td><td>遥测与网关</td></tr><tr><td>配套</td><td><code>commands</code>、<code>plan-mode</code>、<code>goal</code>、<code>plugin-manager</code>、<code>hmr</code></td><td>命令、计划、目标、自管理</td></tr></tbody></table></div>
+<p>十一个组，101 个包，平均一组 9.2 个。最多的"工具"组 13 个，最少的"执行器"组 2 个。</p>
+<p>这 101 个包里只有 1 个是组合包（<code>dsh-base</code> 本身），剩下 100 个都是能力包。能力包之间不互相 import——它们全部通过同一个 <code>ctx</code> 通信，包与包之间的直接依赖是 0 行。真正耦合的是数据形状，不是代码。</p>
+<p>所以升级一个包时，你看到的风险通常是"它改了某个事件的 payload"，而不是"它引用了别的包的内部函数"。前者会体现在 1 个类型定义里，后者会散在几十个文件里。这也是为什么 100 个包还能维护得动：耦合面被压缩到 13 种事件和若干 ctx 键上。</p>
+<p>这个数字有参考价值：<strong>如果要自研一个同等能力的 harness，起点不是"写一个 loop"，是"准备 100 个左右的模块边界"。</strong> 这也解释了为什么第 18 章说"照着写很难"。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 语言：96% 是 TypeScript</h2>
+<p>仓库的语言构成（按字节，一共 14 种语言、84.7 MB）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>语言</th><th>体积</th><th>占比</th><th>用途</th></tr></thead><tbody><tr><td>TypeScript</td><td>81.1 MB</td><td>95.8%</td><td>全部插件、核心、客户端、适配器</td></tr><tr><td>CSS</td><td>1.1 MB</td><td>1.3%</td><td>Web 界面样式</td></tr><tr><td>Python</td><td>0.93 MB</td><td>1.1%</td><td>SDK 薄封装</td></tr><tr><td>JavaScript</td><td>0.64 MB</td><td>0.8%</td><td>构建配置、浏览器端胶水</td></tr><tr><td>Swift</td><td>0.58 MB</td><td>0.7%</td><td>macOS 原生壳</td></tr><tr><td>C# / PowerShell / NSIS</td><td>0.55 MB</td><td>0.6%</td><td>Windows 安装与壳</td></tr><tr><td>C++ / C</td><td>0.17 MB</td><td>0.2%</td><td>Landlock 启动器、PTY</td></tr><tr><td>其他</td><td>0.1 MB</td><td>0.1%</td><td>Shell、HTML、Makefile</td></tr></tbody></table></div>
+<p>选 TypeScript 有三个具体原因，不是"生态好"这种空话：</p>
+<p><strong>第一，插件要热加载。</strong> 宿主和插件跑在同一个 Node 进程里，改一个插件文件要能立即生效。跨语言做不到这一点——换语言意味着跨进程或 FFI（Foreign Function Interface，跨语言调用接口），热加载就变成了"重启服务"。</p>
+<p><strong>第二，类型要跨宿主和客户端共享。</strong> 一个工具的参数 schema，服务端要校验、客户端要渲染表单、模型要看到 JSON Schema，三处要是同一份定义。TS 的类型系统和 npm 包边界让这件事只需要写一遍。</p>
+<p><strong>第三，插件作者的门槛。</strong> 插件是给别人写的，语言越主流，愿意写的人越多。TS 在 npm 生态里的位置，决定了"装一个插件"和"装一个 npm 包"是同义词。</p>
+<p>少数非 TS 的地方只占 4.2%，而且每一处都是被平台逼的：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>语言</th><th>位置</th><th>为什么不能用 TS</th></tr></thead><tbody><tr><td>C++ / C</td><td>Landlock 启动器、PTY</td><td>需要系统调用和内核接口</td></tr><tr><td>Swift</td><td>macOS 壳</td><td>系统 API 只有原生绑定</td></tr><tr><td>C# / PowerShell / NSIS</td><td>Windows 安装器</td><td>安装器要在 Node 装好之前运行</td></tr></tbody></table></div>
+<p>Python 那 0.93 MB 只是 SDK 的运行时封装——把 <code>dsh</code> CLI 打包成 wheel，让 Python 调用方能 <code>pip install</code> 然后起子进程。<strong>它不是第二套实现。</strong></p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 代价</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>代价</th><th>表现</th></tr></thead><tbody><tr><td>包数量</td><td>101 个包的依赖图，新人第一周基本在认路，第三周才敢改 core</td></tr><tr><td>锁步版本</td><td>改一个包要发全部，不能只发一个补丁</td></tr><tr><td>peer 依赖</td><td>版本不匹配时报错在运行期，不在安装期（<code>pnpm install</code> 只给 1 行警告）</td></tr><tr><td>启动开销</td><td>101 个插件初始化，冷启动 200–500ms，比单体慢 3–5 倍</td></tr><tr><td>文档漂移</td><td>类型定义散在几十个 README 里，要靠脚本校验</td></tr></tbody></table></div>
+<p>第三行是个真实的坑：<code>peerDependencies</code> 不满足时，<code>pnpm install</code> 只警告不报错，等到运行时 <code>ctx.sessions</code> 是 <code>undefined</code> 才发现。</p>
+<p>所以 dsh 加了两道防线：安装前检查 <code>engines.dsh</code>，装完核对 <code>expected</code>。<strong>两道都通过，才算装好。</strong></p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 对我们的启示</h2>
+<p>如果自研平台，这四条可以直接用：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>原则</th><th>具体做法</th></tr></thead><tbody><tr><td>插件边界 = 包边界</td><td>一个插件一个包，不要一个包里放五个插件</td></tr><tr><td>核心用 peer 依赖</td><td>会话、模型、工具注册表只允许一份实例</td></tr><tr><td>版本锁步</td><td>全部包同一个版本号，减少组合爆炸</td></tr><tr><td>配置只记差异</td><td>patch 文件只写与默认不同的部分</td></tr></tbody></table></div>
+<p>第一条最容易被违反。常见做法是一个 <code>plugins/</code> 目录下放十几个文件，靠约定区分——结果就是"改 A 影响了 B"，因为它们在同一个包里共享模块状态。</p>
+<p>拆成包之后，<strong>依赖关系变成显式的</strong>：A 要用 B，要写进 <code>package.json</code>，否则构建就失败。这比代码评审可靠。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>两个插件各有一份 session</td><td>核心包被写进 dependencies 而非 peer</td><td>打印 <code>ctx.sessions</code> 是否同一引用</td><td>改成 peerDependencies</td></tr><tr><td>装了包但插件没生效</td><td>组合包没加入 <code>bundles</code> 列表</td><td><code>listBundles</code> 看 <code>enabled</code></td><td>追加到列表</td></tr><tr><td>开关改了重启又变回去</td><td>改的是组合包层不是 patch 层</td><td>对比 patch 与 bundles</td><td>走 <code>plugin_manager</code></td></tr><tr><td>安装成功但启动崩</td><td>peer 版本不匹配</td><td>看启动日志的 peer 警告</td><td>加 <code>engines.dsh</code> 检查</td></tr><tr><td>私有包名泄露到公网</td><td>注册表顺序配错</td><td>查 <code>registries()</code> 顺序</td><td>私有源只问自己</td></tr><tr><td>插件热加载后状态错乱</td><td>卸载没撤销副作用</td><td>反复开关后对比状态</td><td>注册要返回 disposer</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<ol><li>能说出"关一个插件"改的是哪个文件的哪个字段。</li><li>能解释为什么核心包要用 <code>peerDependencies</code>。</li><li>能说出 101 个包大致分成哪十一个组。</li><li>能判断你的项目该不该拆成多包。</li></ol>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为"插件化"就是把代码分文件、加个注册函数，实际差在"包边界即插件边界"——只有拆成独立的包，依赖才是显式的、实例才是唯一的、版本才管得住。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 延伸</h2>
+<ul><li>第 18 章：插件树怎么组装起来</li><li>第 19 章：会话日志怎么落盘、怎么重放</li><li>第 21 章：工具插件怎么写、怎么被把关</li><li>源码：<a href="https://github.com/deepseek-ai/deepseek-harness">deepseek-ai/deepseek-harness</a></li></ul>
+<p>小结：插件管理不是"写个管理器"，是三件事同时成立——包边界清晰、依赖关系显式、配置只记差异。缺任何一条，装到第 20 个插件时就会失控。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="18-runtime-overview.html"><span>上一章</span><b>18 · Harness 全景：一次请求在 dsh 里走了一遍</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>
