@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>运行时总览：agent loop 的七件事 · Agent Platform at Scale</title>
+<title>Harness 全景：五个板块与一次请求的路径 · Agent Platform at Scale</title>
 <style>
 :root{
   --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
@@ -219,193 +219,129 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：第 14 步断了</a><a href="#s2"><span>02</span>. agent loop 的最小模型</a><a href="#s3"><span>03</span>. 七件事</a><a href="#s4"><span>04</span>. 计划：约束下的选择</a><a href="#s5"><span>05</span>. 调用：幂等是底线</a><a href="#s6"><span>06</span>. 观察：结果怎么进上下文</a><a href="#s7"><span>07</span>. 状态：每步一个检查点</a><a href="#s8"><span>08</span>. 预算：三维，先到先停</a><a href="#s9"><span>09</span>. 超时：三层，各管一段</a><a href="#s10"><span>10</span>. 恢复：三种断法，三种处理</a><a href="#s11"><span>11</span>. 状态机</a><a href="#s12"><span>12</span>. 伪代码</a><a href="#s13"><span>13</span>. 失败模式</a><a href="#s14"><span>14</span>备选方案：用工作流引擎代替自研 loop</a><a href="#s15"><span>15</span>. 什么情况下这些结论不成立</a><a href="#s16"><span>16</span>. 验收</a><a href="#s17"><span>17</span>. 复盘卡</a><a href="#s18"><span>18</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：先写 loop 的人，第五周会推翻重来</a><a href="#s2"><span>02</span>. Harness 在哪</a><a href="#s3"><span>03</span>. 五个板块</a><a href="#s4"><span>04</span>. 一次请求的完整路径</a><a href="#s5"><span>05</span>. 板块分解</a><a href="#s6"><span>06</span>板块之间怎么连：四个接口</a><a href="#s7"><span>07</span>. 自研还是用框架</a><a href="#s8"><span>08</span>. 演进路径</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
       <div class="rail-foot">Harness</div>
     </div>
   </aside>
   <main class="content">
-    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">18</div><div class="ch-kicker">Harness</div><h1>运行时总览：agent loop 的七件事</h1><div class="ch-rule"></div></header>
-<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>agent loop 为什么不能写成 <code>while (true)</code>？</li><li>计划、调用、观察、状态、预算、超时、恢复，这七件事各自管什么？</li><li>一个请求跑到第 14 步断了，怎么接着跑而不是重来？</li><li>预算是 token、步数、时间三个维度，哪个先超限？</li><li>状态机有几个状态，为什么要有 WAITING_HUMAN？</li></ol></aside>
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">18</div><div class="ch-kicker">Harness</div><h1>Harness 全景：五个板块与一次请求的路径</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>Harness 在企业架构里占什么位置，和网关、模型的分界在哪？</li><li>五个板块（Loop / State / Context / Tools / Orchestration）各管什么？</li><li>一次多步请求穿过这五个板块的完整路径是什么？</li><li>哪些板块必须自研，哪些能用现成框架？</li><li>从 0 到 1 的三个阶段，每个阶段加什么？</li></ol></aside>
 <div class="orn"></div>
-<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：第 14 步断了</h2>
-<p>一个退单请求，Agent 走了 14 步：查订单、查物流、看政策、算金额、校验用户资格、准备退款单……第 15 步准备提交时，进程被重启（滚动发布）。</p>
-<p>重启之后，用户的对话还在，但 Agent 忘了自己刚才干了什么。它重新从第 1 步开始：又查了一次订单、又算了一次金额、又准备了一次退款单。</p>
-<p><strong>这一次，退款提交了两次。</strong> 因为第 15 步的动作在重启前已经发出去，重启后又发了一次。</p>
-<p>复盘时发现四个问题：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>后果</th></tr></thead><tbody><tr><td>没有持久化中间状态</td><td>重启即失忆，只能重来</td></tr><tr><td>工具调用不幂等</td><td>重放导致重复退款</td></tr><tr><td>没有步数上限</td><td>某些请求会走 200 步，烧掉 3 块钱</td></tr><tr><td>没有整体超时</td><td>挂住的请求一直占着连接</td></tr></tbody></table></div>
-<p>这一章讲的就是把这四件事补上——它们构成了 agent loop 的七件事。</p>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：先写 loop 的人，第五周会推翻重来</h2>
+<p>需求方说："做个能查订单、能退款、能回答政策的助手。"</p>
+<p>最自然的做法是打开编辑器写循环：调模型 → 解析工具调用 → 执行 → 回灌 → 再调。一天能跑通 demo。</p>
+<p>第五周会撞上四个墙：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>撞墙</th><th>症状</th></tr></thead><tbody><tr><td>状态没处放</td><td>用户断线重连，上下文没了</td></tr><tr><td>上下文爆炸</td><td>第 8 步开始 token 超限</td></tr><tr><td>工具权限乱</td><td>一个工具被所有 agent 共用，出了事查不出谁调的</td></tr><tr><td>多场景无法复用</td><td>客服要 5 步、审批要 12 步，写了两套 loop</td></tr></tbody></table></div>
+<p>四堵墙都不是"代码写得不好"，是<strong>架构没画</strong>。loop 只是执行引擎，它上面要挂状态、上下文、工具、编排四层。</p>
+<p>所以这一章不写 loop 的细节，先给全景——<strong>五个板块、它们的关系、以及一次请求怎么穿过它们</strong>。后面四章逐个展开。</p>
 </section>
-<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. agent loop 的最小模型</h2>
-<p>最常见的 agent 实现长这样：</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>while True:
-    action = llm.decide(history)
-    if action.type == &quot;final&quot;:
-        return action.text
-    result = tools.call(action)
-    history.append(result)</code></pre></figure>
-<p>这五行能跑 demo，但有五个致命问题：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>为什么致命</th></tr></thead><tbody><tr><td><code>while True</code> 没有终止保证</td><td>模型可能永远不给 final</td></tr><tr><td><code>history</code> 在内存里</td><td>进程一挂就没了</td></tr><tr><td><code>tools.call</code> 无幂等</td><td>重放会重复执行</td></tr><tr><td>没有预算</td><td>一步一毛钱，200 步就是 20 块</td></tr><tr><td>没有超时</td><td>卡住的请求占连接、占显存</td></tr></tbody></table></div>
-<p>所以真实的 agent loop 不是循环，是<strong>带状态、带预算、带检查点的状态机</strong>。</p>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. Harness 在哪</h2>
+<p>先定位。一条请求的完整链路：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>客户端 → 网关 → [ Harness ] → LLM 网关 → 推理引擎
+                    │
+                    ├─→ 工具层（MCP / HTTP / 内部 RPC）
+                    ├─→ 检索层（向量库 / 知识库）
+                    └─→ 状态层（Redis / 事件存储）</code></pre></figure>
+<p>Harness 是<strong>编排层</strong>。它自己不做推理，它组织推理：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>回答什么问题</th><th>不负责什么</th></tr></thead><tbody><tr><td>网关</td><td>这个请求能不能进</td><td>进来之后干什么</td></tr><tr><td><strong>Harness</strong></td><td><strong>进来之后，下一步做什么</strong></td><td><strong>这一步该怎么措辞</strong></td></tr><tr><td>模型</td><td>这一步输出什么</td><td>下一步做什么</td></tr><tr><td>引擎</td><td>怎么把这个 token 算出来</td><td>算出来的东西对不对</td></tr></tbody></table></div>
+<p>第二行和第三行的分工是全书最重要的边界之一：<strong>模型管"这一步说什么"，Harness 管"下一步做什么"。</strong></p>
 </section>
-<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 七件事</h2>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 五个板块</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>                ┌─────────────────────────────┐
+                │      Orchestration          │  多 Agent：谁交给谁
+                │  ┌───────────────────────┐  │
+                │  │        Loop           │  │  循环：下一步做不做
+                │  │  ┌─────────────────┐  │  │
+                │  │  │    Context      │  │  │  上下文：给模型看什么
+                │  │  │  ┌───────────┐  │  │  │
+                │  │  │  │   Tools   │  │  │  │  工具：怎么执行
+                │  │  │  └───────────┘  │  │  │
+                │  │  └─────────────────┘  │  │
+                │  └───────────────────────┘  │
+                │          State              │  状态：记住进度
+                └─────────────────────────────┘</code></pre></figure>
+<div class="table-wrap"><table class="table"><thead><tr><th>板块</th><th>职责</th><th>一句话</th><th>章节</th></tr></thead><tbody><tr><td>Loop</td><td>驱动多步</td><td>决定"还要不要下一步、做什么"</td><td>本章 §5.1</td></tr><tr><td>State</td><td>记住进度</td><td>断了能续、错了能回放</td><td>第 19 章</td></tr><tr><td>Context</td><td>组织输入</td><td>这一步该给模型看什么</td><td>第 20 章</td></tr><tr><td>Tools</td><td>执行动作</td><td>调什么、怎么调、谁有权调</td><td>第 21 章</td></tr><tr><td>Orchestration</td><td>多 Agent 协作</td><td>谁交给谁、怎么汇总</td><td>第 22 章</td></tr></tbody></table></div>
+<p>五个板块不是五个服务，多数系统是一个进程里的五个模块。<strong>区分它们是为了划清职责，不是为了拆微服务。</strong></p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 一次请求的完整路径</h2>
+<p>用户说："我要退第 3 件商品，钱退到哪张卡？"</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>板块</th><th>做什么</th><th>耗时</th></tr></thead><tbody><tr><td>1</td><td>Context</td><td>组装 system + 历史 + 检索到的退款政策</td><td>180 ms</td></tr><tr><td>2</td><td>Loop</td><td>调模型，模型决定"先查订单"</td><td>600 ms</td></tr><tr><td>3</td><td>Tools</td><td>调 <code>query_order</code>，带用户身份</td><td>45 ms</td></tr><tr><td>4</td><td>State</td><td>记一步：query_order 已执行，结果 X</td><td>2 ms</td></tr><tr><td>5</td><td>Context</td><td>把工具结果裁剪后回灌</td><td>3 ms</td></tr><tr><td>6</td><td>Loop</td><td>再调模型，模型决定"查退款方式"</td><td>600 ms</td></tr><tr><td>7</td><td>Tools</td><td>调 <code>query_refund_method</code></td><td>40 ms</td></tr><tr><td>8</td><td>State</td><td>记一步</td><td>2 ms</td></tr><tr><td>9</td><td>Loop</td><td>模型决定输出最终答案</td><td>600 ms</td></tr><tr><td>—</td><td>合计</td><td>3 轮，7 个子步骤</td><td>2.1 s</td></tr></tbody></table></div>
+<p>这个路径说明三件事：</p>
+<p><strong>① 时间几乎全花在模型调用上</strong>（1.8 s / 2.1 s = 86%）。所以优化 Harness 的性能，重点是减少轮次，不是优化代码。</p>
+<p><strong>② 每轮都要重新组装 Context。</strong> 第 1、5、9 步都在拼输入，而拼法直接决定 token 数和缓存命中率（第 7 章）。</p>
+<p><strong>③ State 的写入很小但很关键。</strong> 2 ms 的写，换来的是断线能续——这是最划算的一笔开销。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 板块分解</h2>
+<h3>5.1 Loop：七件事</h3>
+<p>Loop 是执行引擎。它要处理七件事，少了任何一件都跑不到生产：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>事</th><th>管什么</th><th>不管会怎样</th></tr></thead><tbody><tr><td>1</td><td>计划</td><td>下一步做什么</td><td>模型乱调工具、绕圈</td></tr><tr><td>2</td><td>调用</td><td>怎么执行工具</td><td>重复执行、参数错</td></tr><tr><td>3</td><td>观察</td><td>结果怎么回灌</td><td>上下文爆炸、注入</td></tr><tr><td>4</td><td>状态</td><td>中间结果存哪</td><td>重启失忆</td></tr><tr><td>5</td><td>预算</td><td>花多少</td><td>无限烧钱</td></tr><tr><td>6</td><td>超时</td><td>等多久</td><td>挂死</td></tr><tr><td>7</td><td>恢复</td><td>断了怎么办</td><td>重来或重复</td></tr></tbody></table></div>
-<p>七件事里，第 4、5、6、7 是<strong>工程问题</strong>，第 1、2、3 是<strong>语义问题</strong>。多数团队的 demo 只做了后三件，生产化要补前三件。</p>
-<p>七件事有三套常见实现方案，选哪个决定了后面的工程量：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>状态存哪</th><th>恢复能力</th><th>适用</th></tr></thead><tbody><tr><td>无状态函数</td><td>不存</td><td>不能恢复，重来</td><td>demo、单步任务</td></tr><tr><td>快照式</td><td>Redis 存最新状态</td><td>恢复到最后一步</td><td>多数生产系统</td></tr><tr><td>事件溯源</td><td>Kafka 存全量事件</td><td>可重放到任意时刻</td><td>需要审计、回放</td></tr></tbody></table></div>
-<p>第二行是本章的写法，第三行是第 19 章的内容。差别在"能不能回答三个月前那个请求为什么失败"——快照式不能，事件溯源能。</p>
-</section>
-<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 计划：约束下的选择</h2>
-<p>"计划"听起来像让模型自己规划，实际是<strong>给它一个受限的选择空间</strong>。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>约束</th><th>作用</th><th>不做会怎样</th></tr></thead><tbody><tr><td>工具白名单</td><td>只能选这 N 个工具</td><td>模型调用不存在的工具</td></tr><tr><td>步数上限</td><td>最多 20 步</td><td>绕圈 200 步</td></tr><tr><td>每步必须引用上一步的观察</td><td>防止空转</td><td>反复调同一个工具</td></tr><tr><td>终止条件显式化</td><td>允许 final、拒绝、转人工</td><td>只会一直调工具</td></tr></tbody></table></div>
-<p>第三条最有效。约束写成 prompt：</p>
+<p>第 4、5、6、7 是工程问题，第 1、2、3 是语义问题。<strong>demo 通常只做了后三件。</strong></p>
+<p>三个最关键的设计点：</p>
+<p><strong>计划的约束。</strong> 不是让模型自由规划，是给它受限的选择空间。最有效的约束是这一句：</p>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>每一轮你必须说明：上一步的观察里哪个字段支持你现在这个决定。
-如果找不到支持字段，说明信息不足，应该提问或转人工，而不是继续调工具。</code></pre></figure>
-<p>这条规则把"绕圈"变成"要么前进要么停"，实测能把平均步数从 11 降到 6。</p>
+如果找不到支持字段，说明信息不足，应该提问或转人工。</code></pre></figure>
+<p>实测能把平均步数从 11 降到 6。</p>
+<p><strong>恢复的顺序。</strong> 先记意图，再执行——这是正确性的全部：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>state.mark_pending(step=15, action=&quot;create_refund&quot;, key=idem_key)
+checkpoint(state)          # ← 先记
+result = call_tool(...)    # ← 再执行
+state.mark_done(step=15, result=result)</code></pre></figure>
+<p>重启后看到"第 15 步 pending"，就去查 <code>idempotency_key</code> 有没有生效，而不是直接重发。</p>
+<p><strong>预算是三维的。</strong> 32K token / 20 步 / 300 秒，先到先停，且必须返回进度。</p>
+<p>状态机七个状态，其中 <code>WAITING_HUMAN</code> 不能省——多数系统把"转人工"当 final 输出，人工处理完用户追问一句，上下文就断了。</p>
+<h3>5.2 State：第 19 章</h3>
+<p>Loop 每一步都要落状态。核心问题是<strong>存什么、存哪、能不能重放</strong>。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>存什么</th><th>能回答的问题</th></tr></thead><tbody><tr><td>无状态</td><td>不存</td><td>什么都不能</td></tr><tr><td>快照</td><td>最新状态</td><td>"现在做到哪了"</td></tr><tr><td>事件溯源</td><td>全量事件</td><td>"三个月前那个请求为什么失败"</td></tr></tbody></table></div>
+<p>多数系统停在快照层。事件溯源多花的成本，换来的是可回放、可审计、可归因（第 41 章）。</p>
+<h3>5.3 Context：第 20 章</h3>
+<p>每轮都要拼输入。拼法决定三件事：token 成本、缓存命中、模型能不能抓住重点。</p>
+<p>第 4 节的路径里，Context 被调用了三次（初始、回灌、最终），每次的内容都不同。这是 Harness 里最容易被写成一坨字符串拼接的地方，也是优化空间最大的地方。</p>
+<h3>5.4 Tools：第 21 章</h3>
+<p>工具层不只是"调接口"。它要处理：权限（谁有权调）、幂等（重复调不重复执行）、限流（一分钟几次）、超时与重试、结果裁剪。</p>
+<p>第 39 章讲过工具越权的后果——<strong>如果工具用服务身份调用，agent 就是个权限放大器。</strong></p>
+<h3>5.5 Orchestration：第 22 章</h3>
+<p>单 Agent 走不通的时候才需要它：任务太长、需要并行、需要不同专长。</p>
+<p>四种形态（handoff / supervisor / DAG / HITL）差别很大，但共同点是<strong>状态在 Agent 之间怎么传</strong>——这又回到 §5.2。</p>
 </section>
-<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 调用：幂等是底线</h2>
-<p>工具调用要满足三条：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>要求</th><th>做法</th></tr></thead><tbody><tr><td>幂等</td><td>同一 <code>idempotency_key</code> 重复调用只生效一次</td></tr><tr><td>超时</td><td>单步 30 秒，超时算失败</td></tr><tr><td>可重试</td><td>只对幂等的读操作重试，写操作不重试</td></tr></tbody></table></div>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def call_tool(name, args, step_id, ctx):
-    key = f&quot;{ctx.request_id}:{step_id}:{name}&quot;
-    cached = idem_store.get(key)
-    if cached:                       # 重放时直接返回上次结果
-        return cached
-    result = registry[name].invoke(args, timeout=30, ctx=ctx)
-    idem_store.set(key, result, ttl=3600)
-    return result</code></pre></figure>
-<p><code>step_id</code> 进 key 是关键：同一步重放返回缓存，不同步重新执行。这样"整个请求重放"和"某一步重试"都能正确处理。</p>
-<p>写操作（退款、改地址）不能重试，但可以<strong>查询确认</strong>：</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>try:
-    create_refund(order_id, key)
-except Timeout:
-    # 不重试，改为查询
-    if refund_exists(order_id):
-        return &quot;已提交&quot;
-    raise</code></pre></figure>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>5.6 板块之间怎么连：四个接口</h2>
+<p>五个板块画出来容易，连起来难。连法决定了"改一处会不会动全身"。</p>
+<p>四个接口，每个都是一份契约：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th>谁调用谁</th><th>传什么</th><th>关键约束</th></tr></thead><tbody><tr><td><code>plan(state) -&gt; Action</code></td><td>Loop → 模型</td><td>组装好的上下文</td><td>必须是纯函数，不能有副作用</td></tr><tr><td><code>execute(action) -&gt; Result</code></td><td>Loop → Tools</td><td>动作 + 身份上下文</td><td>必须幂等</td></tr><tr><td><code>append(event)</code></td><td>Loop → State</td><td>一个事件</td><td>只追加，不改历史</td></tr><tr><td><code>render(state) -&gt; Prompt</code></td><td>Loop → Context</td><td>状态与检索结果</td><td>输出 token 数可预测</td></tr></tbody></table></div>
+<p>第二行的"必须幂等"和第四行的"可预测"是两个最容易违反的。</p>
+<p><strong>工具不幂等</strong>的后果第 1 节讲过——重复退款。</p>
+<p><strong>render 不可预测</strong>的后果更隐蔽：同一个状态，两次渲染出不同长度的 prompt（比如检索结果顺序不固定），缓存命中率就会抖。第 7 章算过，命中率从 85% 掉到 0，成本涨 5 倍。</p>
+<p>所以渲染也要确定化：检索结果的排序、字段的顺序、空值的处理，都固定。</p>
+<p>四个接口定清楚之后，五个板块就能独立演进——换模型不用改工具层，换工具不用改上下文层。</p>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 观察：结果怎么进上下文</h2>
-<p>工具返回可能是 100 KB 的 JSON。直接塞进上下文有三个后果：token 爆掉、注入风险、模型抓不住重点。</p>
-<p>三件事要做：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>动作</th><th>做法</th></tr></thead><tbody><tr><td>裁剪</td><td>只取需要的字段（50 → 5，第 39 章）</td></tr><tr><td>结构化</td><td>用固定模板，不要裸 JSON</td></tr><tr><td>截断</td><td>单条观察上限 2,000 token</td></tr></tbody></table></div>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def render_observation(tool, result):
-    fields = OBSERVE_SCHEMA[tool]          # 每个工具声明要看哪些字段
-    picked = {k: result.get(k) for k in fields}
-    text = TEMPLATE[tool].format(**picked)
-    return truncate(text, max_tokens=2000)</code></pre></figure>
-<p><code>OBSERVE_SCHEMA</code> 是配置，不是代码——新增工具只加配置。这一点很重要：观察格式是<strong>最容易变的东西</strong>（接口改字段），做成配置才能不发版。</p>
-<p>截断到 2,000 token 的理由：20 步 × 2,000 = 40K，已经超过 32K 预算。所以实际要靠"只保留最近 5 步的完整观察 + 更早的摘要"来控制。</p>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>6. 自研还是用框架</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>覆盖哪些板块</th><th>缺什么</th></tr></thead><tbody><tr><td>LangGraph</td><td>Loop + State</td><td>Context 工程、工具权限、多租户</td></tr><tr><td>Dify / Coze</td><td>Loop + 可视化编排</td><td>深度定制、私有化程度</td></tr><tr><td>AutoGen / CrewAI</td><td>Orchestration</td><td>生产级状态与恢复</td></tr><tr><td>全自研</td><td>全部</td><td>工作量大（15–20 人月）</td></tr></tbody></table></div>
+<p>判断标准还是那条：<strong>承载业务概念（租户、SLO、钱、权限）的部分必须自研</strong>。</p>
+<p>框架通常把 Loop 和 Orchestration 做得很好，把 Context 和 Tools 做得很浅——因为前两者通用，后两者和业务强绑定。</p>
+<p>所以常见组合是：<strong>框架跑 Loop，自研 Context/Tools/State</strong>。</p>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 状态：每步一个检查点</h2>
-<p>状态分两层：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>存什么</th><th>存哪</th><th>频率</th></tr></thead><tbody><tr><td>会话状态</td><td>消息历史、当前步、预算余额</td><td>Redis</td><td>每步</td></tr><tr><td>事件日志</td><td>每步的输入输出、工具结果</td><td>Kafka → 对象存储</td><td>每步</td></tr></tbody></table></div>
-<p>Redis 存的是"最新快照"（约 50 KB），对象存储存的是"完整历史"（约 200 KB/请求）。</p>
-<p>为什么要两层：恢复时要快（Redis），审计和回放要全（对象存储）。</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def checkpoint(state):
-    redis.setex(f&quot;sess:{state.sid}&quot;, 3600, state.to_json())
-    kafka.send(&quot;agent.events&quot;, state.to_event())</code></pre></figure>
-<p>TTL 设 1 小时：超过 1 小时的会话，用户基本不会再回来，恢复也没意义。</p>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 演进路径</h2>
+<p>不要一次建完五个板块。三个阶段：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>阶段</th><th>建什么</th><th>能支撑</th><th>典型时长</th></tr></thead><tbody><tr><td>一 MVP</td><td>Loop + 内存状态</td><td>单场景 demo</td><td>2 周</td></tr><tr><td>二 生产</td><td>+ State 持久化 + Tools 层</td><td>单场景上线</td><td>6 周</td></tr><tr><td>三 规模化</td><td>+ Context 工程 + Orchestration</td><td>多场景、多租户</td><td>3 个月</td></tr></tbody></table></div>
+<p>第一阶段的状态放内存，是为了快；第二阶段必须换掉，因为一重启就丢。</p>
+<p>多数团队的坑是<strong>跳过第二阶段直接做第三阶段</strong>——多场景铺开了，状态和权限还是 demo 水平，出一次事故就全线回滚。</p>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 预算：三维，先到先停</h2>
-<p>预算不是一个数，是三个：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>值</th><th>依据</th></tr></thead><tbody><tr><td>token</td><td>32,000</td><td>20 步 × 1,500 + 初始 2,000</td></tr><tr><td>步数</td><td>20</td><td>P95 是 20，P99 是 35（超了转人工）</td></tr><tr><td>时间</td><td>300 秒</td><td>端到端 9 秒是单轮，多步要放宽</td></tr></tbody></table></div>
-<p>任一超限就停，返回"已尽力"，带上当前进度。<strong>不要静默停止</strong>——用户需要知道为什么没做完。</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def check_budget(state):
-    if state.tokens_used &gt; 32000:
-        raise BudgetExceeded(&quot;token&quot;, state.progress())
-    if state.steps &gt; 20:
-        raise BudgetExceeded(&quot;steps&quot;, state.progress())
-    if time.time() - state.started_at &gt; 300:
-        raise BudgetExceeded(&quot;time&quot;, state.progress())</code></pre></figure>
-<p>三个数的关系：20 步 × 平均 1,500 token = 30,000，接近 32K。所以 token 和步数大致同步耗尽。如果某个请求 5 步就烧了 32K，说明它每步观察太长——要查 <code>OBSERVE_SCHEMA</code>。</p>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>断线后从头重来</td><td>只有 Loop 没有 State</td><td>看日志重复调用</td><td>加检查点</td></tr><tr><td>第 8 步 token 超限</td><td>没有 Context 工程</td><td>看单请求 token 曲线</td><td>裁剪观察</td></tr><tr><td>一个工具出事查不出谁调的</td><td>没有 Tools 层</td><td>看调用日志</td><td>加身份透传</td></tr><tr><td>客服和审批写了两套 loop</td><td>没有 Orchestration 抽象</td><td>代码重复</td><td>抽公共 loop</td></tr><tr><td>五块都有但改一处动全身</td><td>板块间没有边界</td><td>改动影响面</td><td>定接口</td></tr></tbody></table></div>
+<p>最后一行是架构问题里最贵的：五个板块都在，但互相直接调用，改 Context 会踩到 Tools。<strong>边界要靠接口而不是靠自觉。</strong></p>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 超时：三层，各管一段</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>值</th><th>超了怎么办</th></tr></thead><tbody><tr><td>单步（工具调用）</td><td>30 秒</td><td>该步失败，进重试或跳过</td></tr><tr><td>单轮（一次 LLM 调用）</td><td>60 秒</td><td>同上</td></tr><tr><td>整体（整个 loop）</td><td>300 秒</td><td>终止，返回已完成的进度</td></tr></tbody></table></div>
-<p>三层不是简单的包含关系：单步 30 秒 × 20 步 = 600 秒 &gt; 整体 300 秒。所以整体超时会先触发。</p>
-<p>这意味着<strong>长尾请求不是被单步超时杀死的，是被整体预算杀死的</strong>。所以整体超时给的返回值要包含"做到哪一步了"，让用户知道进度。</p>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 什么情况下这些结论不成立</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>五个板块都要有</td><td>单步任务（一问一答调一个工具）时，Loop 就够</td></tr><tr><td>状态必须持久化</td><td>纯查询类 agent（不产生副作用）时，丢了重来代价低</td></tr><tr><td>自研 Context 层</td><td>场景极单一（只有一种 prompt 模板）时，硬编码更快</td></tr><tr><td>三阶段演进</td><td>有明确上线日期时，可以二三阶段合并，但要接受返工</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 恢复：三种断法，三种处理</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>断法</th><th>状态</th><th>恢复方式</th></tr></thead><tbody><tr><td>进程重启</td><td>Redis 有快照</td><td>从最后一步继续</td></tr><tr><td>工具超时</td><td>该步失败</td><td>重试读操作 / 查询确认写操作</td></tr><tr><td>用户断线</td><td>会话还在</td><td>重连后继续推流</td></tr></tbody></table></div>
-<p>第一种依赖检查点，第二种依赖幂等，第三种依赖流式会话的续传（第 23 章）。</p>
-<p><strong>最危险的是"状态存了但工具执行了两次"</strong>。前面那个退款事故就是这个：Redis 存的是第 14 步完成后的状态，但第 15 步的退款请求已经发出去了，重启后又发一次。</p>
-<p>解法是<strong>先写"意图"再执行</strong>：</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code># 1. 先记&quot;我要执行第 15 步&quot;
-state.mark_pending(step=15, action=&quot;create_refund&quot;, key=idem_key)
-checkpoint(state)
-
-# 2. 再执行
-result = call_tool(&quot;create_refund&quot;, args, step_id=15, ctx)
-
-# 3. 成功后记完成
-state.mark_done(step=15, result=result)
-checkpoint(state)</code></pre></figure>
-<p>重启后看到"第 15 步 pending"，就知道要去查 <code>idempotency_key</code> 有没有生效，而不是直接重发。</p>
-<p>这一步的顺序（先记意图后执行）是恢复正确性的全部。</p>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 验收</h2>
+<ol><li>能画出五个板块和它们的数据流。</li><li>能说出你的系统里，一次 5 步请求在哪几个点写状态。</li><li>能判断你的框架覆盖了哪几个板块，缺的那几个打算怎么办。</li><li>能说出你现在处在第几阶段，下一个阶段加什么。</li></ol>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 状态机</h2>
-<p>七个状态：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>INIT
-  ↓
-PLANNING ──(无可行动作)──&gt; ASKING_USER ──&gt; PLANNING
-  ↓
-ACTING ──(工具超时)──&gt; RECOVERING ──&gt; ACTING / FAILED
-  ↓
-OBSERVING
-  ↓
-(PLANNING | DONE | FAILED | WAITING_HUMAN)</code></pre></figure>
-<div class="table-wrap"><table class="table"><thead><tr><th>状态</th><th>含义</th><th>出口</th></tr></thead><tbody><tr><td>INIT</td><td>请求已创建</td><td>PLANNING</td></tr><tr><td>PLANNING</td><td>模型决定下一步</td><td>ACTING / ASKING_USER / DONE</td></tr><tr><td>ACTING</td><td>工具执行中</td><td>OBSERVING / RECOVERING</td></tr><tr><td>OBSERVING</td><td>处理工具结果</td><td>PLANNING</td></tr><tr><td>ASKING_USER</td><td>需要用户补充信息</td><td>PLANNING（用户回复后）</td></tr><tr><td>RECOVERING</td><td>单步失败，重试或降级</td><td>ACTING / FAILED</td></tr><tr><td>WAITING_HUMAN</td><td>转人工</td><td>DONE（人工处理后）</td></tr></tbody></table></div>
-<p><code>WAITING_HUMAN</code> 这个状态必须有。多数系统把"转人工"当成一种 final 输出，结果人工处理完之后无法回到 loop——用户追问一句，整个上下文就断了。</p>
-</section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 伪代码</h2>
-<p>把七件事拼起来，核心逻辑约 60 行：</p>
-<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def run_loop(req):
-    state = load_or_init(req)                 # 4 状态：加载检查点
-    while True:
-        check_budget(state)                   # 5 预算
-        check_deadline(state)                 # 6 超时
-
-        decision = plan(state)                # 1 计划
-        if decision.type == &quot;final&quot;:
-            return finish(state, decision)
-
-        state.mark_pending(decision)          # 4 先记意图
-        checkpoint(state)
-
-        try:
-            result = call_tool(decision, timeout=30)   # 2 调用（幂等）
-        except ToolTimeout:
-            state.mark_failed(decision)
-            if can_retry(decision):           # 7 恢复
-                continue
-            return degrade(state, decision)
-
-        state.mark_done(decision, result)
-        state.observe(render_observation(result))      # 3 观察（裁剪）
-        checkpoint(state)</code></pre></figure>
-<p>六行注释对应七件事，缺一行就少一块能力。</p>
-</section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 失败模式</h2>
-<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>重启后重复退款</td><td>先执行后记账</td><td>对账时发现两笔</td><td>改成先记意图</td></tr><tr><td>请求走 200 步</td><td>没有步数上限</td><td>看步数分布</td><td>加预算 + 步数上限</td></tr><tr><td>断开后从第 1 步重来</td><td>没存检查点</td><td>看日志重复调用</td><td>每步 checkpoint</td></tr><tr><td>上下文超长报错</td><td>观察没裁剪</td><td>看单请求 token</td><td>裁剪到 2,000/步</td></tr><tr><td>转人工后对话断了</td><td>转人工当成终态</td><td>用户追问无响应</td><td>加 WAITING_HUMAN 状态</td></tr><tr><td>某工具一天被调 10 万次</td><td>模型绕圈</td><td>工具调用分布</td><td>加"必须引用上一步观察"约束</td></tr></tbody></table></div>
-<p>第一行是最贵的：一次重复退款就是真金白银，而且很难在测试环境复现（要正好在第 15 步重启）。</p>
-</section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>13.5 备选方案：用工作流引擎代替自研 loop</h2>
-<p>前面这套状态机可以用 Temporal、Argo Workflows 这类引擎实现，省掉检查点和恢复的代码。</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>优点</th><th>代价</th></tr></thead><tbody><tr><td>自研 loop</td><td>轻、可控、延迟低</td><td>要自己写检查点与恢复</td></tr><tr><td>工作流引擎</td><td>恢复、重试、可视化都有</td><td>多一跳 RPC（5–10 ms），状态存引擎</td></tr><tr><td>函数编排（Step Functions）</td><td>托管，按次计费</td><td>与推理服务的延迟不匹配</td></tr></tbody></table></div>
-<p>第二个方案的延迟值得算：loop 里每步都要和引擎通信，20 步 × 8 ms = 160 ms。相比 300 秒的整体预算可以忽略，但相比单轮的 9 秒就有感了。</p>
-<p>小团队建议直接用引擎（Temporal），大团队自研——因为 loop 里的很多优化（比如批量观察、并行工具调用）引擎不支持。</p>
-</section>
-<section class="sec" id="s15"><h2><span class="sec-num">15</span>14. 什么情况下这些结论不成立</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>每步都要检查点</td><td>单步 agent（只调一次工具）时，存一次就够</td></tr><tr><td>步数上限 20</td><td>任务本身是长周期（如批量处理 100 个订单）时，要单独设计</td></tr><tr><td>工具超时 30 秒</td><td>有慢工具（如人工审核接口 5 分钟）时，要分级</td></tr><tr><td>状态存 Redis</td><td>请求量小、可接受重来时，存数据库就够</td></tr></tbody></table></div>
-</section>
-<section class="sec" id="s16"><h2><span class="sec-num">16</span>15. 验收</h2>
-<ol><li>能画出你的状态机，说出每个状态的出口。</li><li>能指出你的系统在哪一步做检查点，重启后从哪恢复。</li><li>能说出预算的三个维度，以及哪个先触发。</li><li>能解释"先记意图后执行"为什么能防重复。</li></ol>
-</section>
-<section class="sec" id="s17"><h2><span class="sec-num">17</span>16. 复盘卡</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
-<p>我原来以为 agent loop 就是个 while 循环，实际差在它不是循环——是状态机，因为有预算、有超时、要能断点续跑。</p>
+<p>我原来以为 agent 就是一个 while 循环，实际差在循环外面还有四层——状态、上下文、工具、编排，每一层不管都会在第五周变成返工。</p>
 </section>
-<section class="sec" id="s18"><h2><span class="sec-num">18</span>17. 延伸</h2>
-<ul><li>第 19 章：事件溯源，状态怎么存才能重放</li><li>第 20 章：上下文工程，观察怎么裁剪</li><li>第 21 章：工具层，幂等与权限的具体实现</li><li>第 22 章：多 Agent，handoff 时状态怎么传</li><li>第 25 章：背压，整体超时与准入的关系</li></ul>
-<p>结论是：agent loop 的复杂度不在"调模型"，在"断了怎么办"。七件事里，状态、预算、超时、恢复这四件都是为了让 loop 能在生产环境里跑——它们不产生任何功能，但少了任何一件，系统就不敢上线。</p>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 延伸</h2>
+<ul><li>第 19 章：State，事件溯源与重放</li><li>第 20 章：Context，上下文工程 L0–L7</li><li>第 21 章：Tools，MCP、权限、沙箱</li><li>第 22 章：Orchestration，多 Agent 与可靠性</li><li>第 23 章：网关与流式协议，Harness 的上游</li></ul>
+<p>结论是：Harness 不是"一个大函数"，是五个板块的协作。Loop 是发动机，State 是底盘，Context 是进气，Tools 是传动，Orchestration 是方向盘——只造发动机的车能响，但开不上路。</p>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="17-pricing-margin-reconciliation.html"><span>上一章</span><b>17 · 定价、毛利与对账：三套数字怎么对上</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
     <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
