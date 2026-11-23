@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSH 的架构图、流程图与时序图 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 18B 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 图目录</a><a href="#s2"><span>02</span>. 先回答一个问题：101 个包，凭什么算"理解清楚了"</a><a href="#s3"><span>03</span>. 图 1：依赖分层——谁能站在谁上面</a><a href="#s4"><span>04</span>. 图 2：ctx 上的键——协调发生在哪里</a><a href="#s5"><span>05</span>. 图 3：插件树——配置怎么变成运行时</a><a href="#s6"><span>06</span>. 图 4：一次 turn 的时序</a><a href="#s7"><span>07</span>. 图 5：三域事件——谁必须落盘</a><a href="#s8"><span>08</span>. 图 6：seam 三角——怎么换掉一个实现</a><a href="#s9"><span>09</span>. 图 7：工具执行时序（含审批）</a><a href="#s10"><span>10</span>. 图 8：上下文组装与压缩</a><a href="#s11"><span>11</span>. 图 9：子 agent 生命周期</a><a href="#s12"><span>12</span>. 图 10：一个包从磁盘到 ctx</a><a href="#s13"><span>13</span>. 协调一致的四条规则</a><a href="#s14"><span>14</span>. 失败模式</a><a href="#s15"><span>15</span>. 验收</a><a href="#s16"><span>16</span>. 复盘卡</a><a href="#s17"><span>17</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">18B</div><div class="ch-kicker">Harness</div><h1>DSH 的架构图、流程图与时序图</h1><div class="ch-rule"></div></header>
+<blockquote><p>第 18 章讲"为什么"，第 18A 章讲"包怎么管"，这一章只做一件事：把 DSH 画出来。</p><p>十张图，从静态结构到动态流程。每张图后面有一段"这张图在说什么"，讲清楚它的约束条件——图能画出来，是因为有些边<strong>不允许存在</strong>。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>0. 图目录</h2>
+<p>十张图，三种类型，按"先静态、再动态、最后加载"的顺序排。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>图</th><th>类型</th><th>回答什么</th><th>事实来源</th></tr></thead><tbody><tr><td>1 依赖分层</td><td>结构图</td><td>谁能站在谁上面</td><td>六个核心包的 <code>peerDependencies</code></td></tr><tr><td>2 ctx 键</td><td>结构图</td><td>插件之间怎么找到彼此</td><td>八个 <code>ctx.xxx</code> 注册点</td></tr><tr><td>3 插件树</td><td>结构图</td><td>配置怎么变成运行时</td><td><code>cordis.patch.yml</code> 与 Loader 条目</td></tr><tr><td>4 一次 turn</td><td>时序图</td><td>一句话怎么走完</td><td>13 种会话事件</td></tr><tr><td>5 三域事件</td><td>分类图</td><td>什么必须落盘</td><td><code>session/<em></code> 与 <code>agent/</em></code> 前缀</td></tr><tr><td>6 seam 三角</td><td>结构图</td><td>怎么换掉一个实现</td><td><code>ctx.fs</code> 等能力键</td></tr><tr><td>7 工具执行</td><td>时序图</td><td>权限怎么逐级收紧</td><td><code>tools/pre-execute</code> 与 <code>ToolGuard</code></td></tr><tr><td>8 上下文</td><td>时序图</td><td>压缩什么时候发生</td><td>70% 与 85% 两个阈值</td></tr><tr><td>9 子 agent</td><td>状态图</td><td>并行怎么收敛</td><td>五个状态与三条约束</td></tr><tr><td>10 包加载</td><td>时序图</td><td>一个包怎么进入 ctx</td><td>Loader 的 apply 顺序</td></tr></tbody></table></div>
+<p>每张图后面跟一段"这张图在说什么"。图能画出来，本身就是结论：有些箭头<strong>不允许存在</strong>，那个"不允许"才是设计。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>1. 先回答一个问题：101 个包，凭什么算"理解清楚了"</h2>
+<p>不能。101 个包里，大约 90 个是叶子——一个工具、一个存储实现、一个遥测出口。知道它们存在没有意义，改一个也不影响别人。</p>
+<p>真正需要理解的是 <strong>6 个核心包 + 3 个机制</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>核心包</th><th>提供什么</th><th>一句话</th></tr></thead><tbody><tr><td><code>core/scope</code></td><td>作用域与生命周期</td><td>一切可撤销副作用的地基</td></tr><tr><td><code>core/session</code></td><td><code>ctx.sessions</code></td><td>唯一真源，只追加</td></tr><tr><td><code>core/system-prompt</code></td><td><code>ctx.systemPrompt</code></td><td>每步重算的提示词</td></tr><tr><td><code>core/tools</code></td><td><code>ctx.tools</code></td><td>注册表 + 把关流水线</td></tr><tr><td><code>core/agent</code></td><td><code>ctx.agents</code></td><td>Agent 接口，不含循环</td></tr><tr><td><code>core/agent-loop</code></td><td><code>ctx.agentLoop</code></td><td>默认 driver，可替换</td></tr></tbody></table></div>
+<p>三个机制：<strong>共享 ctx</strong>（怎么找到彼此）、<strong>类型化事件</strong>（怎么通知）、<strong>seam 三角</strong>（怎么替换）。其余 95 个包，都是往这 6 个键上挂东西，或者订阅这 3 类事件。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>2. 图 1：依赖分层——谁能站在谁上面</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  L0[&quot;cordis&lt;br/&gt;插件框架：ctx、事件、生命周期&quot;]
+  L1[&quot;core/scope&lt;br/&gt;作用域与可撤销副作用&quot;]
+  L2[&quot;core/session&lt;br/&gt;ctx.sessions 只追加日志&quot;]
+  L3[&quot;session-projection&lt;br/&gt;从日志投影出视图&quot;]
+  L4[&quot;core/system-prompt&lt;br/&gt;ctx.systemPrompt 分段组装&quot;]
+  L5[&quot;core/agent&lt;br/&gt;ctx.agents Agent 接口&quot;]
+  L6[&quot;core/tools&lt;br/&gt;ctx.tools 注册表 + 流水线&quot;]
+  L7[&quot;core/agent-loop&lt;br/&gt;ctx.agentLoop 默认 driver&quot;]
+  L0 --&gt; L1 --&gt; L2 --&gt; L3 --&gt; L4 --&gt; L5 --&gt; L6 --&gt; L7</pre></figure>
+<p>这张图的约束是<strong>单向</strong>：箭头只向上，任何一层都不允许反过来 import 上一层。这条规则不是靠约定，是靠 <code>package.json</code> 的 <code>peerDependencies</code> 写死的——<code>session</code> 的清单里没有 <code>dsh-tools</code>，它想用也没有。</p>
+<p>为什么 <code>tools</code> 要排在 <code>agent</code> 之后？因为工具的上下文里要带 agent 身份（谁在调、权限是什么）。为什么 <code>agent</code> 不依赖 <code>tools</code>？因为 agent 只负责"决定下一步做什么"，不负责"怎么执行"——执行是 loop 的事。</p>
+<p>这条分层的直接后果是：<strong>换掉 loop 不影响工具，换掉工具不影响日志</strong>。101 个包能各自演化，靠的就是这条线。</p>
+<p>依赖数量本身也在描述职责：<code>scope</code> 只有 1 个 peer，<code>agent-loop</code> 有 9 个。越靠上知道的越多，越靠下越纯粹。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>3. 图 2：ctx 上的键——协调发生在哪里</h2>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  CTX[&quot;共享 ctx&lt;br/&gt;一个对象，所有插件可见&quot;]
+  CTX --&gt; S[&quot;ctx.sessions&lt;br/&gt;读写日志&quot;]
+  CTX --&gt; SP[&quot;ctx.systemPrompt&lt;br/&gt;注册段落&quot;]
+  CTX --&gt; T[&quot;ctx.tools&lt;br/&gt;注册工具&quot;]
+  CTX --&gt; A[&quot;ctx.agents&lt;br/&gt;注册 agent 类型&quot;]
+  CTX --&gt; AL[&quot;ctx.agentLoop&lt;br/&gt;替换循环&quot;]
+  CTX --&gt; LLM[&quot;ctx.llm&lt;br/&gt;注册模型适配器&quot;]
+  CTX --&gt; C[&quot;ctx.compaction&lt;br/&gt;替换压缩策略&quot;]
+  CTX --&gt; SK[&quot;ctx.skills&lt;br/&gt;技能目录&quot;]</pre></figure>
+<p>八个键，就是八个扩展点。所谓"协调一致"，具体是：<strong>没有插件直接调用另一个插件，它们只往 ctx 上挂键、或者从 ctx 上读键。</strong></p>
+<p>举个具体的：一个工具要读会话历史，它不 import <code>dsh-session</code>，而是 <code>ctx.sessions.get(id)</code>。于是 session 换成 JSONL 实现、换成 SQLite 实现、换成远程实现，工具一行都不用改。</p>
+<p>反过来说，如果一个插件的 <code>package.json</code> 里出现了另一个<strong>能力包</strong>（不是核心包）的依赖，那基本是设计走错了——它该依赖的是 ctx 上的键，不是那个包。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>4. 图 3：插件树——配置怎么变成运行时</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  PROF[&quot;profile：web / headless / sdk / acp&quot;]
+  PROF --&gt; BUN[&quot;bundle：dsh-base&lt;br/&gt;101 个依赖&quot;]
+  BUN --&gt; PATCH[&quot;cordis.patch.yml&lt;br/&gt;覆盖项：改配置、关插件&quot;]
+  PATCH --&gt; LOADER[&quot;Cordis Loader&lt;br/&gt;每个插件一条 entry&quot;]
+  LOADER --&gt; FIBER[&quot;fiber&lt;br/&gt;加载 → 挂载 → 卸载&quot;]
+  FIBER --&gt; CTX2[&quot;ctx 上的键与事件&quot;]</pre></figure>
+<p>四个名词对应四层：profile 选组合，组合带 patch，patch 决定条目，条目被 Loader 变成 fiber。</p>
+<p><code>fiber</code> 这个词值得单独说：它是插件的<strong>运行实例</strong>，有阶段（pending / active / disposed）。插件不是"加载了就完事"，它随时可以被卸载，卸载时所有副作用按注册顺序逆序撤销。这就是为什么每个注册函数都要返回 disposer——不返回，热重载就会留下幽灵状态。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>5. 图 4：一次 turn 的时序</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant S as ctx.sessions
+  participant L as agent-loop
+  participant P as ctx.systemPrompt
+  participant M as ctx.llm
+  participant T as ctx.tools
+  U-&gt;&gt;S: 追加 user/message
+  S--&gt;&gt;L: 唤醒（inbox）
+  L-&gt;&gt;L: 开 turn
+  loop 每个 step
+    L-&gt;&gt;P: assemble()
+    P--&gt;&gt;L: system 段 + 工具 schema
+    L-&gt;&gt;S: deriveMessages()
+    S--&gt;&gt;L: 投影出的历史
+    L-&gt;&gt;M: chat(stream)
+    M--&gt;&gt;L: assistant/message
+    opt 有工具调用
+      L-&gt;&gt;T: 执行 tool_calls
+      T--&gt;&gt;L: tool/result
+    end
+  end
+  L-&gt;&gt;S: turn/end</pre></figure>
+<p>这张图里有两处容易被忽略：</p>
+<p>第一，<strong><code>deriveMessages()</code> 不是读历史，是算历史</strong>。日志里存的是事件，模型要的是消息数组，中间这层投影每步重算一遍。所以压缩、遮蔽、注入都在这一步生效，日志本身不动。</p>
+<p>第二，<strong>step 是循环体，turn 是循环本身</strong>。一个 turn 可以有零个 step（直接回一句话）或多个 step（反复调工具）。终止条件在 loop 里，不在 agent 里。</p>
+<p>一次 5 步的工具型请求，落到日志里大约 47 条事件、47KB。拆开看：turn 2 条、step 10 条、消息 12 条、工具 20 条、请求头 3 条。工具事件占了四成，因为每次调用都有 call 与 result 两条。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>6. 图 5：三域事件——谁必须落盘</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  subgraph D1[&quot;会话事件：必须落盘&quot;]
+    E1[&quot;turn/start · turn/end&quot;]
+    E2[&quot;step/start · step/end&quot;]
+    E3[&quot;user/message · assistant/message&quot;]
+    E4[&quot;tool/call · tool/result&quot;]
+  end
+  subgraph D2[&quot;agent 事件：in-flight&quot;]
+    E5[&quot;agent/pre-step · agent/request&quot;]
+    E6[&quot;agent/tool-call · agent/tool-result&quot;]
+  end
+  subgraph D3[&quot;能力事件：可观测&quot;]
+    E7[&quot;fs/* · tools/* · telemetry/*&quot;]
+  end
+  D1 --&gt; LOG[&quot;会话日志：重载后仍在&quot;]
+  D2 --&gt; RT[&quot;进程内：不落盘&quot;]
+  D3 --&gt; OBS[&quot;遥测出口&quot;]</pre></figure>
+<p>三个域的划分标准很硬：<strong>重载之后是否还成立</strong>。</p>
+<p>会话事件重载后还在，所以必须落盘；agent 事件是"这一次请求正在发生什么"，进程重启就没了，落盘反而制造垃圾；能力事件是旁路观测，丢几条不影响正确性。</p>
+<p>这条区分解决了一个常见困惑：为什么工具调用的<strong>参数</strong>在会话事件里、而<strong>执行细节</strong>在能力事件里。因为参数是"发生过的事实"，执行细节是"这次跑得怎么样"。</p>
+<p>代价也很具体：会话事件按 13 种类型、每条约 1KB 估算，1.5 亿轮 × 47 条就是每天 7TB 量级——所以会话日志必须分冷热两层，只有最近 7 天可查全量。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 图 6：seam 三角——怎么换掉一个实现</h2>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  DEF[&quot;Service Definition&lt;br/&gt;接口 + ctx 键&quot;]
+  PROV[&quot;Provider&lt;br/&gt;注册实现（可多个）&quot;]
+  CONS[&quot;Consumer&lt;br/&gt;只依赖接口&quot;]
+  PROV --&gt;|&quot;ctx.xxx = impl&quot;| DEF
+  DEF --&gt;|&quot;ctx.xxx&quot;| CONS
+  PROV -.-&gt;|&quot;canonical 实现&quot;| CONS</pre></figure>
+<p>seam 的意思是"接缝"：把<strong>定义</strong>、<strong>提供</strong>、<strong>消费</strong>三件事分开。</p>
+<p>以文件系统为例：定义是 <code>ctx.fs</code> 的接口，提供方有本地实现、沙箱实现、远程实现，消费方是 read/write/edit 这些工具。换成沙箱实现，read 工具一行不改。</p>
+<p>代价也在这里：因为消费方只认接口，接口设计错了要改所有实现。所以 seam 的粒度要粗——按能力分（文件、模型、会话），不要按函数分。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 图 7：工具执行时序（含审批）</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant L as agent-loop
+  participant R as tools 注册表
+  participant W as pre-execute 瀑布
+  participant G as ToolGuard
+  participant AP as 审批
+  participant X as 执行器
+  L-&gt;&gt;R: 按 name 找工具
+  R-&gt;&gt;W: 参数 + 上下文
+  W--&gt;&gt;R: 可改参、可拒绝、可接管
+  R-&gt;&gt;G: 守卫链
+  G--&gt;&gt;R: 只能收紧
+  R-&gt;&gt;AP: 需审批则挂起
+  AP--&gt;&gt;R: 批准/拒绝
+  R-&gt;&gt;X: execute
+  X--&gt;&gt;R: content / error / meta
+  R--&gt;&gt;L: tool/result</pre></figure>
+<p>权限只有三档：自动执行、需审批、直接拒绝。ToolGuard 能做的只有后两档——它签不出"允许"。</p>
+<p>第 3 到第 6 步之间有个容易漏的细节：<strong>审批是挂起，不是阻塞线程</strong>。工具调用挂起时，agent 可以先去做别的，审批结果回来再续。这就是为什么 tool/result 是个独立事件，而不是 execute 的返回值。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 图 8：上下文组装与压缩</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant L as agent-loop
+  participant P as system-prompt
+  participant S as session
+  participant CM as compaction
+  participant TM as token-meter
+  L-&gt;&gt;P: assemble()
+  P-&gt;&gt;S: 取运行时快照（日期/目录）
+  P--&gt;&gt;L: 段落按 order 排序
+  L-&gt;&gt;S: deriveMessages()
+  L-&gt;&gt;TM: 估算 token
+  alt 超过 70%
+    L-&gt;&gt;CM: 请求压缩
+    CM-&gt;&gt;CM: 先剪工具结果
+    CM-&gt;&gt;S: 追加 compaction 事件 + surfaceOp
+    CM--&gt;&gt;L: 新的 surface
+  end
+  L-&gt;&gt;L: 发请求</pre></figure>
+<p>关键在 <code>surfaceOp</code> 那一笔：压缩<strong>不删除</strong>日志，而是追加一条"从 seq 118 到 240 用我替换"的指令。于是日志完整、模型看到压缩版、人看到完整版。</p>
+<p>这也解释了为什么压缩可以重做：改一个区间就行，原文一直在。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 图 9：子 agent 生命周期</h2>
+<figure class="diagram"><pre class="mermaid">stateDiagram-v2
+  [*] --&gt; Created: fork 或 spawn
+  Created --&gt; Running: 分配 activation
+  Running --&gt; Waiting: 等工具或等审批
+  Waiting --&gt; Running: 结果到达
+  Running --&gt; Done: 提交结构化结果
+  Done --&gt; [*]
+  Running --&gt; Idle: 无输入
+  Idle --&gt; Running: sendMessage</pre></figure>
+<p>三个约束：一个子 agent 同时最多一个 activation（不能并行跑两轮）；fork 用的是父日志从 seq 0 开始的<strong>连续前缀</strong>（所以父的历史必须在子创建时就固定）；提交结果即关闭输入（之后只能读，不能再写）。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 图 10：一个包从磁盘到 ctx</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant LD as Loader
+  participant MD as 模块解析
+  participant PL as 插件 apply()
+  participant CX as ctx
+  participant FS as 其他插件
+  LD-&gt;&gt;MD: import 包入口
+  MD--&gt;&gt;LD: 导出 apply / name
+  LD-&gt;&gt;PL: 调用 apply(ctx, config)
+  PL-&gt;&gt;CX: ctx.sessions = ...
+  PL-&gt;&gt;CX: ctx.on(&#x27;agent/pre-step&#x27;, fn)
+  PL--&gt;&gt;LD: 返回 disposer
+  CX--&gt;&gt;FS: 后续插件读到新键</pre></figure>
+<p>顺序是有意义的：<strong>Loader 按条目顺序依次 apply，后面的插件能看到前面注册的键</strong>。所以插件顺序会影响能力可用性——一个工具插件排在 session 之前，它 apply 时 <code>ctx.sessions</code> 还不存在。</p>
+<p>这也是为什么 patch 文件里条目的顺序不是随便排的。</p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 协调一致的四条规则</h2>
+<p>把上面十张图压成四句话：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>规则</th><th>具体含义</th><th>违反的后果</th></tr></thead><tbody><tr><td>依赖只向下</td><td>核心包分层，反过来 import 不了</td><td>循环依赖，加载顺序变成玄学</td></tr><tr><td>通过 ctx 通信</td><td>不直接引用别的插件</td><td>换实现要改所有调用方</td></tr><tr><td>事件分三域</td><td>落盘 / in-flight / 观测</td><td>日志膨胀，或重启后状态不一致</td></tr><tr><td>注册必返回 disposer</td><td>卸载要能撤销</td><td>热重载留幽灵，行为越跑越怪</td></tr></tbody></table></div>
+<p>四条里，第四条最容易被忽视，因为它平时不出错——只在热重载和多次开关时暴露。</p>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>插件 apply 时报 ctx.xxx undefined</td><td>条目顺序在 provider 之前</td><td>打印加载顺序与键注册时间</td><td>调 patch 条目顺序</td></tr><tr><td>热重载后行为异常</td><td>副作用没撤销</td><td>反复开关三次看状态是否一致</td><td>注册返回 disposer</td></tr><tr><td>两个插件互相等待</td><td>双向依赖</td><td>画出 import 图找环</td><td>抽公共层到 scope</td></tr><tr><td>日志里出现重复消息</td><td>投影被当成真源写回</td><td>对比 append 次数与消息数</td><td>只往日志 append</td></tr><tr><td>换了实现但行为没变</td><td>consumer 缓存了旧实例</td><td>重启后对比</td><td>每次从 ctx 读，不缓存</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>14. 验收</h2>
+<ol><li>能默画图 1 的七层，并说出为什么 tools 在 agent 上面。</li><li>能解释为什么压缩不需要"删除"。</li><li>能说出三个事件域的划分标准。</li><li>能指出你的系统里哪一层正在被反向依赖。</li></ol>
+</section>
+<section class="sec" id="s16"><h2><span class="sec-num">16</span>15. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为插件化是"注册表 + 回调"，实际差在"依赖方向"——只有把依赖做成单向、把通信收进一个 ctx，101 个包才不会变成一团互相引用的泥。</p>
+</section>
+<section class="sec" id="s17"><h2><span class="sec-num">17</span>16. 延伸</h2>
+<ul><li>第 18 章：这些机制为什么存在</li><li>第 18A 章：包与配置怎么管</li><li>源码：<code>packages/core/*</code> 六个包的 <code>package.json</code> 就是图 1 的原始依据</li></ul>
+<p>小结：看 DSH 只需要看六层依赖、八个 ctx 键、三个事件域。剩下的九十五个包，都是挂在这三样东西上的叶子。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="18A-plugin-and-code-organization.html"><span>上一章</span><b>18A · 插件怎么管：代码组织、依赖与语言选择</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>
