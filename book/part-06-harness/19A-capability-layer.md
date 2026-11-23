@@ -51,16 +51,16 @@ flowchart TB
 
 不看包名，先看域。同一域里的包共享一个生命周期和一套约定。
 
-| 类 | 域 | 代表包 | 干什么 |
+| 类 | 代表域 | 代表包 | 干什么 |
 |---|---|---|---|
-| 工具 | `fs` `shell` `web` `lsp` `todo` `skill` `document` | `tool-fs` `tool-bash` `tool-web` `tool-lsp` | 给模型一双手 |
-| 执行 | `subprocess` `ptc-runtime` `terminal` `ssh` `sandbox` | `sandbox-local` `tool-executor-native` | 命令在哪里、以什么权限跑 |
-| 上下文 | `context` `compaction` `spill` `skill` | `time-context` `compaction-basic` `spill-local` | 往提示词里加料、往外搬料 |
+| 工具 | `fs` `shell` `web` | `tool-fs` `tool-bash` | 给模型一双手 |
+| 执行 | `sandbox` `ptc-runtime` | `sandbox-local` `ptc-runtime` | 命令在哪、以什么权限跑 |
+| 上下文 | `context` `spill` | `time-context` `compaction-basic` | 往提示词加料、往外搬料 |
 | 存储 | `storage` `session` | `storage-sqlite` `session-persistence-jsonl` | 事件与业务数据落盘 |
-| 检索 | `lsp` `mcp` `util` | `tool-fs-search` `mcp-resources` `util/ripgrep` | 找东西，不用向量 |
-| 接入 | `mcp` `connector` `subagent` `llm` | `mcp-client` `connector/feishu` `subagent-fork-in-process` | 连外部系统与外部模型 |
-| 交互 | `interaction` `plan` `goal` `schedule` `commands` | `user-approval` `plan-mode` `command-goal` | 人怎么介入 |
-| 观测 | `telemetry` `session` `feedback` | `otel` `session-telemetry` `session-title-llm` | 看见发生了什么 |
+| 检索 | `lsp` `mcp` | `tool-fs-search` `tool-lsp` | 找东西，不用向量 |
+| 接入 | `connector` `subagent` | `mcp-client` `subagent-fork-in-process` | 连外部系统与外部模型 |
+| 交互 | `interaction` `plan` | `user-approval` `plan-mode` | 人怎么介入 |
+| 观测 | `telemetry` `feedback` | `otel` `session-telemetry` | 看见发生了什么 |
 
 八类里，**工具、执行、上下文**是 Agent 特有的；存储、检索、接入、交互、观测，传统后端也有，只是这里的形态被事件日志改造过。
 
