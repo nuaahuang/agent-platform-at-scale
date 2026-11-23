@@ -115,6 +115,10 @@ tbody td:first-child{font-weight:600;color:var(--ink)}
 .table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
 
 /* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
 .code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
   background:#17181c;border:1px solid #0d0e11}
 .code pre{margin:0;padding:20px 22px;overflow-x:auto}
@@ -375,7 +379,7 @@ python3 labs/calc.py --hit 0.5         # 命中率掉到 50%</code></pre></figur
 <ul><li>2512 张卡由 7000 QPS、5000 上下文、70% 命中率唯一决定；</li><li>0.52 分/轮由 314 个节点的折旧、电费、机位唯一决定；</li><li>毛利 48% 只在 2000 万 DAU 成立，规模一缩就变负。</li></ul>
 <p>后面 39 章的所有设计，都是在守这三个数——或者，在解释为什么必须改它们。</p>
 </section></article>
-    <nav class="pager"><a class="nav-prev" href="WRITING-CONTRACT.html"><span>上一章</span><b>00 · 写作契约（WRITING CONTRACT）</b></a><a class="nav-next" href="02-legacy-to-ai.html"><span>下一章</span><b>02 · 传统互联网架构在 AI 服务中的复用、变形与失效</b></a></nav>
+    <nav class="pager"><a class="nav-prev" href="00-atlas.html"><span>上一章</span><b>00 · 全书图集：十二张图看懂这套系统</b></a><a class="nav-next" href="02-legacy-to-ai.html"><span>下一章</span><b>02 · 传统互联网架构在 AI 服务中的复用、变形与失效</b></a></nav>
     <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
   </main>
 </div>
@@ -440,6 +444,24 @@ python3 labs/calc.py --hit 0.5         # 命中率掉到 50%</code></pre></figur
   }, {rootMargin:'-15% 0px -70% 0px'});
   secs.forEach(function(s){ if(s) io.observe(s); });
 })();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
 </script>
 </body>
 </html>

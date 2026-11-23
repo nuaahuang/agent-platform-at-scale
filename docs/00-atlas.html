@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全书图集：十二张图看懂这套系统 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">方法篇 · 第 00 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 全书地图：44 章怎么咬合</a><a href="#s2"><span>02</span>. 平台六层：一次请求经过什么</a><a href="#s3"><span>03</span>. 一次对话的时序：首 token 延迟 258ms 花在哪</a><a href="#s4"><span>04</span>. 插件树：配置怎么长成一棵运行时</a><a href="#s5"><span>05</span>. 日志与投影：一份事实，四种看法</a><a href="#s6"><span>06</span>. 上下文四道工序：什么时候动历史</a><a href="#s7"><span>07</span>. 工具执行：五道流水线</a><a href="#s8"><span>08</span>. 子 agent：派生、并行、汇总</a><a href="#s9"><span>09</span>. 引擎里一个请求的生命周期</a><a href="#s10"><span>10</span>. PD 分离：两段式请求路径</a><a href="#s11"><span>11</span>. 背压：五道闸按什么顺序关</a><a href="#s12"><span>12</span>. 2,512 卡怎么摊到业务线</a><a href="#s13"><span>13</span>. 十二张图与章节的对应</a><a href="#s14"><span>14</span>. 怎么用这套图</a><a href="#s15"><span>15</span>. 失败模式：图会骗人的四种情况</a><a href="#s16"><span>16</span>. 否决与推翻条件</a><a href="#s17"><span>17</span>. 复盘卡</a><a href="#s18"><span>18</span>. 延伸</a></nav>
+      <div class="rail-foot">方法篇</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">00</div><div class="ch-kicker">方法篇</div><h1>全书图集：十二张图看懂这套系统</h1><div class="ch-rule"></div></header>
+<blockquote><p>这一章不引入新知识，只做一件事：把全书已经讲过的结构，用图钉在墙上。</p><p>用法：先看第 1 张图知道"这本书在讲什么"，再看第 2、3 张建立"系统长什么样"的直觉，后面九张按需查。每张图后面标了对应章节，看不懂某张图时去那一章。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 全书地图：44 章怎么咬合</h2>
+<p>这张图回答一个问题：这些章节之间是什么关系，为什么是这个顺序。图里的方框按"你在解决哪类问题"分组，不按目录顺序。最上面那格里的 SLO（Service Level Objective，服务等级目标）是全书的标尺，后面每一章的取舍都要回到它。</p>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  subgraph P0[&quot;① 定标尺：先有数&quot;]
+    A[&quot;01 规模与 SLO&lt;br/&gt;1.5 亿轮/日 · 7000 QPS&lt;br/&gt;02 传统架构为何失效&lt;br/&gt;03 语言与栈&quot;]
+  end
+  subgraph P2[&quot;② 选模型：能力与成本&quot;]
+    B[&quot;04 选型与评测&lt;br/&gt;05 适配取舍&lt;br/&gt;06 推理形态与压缩&lt;br/&gt;07 版本管理&quot;]
+  end
+  subgraph P3[&quot;③ 压推理：把卡用满&quot;]
+    C[&quot;10 引擎内部 · 10A kernel&lt;br/&gt;10B KV 生命周期&lt;br/&gt;11 PD 分离 · 12 压测&quot;]
+  end
+  subgraph P4[&quot;④ 算容量与钱&quot;]
+    D[&quot;13 容量模型：2512 卡&lt;br/&gt;14 成本结构：0.517 分/轮&quot;]
+  end
+  subgraph P5[&quot;⑤ 计量与定价&quot;]
+    E[&quot;15 Token 计量&lt;br/&gt;16 成本归因 · 17 定价对账&quot;]
+  end
+  subgraph P6[&quot;⑥ 编排：Harness&quot;]
+    F[&quot;18 全景 · 18A 插件&lt;br/&gt;19 日志 · 20 上下文&lt;br/&gt;21 工具 · 22 多 Agent&quot;]
+  end
+  subgraph P7[&quot;⑦ 保命&quot;]
+    G[&quot;25 全链路背压&lt;br/&gt;33 扩缩容 · 39 威胁模型&quot;]
+  end
+  P0 --&gt; P2 --&gt; P3
+  P3 --&gt; P4 --&gt; P5
+  P2 --&gt; P6
+  P6 --&gt; P7</pre></figure>
+<p>读法是从左上的"标尺"开始，一路到"保命"。<strong>中间有一条隐含的依赖</strong>：P4 的 2,512 卡是用 P3 的并发数算出来的，P3 的并发数又是用 P5 的价目表反推的。所以这几章不能跳着读——数字会接不上。</p>
+<p>第 5 章到第 9 章、第 23 章之后的部分（数据、检索、安全、可观测）在图里被压缩成方块了，因为它们不改变主线数字。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 平台六层：一次请求经过什么</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  U[&quot;用户&lt;br/&gt;App / Web / 开放 API&quot;] --&gt; GW[&quot;① 接入层 Envoy&lt;br/&gt;TLS · 鉴权 · 限流 · 排队&quot;]
+  GW --&gt; OR[&quot;② 编排层 Harness&lt;br/&gt;Agent loop · 上下文 · 工具调度&quot;]
+  OR --&gt; MG[&quot;③ 模型网关&lt;br/&gt;路由 · 配额 · 计量 · 重试&quot;]
+  MG --&gt; PF[&quot;④a Prefill 池&lt;br/&gt;裸算力 909 卡&quot;]
+  MG --&gt; DC[&quot;④b Decode 池&lt;br/&gt;裸算力 700 卡&quot;]
+  OR --&gt; TL[&quot;⑤ 工具层&lt;br/&gt;检索 · 业务 API · 代码沙箱&quot;]
+  OR --&gt; DA[&quot;⑥ 数据层&lt;br/&gt;会话日志 · 向量库 · 对象存储&quot;]</pre></figure>
+<p>六层里只有第 4 层是 GPU，其余五层都是 CPU 或存储。这个比例很容易被低估：运维成本里 84.5% 是折旧，而折旧里 GPU 占 63.6%——剩下 36.4% 的服务器、网络、机房，撑的是这五层。</p>
+<p>图里的 909 + 700 = 1,609 是<strong>裸算力</strong>。加上 1.3 的故障域冗余和 1.2 的灰度与碎片，才是账面上的 2,512 卡。看到任何一处写 2,512，都要记得它包含冗余，不能直接除以 QPS。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 一次对话的时序：首 token 延迟 258ms 花在哪</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant GW as 接入网关
+  participant OR as Harness
+  participant RT as 检索
+  participant MG as 模型网关
+  participant EN as 推理引擎
+  U-&gt;&gt;GW: POST /v1/chat
+  GW-&gt;&gt;GW: 鉴权 1ms · 限流 1ms
+  GW-&gt;&gt;OR: 转发 7ms 内完成
+  OR-&gt;&gt;OR: 读会话日志 · 组 system prompt
+  OR-&gt;&gt;RT: 检索 top-k
+  RT--&gt;&gt;OR: 180ms 返回 5 条
+  OR-&gt;&gt;MG: 附 tools schema 与历史
+  MG-&gt;&gt;MG: 配额预扣 · 路由选池
+  MG-&gt;&gt;EN: 送 prefill
+  EN-&gt;&gt;EN: prefill 611ms 含排队
+  EN--&gt;&gt;OR: 首 token
+  OR--&gt;&gt;GW: 流式
+  GW--&gt;&gt;U: 首字可见 258ms 端到端</pre></figure>
+<p>三个数字值得记住：网关只占 7ms，检索占 180ms，prefill（含排队）占 611ms。<strong>优化网关是无效功</strong>，因为它在总耗时里只占 2.7%。</p>
+<p>反过来，检索的 180ms 是除了 GPU 之外最大的一块。想压 TTFT（Time To First Token，首 token 延迟），先看检索能不能并行、能不能缓存，再看 prefill 的排队时间。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 插件树：配置怎么长成一棵运行时</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TD
+  PF[&quot;profile：web&quot;] --&gt; BD[&quot;bundle：dsh-base&lt;br/&gt;101 个依赖包&quot;]
+  BD --&gt; PT[&quot;cordis.patch.yml&lt;br/&gt;覆盖项&quot;]
+  PT --&gt; LD[&quot;Loader 条目&lt;br/&gt;每个插件一条&quot;]
+  LD --&gt; CTX[&quot;共享 ctx&quot;]
+  CTX --&gt; K1[&quot;ctx.sessions&quot;]
+  CTX --&gt; K2[&quot;ctx.systemPrompt&quot;]
+  CTX --&gt; K3[&quot;ctx.tools&quot;]
+  CTX --&gt; K4[&quot;ctx.llm&quot;]
+  K1 --&gt; AC[&quot;运行时能力&quot;]
+  K2 --&gt; AC
+  K3 --&gt; AC
+  K4 --&gt; AC</pre></figure>
+<p>从下往上看更容易理解：<strong>能力来自 ctx 上的几个键，键由插件注册，插件由 Loader 条目加载，条目由 patch 文件决定，patch 由 profile 选中的组合包提供。</strong></p>
+<p>这条链上任何一环断了，表现都一样：某个 <code>ctx.xxx</code> 是 undefined。所以排查"功能没生效"要从最下面一层往上查，而不是从代码查。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 日志与投影：一份事实，四种看法</h2>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  EV[&quot;运行时事件&lt;br/&gt;turn / step / tool / message&quot;] --&gt; LOG[&quot;会话日志&lt;br/&gt;只追加，不修改&quot;]
+  LOG --&gt; P1[&quot;surface 投影&lt;br/&gt;给模型看的&quot;]
+  LOG --&gt; P2[&quot;transcript 投影&lt;br/&gt;给人看的&quot;]
+  LOG --&gt; P3[&quot;计费投影&lt;br/&gt;token 与价格&quot;]
+  LOG --&gt; P4[&quot;客户端投影&lt;br/&gt;列表与标题&quot;]
+  P1 -.-&gt;|&quot;压缩时写 surfaceOp&quot;| LOG</pre></figure>
+<p>这张图是第 18 章的浓缩。关键在那条虚线：<strong>压缩不是删日志，是往日志里写一条"遮蔽指令"</strong>。</p>
+<p>于是同一个会话，模型看到的是被压缩后的版本，人看到的是完整版本，计费看到的是所有 token 之和。三种看法不同，但都来自同一份日志，永远不会互相矛盾。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 上下文四道工序：什么时候动历史</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TD
+  S[&quot;每 step 开始&quot;] --&gt; A[&quot;① 组装&lt;br/&gt;system + schema + 历史&quot;]
+  A --&gt; Q1{&quot;单条工具结果&lt;br/&gt;超过 32KB&quot;}
+  Q1 --&gt;|是| B[&quot;② 卸载&lt;br/&gt;存文件，给定位符&quot;]
+  Q1 --&gt;|否| Q2
+  B --&gt; Q2{&quot;token 占用&lt;br/&gt;超过 70%&quot;}
+  Q2 --&gt;|否| GO[&quot;发请求&quot;]
+  Q2 --&gt;|是| C[&quot;③ 剪枝&lt;br/&gt;删工具结果冗余&quot;]
+  C --&gt; Q3{&quot;仍超过 85%&quot;}
+  Q3 --&gt;|否| GO
+  Q3 --&gt;|是| D[&quot;④ 压缩&lt;br/&gt;摘要替换一段&quot;]
+  D --&gt; GO</pre></figure>
+<p>四道工序是<strong>递进</strong>的：先卸载再剪枝再压缩，因为前三者的信息损失依次变大。卸载只损失"全文可搜"，剪枝损失"工具返回的原始结构"，压缩损失"对话细节"。</p>
+<p>阈值 70% 和 85% 不是拍脑袋：70% 留出一次完整工具往返的余量，85% 是再压就要影响首 token 延迟的临界点。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 工具执行：五道流水线</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant M as 模型
+  participant T as tools 服务
+  participant G as ToolGuard
+  participant AP as 用户审批
+  participant X as 执行器
+  M-&gt;&gt;T: tool_calls
+  T-&gt;&gt;T: pre-execute 瀑布&lt;br/&gt;可改参、可拒绝、可接管
+  T-&gt;&gt;G: 校验
+  G--&gt;&gt;T: 只能收紧，不能放行
+  T-&gt;&gt;AP: 高风险才问
+  AP--&gt;&gt;T: 批准或拒绝
+  T-&gt;&gt;X: execute
+  X--&gt;&gt;T: 结果
+  T-&gt;&gt;T: post-execute 改结果
+  T--&gt;&gt;M: tool_result</pre></figure>
+<p>第 3 步是整个设计的关键：<code>ToolGuard</code> 的返回类型里<strong>没有 allow</strong>。它只能拒绝，不能批准。前面放宽的，它能收回；它拒绝的，后面任何环节都放不回来。</p>
+<p>权限只能沿流水线变小，这是一条结构性保证，不靠自觉。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 子 agent：派生、并行、汇总</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant L as lead
+  participant B as 任务板
+  participant S1 as lead/reviewer
+  participant S2 as lead/tester
+  L-&gt;&gt;B: 建任务 T1（依赖 T2）
+  L-&gt;&gt;B: 建任务 T2
+  L-&gt;&gt;S1: fork（父日志前缀作 seed）
+  L-&gt;&gt;S2: fork
+  S1-&gt;&gt;B: 认领 T2，revision +1
+  S2-&gt;&gt;B: 等 T2
+  S1--&gt;&gt;L: 结构化结果
+  S2-&gt;&gt;B: 认领 T1
+  S2--&gt;&gt;L: 结构化结果
+  L-&gt;&gt;L: 父读子结果，聚合即下一步</pre></figure>
+<p>注意两处：任务板的每个字段变更都带 <code>revision</code> 自增（比较并交换，防并发覆盖），依赖边 <code>blockedBy</code> 必须无环。</p>
+<p>还有一处容易被忽略：<code>writeScopes</code> 只是路径前缀提示，不是锁。多个子 agent 写同一片目录仍会冲突，靠任务切分避开，不靠运行时互斥。省掉分布式锁的代价是"切分必须切干净"。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 引擎里一个请求的生命周期</h2>
+<figure class="diagram"><pre class="mermaid">stateDiagram-v2
+  [*] --&gt; Waiting: 入队
+  Waiting --&gt; Running: 拿到 KV 块
+  Running --&gt; Running: 每步 decode
+  Running --&gt; Finished: 遇 EOS 或 max_tokens
+  Running --&gt; Preempted: KV 不够，被抢占
+  Preempted --&gt; Waiting: 重排或换出
+  Waiting --&gt; Rejected: 队列超上限
+  Rejected --&gt; [*]
+  Finished --&gt; [*]</pre></figure>
+<p>这张图里最重要的一条边是 <code>Running -&gt; Preempted</code>。它意味着"已经开始生成的请求也会被踢回队列"——这是显存不足时的最后手段，代价极高：重算要 1.6 秒（32K 上下文），换出要 120 毫秒加一次 PCIe 往返。</p>
+<p>理解了这条边，就理解了为什么队列上限要按"目标等待时间 × 吞吐"算，而不是按"机器能排多少"。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. PD 分离：两段式请求路径</h2>
+<figure class="diagram"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant MG as 模型网关
+  participant P as Prefill 实例
+  participant KV as KV 传输
+  participant D as Decode 实例
+  MG-&gt;&gt;P: 完整 prompt
+  P-&gt;&gt;P: 一次性算完 8K 输入
+  P-&gt;&gt;KV: 导出 KV 400MB
+  KV-&gt;&gt;D: 高速互联传输 400MB
+  D-&gt;&gt;D: 逐 token 生成
+  D--&gt;&gt;MG: 流式返回</pre></figure>
+<p>PD 分离的全部代价都在中间那条线上：一次 8K 上下文的 KV 大约 400MB，传输走 RDMA（Remote Direct Memory Access，远程直接内存访问），耗时要和"省下的算力"做比较。</p>
+<p>判据很简单：<strong>只有当 prefill 和 decode 的最优并行度差得足够远时，分离才划算</strong>。如果两边都适合 TP8，分离只是多了一次搬运。</p>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 背压：五道闸按什么顺序关</h2>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  R[&quot;请求&quot;] --&gt; G1{&quot;配额&lt;br/&gt;超额?&quot;}
+  G1 --&gt;|是| X1[&quot;429&quot;]
+  G1 --&gt;|否| G2{&quot;入口限流&lt;br/&gt;&gt;7000 QPS?&quot;}
+  G2 --&gt;|是| X2[&quot;503 + Retry-After&quot;]
+  G2 --&gt;|否| G3{&quot;池排队&lt;br/&gt;&gt; 上限?&quot;}
+  G3 --&gt;|是| X3[&quot;降级或拒绝&quot;]
+  G3 --&gt;|否| G4{&quot;引擎 KV 水位&lt;br/&gt;&gt; 90%?&quot;}
+  G4 --&gt;|是| X4[&quot;暂停接新&quot;]
+  G4 --&gt;|否| OK[&quot;执行&quot;]</pre></figure>
+<p>五道闸的顺序由"代价从小到大"决定：配额最便宜（查一个计数器），限流次之，排队再次，KV 水位最贵（要问引擎）。</p>
+<p>但<strong>触发顺序是反的</strong>：真实雪崩里最先该动的是引擎侧的降载，因为它是唯一知道"我还撑不撑得住"的一方。上游的闸只能看到"下游慢了"，等它反应，队列已经堆满了。</p>
+<p>所以现实中的顺序是"引擎报水位 → 控制面下发 → 上游收紧"，延迟 10 秒左右。这个 10 秒就是雪崩窗口。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 2,512 卡怎么摊到业务线</h2>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  ALL[&quot;2,512 卡&quot;] --&gt; RP[&quot;预留池 909&quot;]
+  ALL --&gt; DP[&quot;decode 池 700&quot;]
+  ALL --&gt; SH[&quot;共享池 903&quot;]
+  RP --&gt; A1[&quot;售后 1,758 卡&lt;br/&gt;1.987 亿/年&quot;]
+  DP --&gt; A1
+  SH --&gt; A1
+  SH --&gt; A2[&quot;物流 502 卡&lt;br/&gt;0.567 亿/年&quot;]
+  SH --&gt; A3[&quot;营销 251 卡&lt;br/&gt;0.284 亿/年&quot;]</pre></figure>
+<p>这张图说明为什么"按 token 摊成本"会亏：共享池按实际用量摊，但预留池是按峰值留的。售后占了 70% 的峰值，只用了 72% 的 token——两个数字接近，所以按峰值摊和按用量摊差别不大。</p>
+<p>换成营销就反过来了：10% 的峰值、8% 的 token，但它的请求集中在白天。按峰值摊它要多付 575 万，按 token 摊它少付 575 万。<strong>摊法的选择，本质是选择谁来承担峰谷差。</strong></p>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 十二张图与章节的对应</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>图</th><th>想回答的问题</th><th>对应章节</th></tr></thead><tbody><tr><td>1 全书地图</td><td>先读什么后读什么</td><td>全</td></tr><tr><td>2 六层架构</td><td>系统由哪几块组成</td><td>02、08、13</td></tr><tr><td>3 请求时序</td><td>258ms 花在哪</td><td>08、25</td></tr><tr><td>4 插件树</td><td>配置怎么变成能力</td><td>18、18A</td></tr><tr><td>5 日志投影</td><td>为什么能同时有四种看法</td><td>18、19</td></tr><tr><td>6 上下文四道</td><td>什么时候动历史</td><td>20</td></tr><tr><td>7 工具流水线</td><td>权限为什么只能变小</td><td>21、39</td></tr><tr><td>8 子 agent</td><td>并行靠什么协调</td><td>22</td></tr><tr><td>9 请求状态机</td><td>什么时候会抢占</td><td>10、10B</td></tr><tr><td>10 PD 分离</td><td>分离值不值</td><td>11</td></tr><tr><td>11 背压五闸</td><td>雪崩时先关哪个</td><td>25</td></tr><tr><td>12 成本归因</td><td>谁来承担峰谷差</td><td>16</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 怎么用这套图</h2>
+<p>三种用法，按你手上的场景挑一种：第一次读、被问架构、线上出故障。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>用法</th></tr></thead><tbody><tr><td>第一次读</td><td>只看图 1、2、3，建立"整体长什么样"，再回去读正文</td></tr><tr><td>面试或评审</td><td>默画图 2 和图 3，讲清每个数字的来源</td></tr><tr><td>出故障</td><td>从图 11 倒查：先确认哪道闸动了，再顺着图 2 找对应层</td></tr></tbody></table></div>
+<p>第二种最有用。能把图 3 的 258ms 拆解讲清楚，说明你真的理解了这条链路；只会说"网关慢、模型慢"的，是在背结论。</p>
+</section>
+<section class="sec" id="s15"><h2><span class="sec-num">15</span>15. 失败模式：图会骗人的四种情况</h2>
+<p>图比文字更容易让人产生"我懂了"的错觉。四种情况要单独防：</p>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>图上的数加不回去</td><td>有的数是裸算力，有的是含冗余</td><td>把图里的数逐项相加，对上总数</td><td>每个数标注口径（裸算力/含冗余）</td></tr><tr><td>时序图看起来快，实测慢</td><td>图里没画排队和重试</td><td>拿真实 trace 对照每一段耗时</td><td>把排队单独画成一段</td></tr><tr><td>分层图看不出故障传播</td><td>只画了正常路径</td><td>沿箭头问"这一层挂了会怎样"</td><td>每层补一条失败边</td></tr><tr><td>架构图画得很全，决策看不出</td><td>只有组件，没有取舍</td><td>问"为什么不用另一个方案"</td><td>图上补否决分支</td></tr></tbody></table></div>
+<p>第一条最隐蔽。图 2 的 909 + 700 = 1,609，而账面是 2,512——如果图上不写"裸算力"三个字，读者会以为 1,609 就是全部，然后拿 2,512 去除 QPS，算出 0.36 卡/QPS 这种和正文对不上的数。</p>
+</section>
+<section class="sec" id="s16"><h2><span class="sec-num">16</span>16. 否决与推翻条件</h2>
+<p>这套图刻意没画的东西，以及什么情况下要把它们加回来：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>没画的</th><th>为什么</th><th>加回来的条件</th></tr></thead><tbody><tr><td>多区域部署</td><td>账本是单区域 2,512 卡</td><td>跨区容灾成为一级需求时</td></tr><tr><td>训练集群</td><td>只画推理，训练在附录 B</td><td>自研模型进入主线时</td></tr><tr><td>消息队列与缓存</td><td>属于某一层的内部实现</td><td>讲解某一层的内部时单独画</td></tr><tr><td>数据血缘</td><td>和成本归因是两张图</td><td>做数据治理专题时</td></tr></tbody></table></div>
+<p>两条推翻条件，写在这里便于日后对照：</p>
+<p>第一，如果峰值 QPS 从 7,000 降到 3,000 以下，图 11 的五道闸要减到三道——低峰时排队本身就能吸收抖动，再加闸只会增加误杀。</p>
+<p>第二，如果上下文长度中位数从 8K 涨到 32K，图 9 的 <code>Running -&gt; Preempted</code> 这条边会变成主路径，整个调度策略要从"尽量不抢占"改成"按 value 抢占"。</p>
+</section>
+<section class="sec" id="s17"><h2><span class="sec-num">17</span>17. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为架构图是用来"展示"的，实际是用来"对数字"的——每张图上的每个数字，都应该能在正文里找到推导过程。找不到推导的图，只是装饰。</p>
+</section>
+<section class="sec" id="s18"><h2><span class="sec-num">18</span>18. 延伸</h2>
+<ul><li>想看推导：从第 13 章容量模型开始，一路算到第 17 章定价</li><li>想看机制：从第 18 章 Harness 全景开始</li><li>想看故障：第 25 章背压、第 39 章威胁模型</li><li>图源：全部用 Mermaid 写在 Markdown 里，改文字即改图</li></ul>
+<p>小结：图的价值不在好看，在于它把"我以为我懂了"变成"我能指着某一行说出这个数字从哪来"。十二张图里，能默画出三张，就算过关。</p>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="WRITING-CONTRACT.html"><span>上一章</span><b>00 · 写作契约（WRITING CONTRACT）</b></a><a class="nav-next" href="01-scale-slo-economics.html"><span>下一章</span><b>01 · 规模、SLO（Service Level Objective） 与经济红线</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>

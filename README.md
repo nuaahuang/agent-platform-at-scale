@@ -112,6 +112,7 @@ curl -N "http://127.0.0.1:8080/v1/chat?tenant=demo&q=我想退货"
 | 目录定稿（40 章） | ✅ |
 | 写作标准 + 自动检查 | ✅ `book/STYLE.md` + `make style` |
 | 正文 | ✅ 25/44（第 1–7、8–18、25、33、39 章）+ 18A + 10A + 31A + 39A + 附录 A/B · 约 10.6 万字 |
+| 图集 | [00-atlas](book/part-00-method/00-atlas.md)：12 张 Mermaid 架构/流程/时序图 · 站点内直接渲染
 | labs | ✅ 6 个可运行 |
 | platform skeleton | ✅ 网关 + mock 引擎 |
 | deploy / benchmarks | ⏳ |
@@ -178,3 +179,5 @@ make style-strict   # 终稿：密度不足也算失败
 
 - 代码（`labs/`、`platform/`、`deploy/`、`benchmarks/`）：MIT
 - 正文（`book/`）：CC BY-SA 4.0
+
+> 图集与站点：`book/**/*.md` 里的 Mermaid 图由 `tools/build_site.py` 渲染成 SVG，需要浏览器联网加载 mermaid 运行时（约 1 MB）；离线打开时显示图源码，内容不丢失。
