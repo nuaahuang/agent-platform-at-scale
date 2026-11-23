@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：一句"根治"引发的下线</a><a href="#s2"><span>02</span>. 守卫模型是什么</a><a href="#s3"><span>03</span>. 三层防御</a><a href="#s4"><span>04</span>. 守卫模型怎么设计</a><a href="#s5"><span>05</span>. 性能：30 ms 从哪来，怎么保住 TTFT</a><a href="#s6"><span>06</span>守卫服务怎么部署</a><a href="#s7"><span>07</span>. 持续进化：守卫模型多久重训一次</a><a href="#s8"><span>08</span>. 一个完整的落地清单</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 问题：一句"全网最低价"引发的下线</a><a href="#s2"><span>02</span>. 守卫模型是什么</a><a href="#s3"><span>03</span>. 三层防御</a><a href="#s4"><span>04</span>. 守卫模型怎么设计</a><a href="#s5"><span>05</span>. 性能：30 ms 从哪来，怎么保住 TTFT</a><a href="#s6"><span>06</span>守卫服务怎么部署</a><a href="#s7"><span>07</span>. 持续进化：守卫模型多久重训一次</a><a href="#s8"><span>08</span>. 一个完整的落地清单</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 什么情况下这些结论不成立</a><a href="#s11"><span>11</span>. 验收</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
       <div class="rail-foot">安全合规</div>
     </div>
   </aside>
@@ -227,29 +227,31 @@ blockquote p{margin:.4em 0}
     <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">39A</div><div class="ch-kicker">安全合规</div><h1>内容安全：守卫模型与分层防御</h1><div class="ch-rule"></div></header>
 <aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>守卫模型是什么，和第 39 章讲的威胁模型有什么区别？</li><li>三层防御怎么分工，每层的误杀率和延迟是多少？</li><li>0.5B 分类器和 7B 生成式审核，什么时候用哪个？</li><li>守卫模型吃掉 30 ms，TTFT（Time To First Token）还保得住吗？</li><li>守卫模型怎么持续进化，多久重训一次？</li></ol></aside>
 <div class="orn"></div>
-<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：一句"根治"引发的下线</h2>
-<p>一个中医诊后管理助手，上线两个月，被投诉到监管。原因是给某个患者生成的建议里出现了"从根源改善体质"——这属于疗效承诺，违反广告法。</p>
-<p>查日志才发现，这条不是模型自己编的，是患者的就诊记录里医生写了"从根源调理"，模型照抄进了输出。</p>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：一句"全网最低价"引发的下线</h2>
+<p>售后 Agent 上线两个月，被投诉到市场监管。原因是给某个用户的回答里出现了"我们是全网最低价，保证比任何平台都便宜"——这属于绝对化用语，违反广告法。</p>
+<p>查日志才发现，这句不是模型自己编的，是商品详情页里商家自己写了"全网最低价"，Agent 在回答"能便宜点吗"的时候把它引用了。</p>
 <p>三个问题同时暴露：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>表现</th></tr></thead><tbody><tr><td>提示词写了禁止项，但没兜住</td><td>安全边界里明确写了"不使用根治、治愈"</td></tr><tr><td>没有输出侧校验</td><td>模型输出了违规词，直接返回给用户</td></tr><tr><td>没有离线回溯</td><td>同类问题已存在两个月，无人发现</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>表现</th></tr></thead><tbody><tr><td>提示词写了禁止项，但没兜住</td><td>安全边界里明确写了"不使用绝对化用语"</td></tr><tr><td>没有输出侧校验</td><td>模型输出了违规表述，直接返回给用户</td></tr><tr><td>没有离线回溯</td><td>同类商品有 300 多个，两个月无人发现</td></tr></tbody></table></div>
 <p>这一章讲的就是怎么把这三件事补上：<strong>在线怎么拦、离线怎么发现、守卫模型怎么设计</strong>。</p>
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 守卫模型是什么</h2>
 <p>先说清概念。<strong>守卫模型（Guard Model）是一个独立的小模型，专门判断"这段输入或输出该不该放行"。</strong></p>
 <p>它和第 39 章的威胁模型不是一回事：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th></th><th>威胁模型（第 39 章）</th><th>守卫模型（本章）</th></tr></thead><tbody><tr><td>是什么</td><td>一张分析表，列出谁会怎么攻击</td><td>一个跑在推理链路上的分类器</td></tr><tr><td>产出</td><td>攻击面与防御点</td><td>放行 / 拦截 / 标记</td></tr><tr><td>运行方式</td><td>人写，季度更新</td><td>每请求调用，毫秒级</td></tr><tr><td>失败表现</td><td>漏掉某个攻击面</td><td>误杀或漏杀</td></tr></tbody></table></div>
-<p>守卫模型不是"内容审核 API"。商用审核 API 判的是通用违规（色情、暴力、政治），而你的业务违规是"疗效承诺""超范围诊疗""推荐药品"——这些通用 API 判不出来，必须自己训。</p>
+<p>守卫模型不是"内容审核 API"。商用审核 API 判的是通用违规（色情、暴力、政治），而你的业务违规是"绝对化用语""超出政策的承诺""虚假原价"——这些通用 API 判不出来，必须自己训。</p>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 三层防御</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>手段</th><th>延迟</th><th>误杀率</th><th>漏杀率</th><th>覆盖</th></tr></thead><tbody><tr><td>L1 规则</td><td>正则、关键词、句式</td><td>1 ms</td><td>3%–8%</td><td>40%–60%</td><td>显性违规词</td></tr><tr><td>L2 小模型</td><td>0.5B 分类器</td><td>30 ms</td><td>1%–3%</td><td>15%–25%</td><td>语义级违规</td></tr><tr><td>L3 大模型</td><td>7B 生成式审核</td><td>200 ms</td><td>0.5%–1%</td><td>5%–10%</td><td>复杂判断</td></tr><tr><td>人工</td><td>抽检</td><td>分钟</td><td>—</td><td>—</td><td>兜底</td></tr></tbody></table></div>
-<p>三层不是串联，是<strong>并联后取最严</strong>：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>L1 命中 → 直接拦（不用再跑 L2/L3）
-L1 不命中 → L2 判断
-L2 可疑 → L3 复核（异步或同步，看场景）</code></pre></figure>
+<p>三层的组合方式是<strong>并联 + 条件级联</strong>，不是纯串联也不是纯并联：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>L1 与 L2 同时跑同一段内容（可并行，省 1 ms）
+  → 取两者里较严的结论（命中即拦，都放行才放行）
+  → 只有 L2 判&quot;可疑&quot;的那 3%–5%，才触发 L3 复核</code></pre></figure>
+<p>L1 和 L2 是<strong>并联</strong>：两个判据看同一份输入，结论取 max，谁命中都拦。L2 到 L3 是<strong>级联</strong>：L3 只处理 L2 的存疑样本，不是每一条都跑。</p>
+<p>这个结构解决的问题是：L1 快但粗（漏 40%–60%），L2 准但慢 30 倍，L3 最准但慢 200 倍。并联前两层能同时拿到"快"和"准"，级联第三层能把 200 ms 的代价摊到 5% 的请求上。</p>
 <p>为什么要三层而不是直接上 L3：<strong>延迟</strong>。L3 要 200 ms，而首 token 预算只有 800 ms，占了四分之一。所以 L3 只能用在"L2 标记可疑"的少数请求上（约 3%–5%），平均延迟增加约 10 ms。</p>
 <h3>3.1 每层的职责边界</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>管什么</th><th>不管什么</th></tr></thead><tbody><tr><td>L1</td><td>"根治""治愈""保证瘦"这类词</td><td>"从根本上调理"这种变体</td></tr><tr><td>L2</td><td>语义等价、意图判断、超范围</td><td>需要专业知识才判的（如证型是否匹配）</td></tr><tr><td>L3</td><td>复杂上下文、多轮累积违规</td><td>实时性要求高的场景</td></tr></tbody></table></div>
-<p>L1 的边界最清楚：<strong>它只能抓显性词</strong>。"根治"能抓，"从根源改善"抓不到——后者要 L2。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>管什么</th><th>不管什么</th></tr></thead><tbody><tr><td>L1</td><td>"最低价""第一""唯一""保证"这类词</td><td>"比任何平台都便宜"这种变体</td></tr><tr><td>L2</td><td>语义等价、意图判断、超范围</td><td>需要专业知识才判的（如证型是否匹配）</td></tr><tr><td>L3</td><td>复杂上下文、多轮累积违规</td><td>实时性要求高的场景</td></tr></tbody></table></div>
+<p>L1 的边界最清楚：<strong>它只能抓显性词</strong>。"最低价"能抓，"比任何平台都便宜"抓不到——后者要 L2。</p>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 守卫模型怎么设计</h2>
 <h3>4.1 先定任务形态</h3>
@@ -262,6 +264,17 @@ L2 可疑 → L3 复核（异步或同步，看场景）</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>来源</th><th>量</th><th>质量</th><th>怎么拿</th></tr></thead><tbody><tr><td>规则命中的样本</td><td>中</td><td>高（正样本）</td><td>L1 的命中记录</td></tr><tr><td>用户投诉/申诉</td><td>低</td><td>极高</td><td>客服工单</td></tr><tr><td>人工构造的对抗样本</td><td>低</td><td>高</td><td>安全团队红队</td></tr><tr><td>大模型标注 + 人工抽检</td><td>高</td><td>中</td><td>用 L3 打标，人抽 10%</td></tr></tbody></table></div>
 <p>第三行最容易被忽略。<strong>红队构造的对抗样本是唯一能提前发现新攻击面的方式</strong>——等线上出事故再补，代价是下线。</p>
 <p>一个可用的启动量：<strong>每类违规 2,000 条正样本 + 10,000 条负样本</strong>。少于这个量，0.5B 模型学不动。</p>
+<p>第 4 行（大模型标注 + 人工抽检）是唯一能规模化拿到数据的路，但流程要说清，否则训出来的模型不能用。五步：</p>
+<p><strong>第一步，用 L3 打标。</strong> 拿 10,000 条真实样本（从线上摘要里采样），让 7B 模型逐条判"是否违规 + 违规类型 + 置信度"，输出结构化结果。</p>
+<p><strong>第二步，分层抽样。</strong> 不能随机抽——违规样本占比通常只有 3%–5%，随机抽 1,000 条里只有 30 条违规样本，不够验证。要按"违规类型 × 置信度"分层，每层抽 100–150 条。</p>
+<p><strong>第三步，人工判对错。</strong> 安全团队逐条看，标"同意 / 不同意 / 说不清"。关键是要<strong>独立判断</strong>，不能看着大模型的结论改——否则测的是"人是否同意"，不是"判得对不对"。</p>
+<p><strong>第四步，算一致率。</strong> 用 Cohen's Kappa，不是简单准确率（因为类别不平衡）：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>Kappa</th><th>含义</th><th>能不能用</th></tr></thead><tbody><tr><td>≥ 0.8</td><td>高度一致</td><td>可用，标出来的数据直接训</td></tr><tr><td>0.6–0.8</td><td>中等</td><td>要改提示词或补规则再标</td></tr><tr><td>&lt; 0.6</td><td>差</td><td>大模型的判定标准和你不一样，不能用</td></tr></tbody></table></div>
+<p>**第五步的价值在于：它同时产出了两样东西——可用的标注数据，和一份"人和模型判断分歧在哪里"的清单。后者对改规则、改提示词比数据本身更有用。</p>
+<p>一个常见误区是跳过第二步直接随机抽。违规样本只占 3%–5%，随机抽 1,000 条只能抽到 30–50 条正样本，Kappa 的置信区间会宽到没有意义。分层抽样是让每一类都有足够样本，代价是要先知道类别分布。</p>
+<p>第五步，不一致的回流。** Kappa 低于 0.8 的样本里，人工写清楚"为什么不同意"，这些说明就是下一版标注提示词的修改依据。</p>
+<p>做完一轮，10,000 条里大约 9,000 条可用（900 条人工修正、100 条丢弃）。这个量刚好够训 0.5B 分类器。</p>
+<p>成本估算：10,000 条 × 7B 审核（约 0.3 分/条）= 3,000 分 = 30 元；人工抽 1,000 条 × 30 秒 = 8.3 小时。<strong>一轮不到 10 人时，产出 9,000 条标注数据</strong>——比雇人从零标 10,000 条（83 小时）便宜十倍。</p>
 <h3>4.3 评估指标不是准确率</h3>
 <p>守卫模型的评估和普通分类器不同，因为<strong>误杀和漏杀的代价不对称</strong>：</p>
 <div class="table-wrap"><table class="table table--spec"><thead><tr><th>指标</th><th>定义</th><th>目标</th></tr></thead><tbody><tr><td>误杀率</td><td>正常内容被拦的比例</td><td>&lt; 2%</td></tr><tr><td>漏杀率</td><td>违规内容被放行的比例</td><td>&lt; 5%</td></tr><tr><td>延迟 p99</td><td>判定耗时</td><td>&lt; 50 ms</td></tr></tbody></table></div>
@@ -269,7 +282,7 @@ L2 可疑 → L3 复核（异步或同步，看场景）</code></pre></figure>
 <p>这也解释了为什么第一层用规则：规则误杀率 3%–8% 偏高，但它的命中可以<strong>只标记不拦截</strong>，交给 L2 判断。</p>
 <h3>4.4 多租户：一套模型还是多套</h3>
 <div class="table-wrap"><table class="table"><thead><tr><th>方案</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td>一套通用模型</td><td>维护成本低</td><td>不同行业规则冲突</td></tr><tr><td>每行业一套</td><td>精准</td><td>训练数据要按行业分</td></tr><tr><td>一套 + 租户规则层</td><td>折中</td><td>规则层要能配</td></tr></tbody></table></div>
-<p>推荐第三种：模型通用，规则租户可配。中医的"疗效承诺"和电商的"绝对化用语"是同一类问题（夸大宣传），模型能共用，只是关键词表不同。</p>
+<p>推荐第三种：模型通用，规则租户可配。售后的"绝对化用语"和物流的"时效承诺"是同一类问题（夸大宣传），模型能共用，只是关键词表不同。</p>
 </section>
 <section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 性能：30 ms 从哪来，怎么保住 TTFT</h2>
 <h3>5.1 延迟分解</h3>
@@ -277,7 +290,8 @@ L2 可疑 → L3 复核（异步或同步，看场景）</code></pre></figure>
 <div class="table-wrap"><table class="table"><thead><tr><th>步</th><th>在哪</th><th>耗时</th></tr></thead><tbody><tr><td>字符粗估</td><td>网关进程内</td><td>0.001 ms</td></tr><tr><td>tokenize</td><td>网关进程内（Rust）</td><td>2 ms</td></tr><tr><td>结构化裁剪</td><td>网关进程内</td><td>0.01 ms</td></tr><tr><td>重复率 MinHash</td><td>网关进程内</td><td>2 ms</td></tr><tr><td><strong>守卫模型</strong></td><td><strong>独立 GPU 服务</strong></td><td><strong>30 ms</strong></td></tr><tr><td>拼接</td><td>Harness</td><td>0.001 ms</td></tr></tbody></table></div>
 <p>34 ms，其中守卫模型占 88%。</p>
 <h3>5.2 首 token 延迟预算</h3>
-<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>基线</th><th>加防御</th></tr></thead><tbody><tr><td>客户端到网关</td><td>7</td><td>7</td></tr><tr><td>裁剪、检测、审核</td><td>0</td><td>34</td></tr><tr><td>RAG 检索</td><td>180</td><td>180</td></tr><tr><td>排队</td><td>50</td><td>50</td></tr><tr><td>prefill（缓存命中）</td><td>15</td><td>18</td></tr><tr><td><strong>合计</strong></td><td><strong>258</strong></td><td><strong>295</strong></td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>环节</th><th>基线</th><th>加防御</th></tr></thead><tbody><tr><td>客户端到网关</td><td>7</td><td>7</td></tr><tr><td>裁剪、检测、审核</td><td>0</td><td>34</td></tr><tr><td>RAG 检索</td><td>180</td><td>180</td></tr><tr><td>排队</td><td>50</td><td>50</td></tr><tr><td>prefill（缓存前缀）</td><td>15</td><td>15</td></tr><tr><td><strong>末尾纪律 30 token 的 prefill</strong></td><td>0</td><td><strong>2.7</strong></td></tr><tr><td><strong>合计</strong></td><td><strong>258</strong></td><td><strong>295</strong></td></tr></tbody></table></div>
+<p>第四行是唯一让 prefill 变长的地方：末尾那 30 token 在变量之后，位置每次都不同，<strong>不命中缓存</strong>，必须现算。30 × 0.09 ms = 2.7 ms。前面 1,230 token 的静态前缀命中率不变，仍是 15 ms。</p>
 <p>800 ms 预算用掉 37%，还剩 505 ms。</p>
 <h3>5.3 守卫模型不影响 TPOT（Time Per Output Token）</h3>
 <p>TPOT 是 decode 阶段每 token 的间隔，守卫模型在 prefill 之前就结束了。唯一例外是过载时的抢占，那是第 25 章的机制。</p>
