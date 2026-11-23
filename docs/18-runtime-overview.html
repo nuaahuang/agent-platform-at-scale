@@ -219,7 +219,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 先看一个具体的麻烦</a><a href="#s2"><span>02</span>. dsh 的架构，其实只回答三个问题</a><a href="#s3"><span>03</span>. 一次请求的流水账</a><a href="#s4"><span>04</span>. 那些名词，一句话一个</a><a href="#s5"><span>05</span>. 这样设计换来了四件"换掉不改主干"</a><a href="#s6"><span>06</span>. 它是 ReAct 吗</a><a href="#s7"><span>07</span>. 代价</a><a href="#s8"><span>08</span>. 我们能借的四条</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 先看一个具体的麻烦</a><a href="#s2"><span>02</span>. dsh 的架构，其实只回答三个问题</a><a href="#s3"><span>03</span>. 一次请求的流水账</a><a href="#s4"><span>04</span>. 那些名词，一句话一个</a><a href="#s5"><span>05</span>. 这样设计换来了四件"换掉不改主干"</a><a href="#s6"><span>06</span>. 它是 ReAct 吗</a><a href="#s7"><span>07</span>. 代价</a><a href="#s8"><span>08</span>. 我们能借的四条</a><a href="#s9"><span>09</span>机制地图：六条主线分别靠什么实现</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 验收</a><a href="#s12"><span>12</span>. 复盘卡</a><a href="#s13"><span>13</span>. 延伸</a></nav>
       <div class="rail-foot">Harness</div>
     </div>
   </aside>
@@ -320,18 +320,60 @@ blockquote p{margin:.4em 0}
 <div class="table-wrap"><table class="table"><thead><tr><th>原则</th><th>怎么用</th></tr></thead><tbody><tr><td>只记事实，不记成品</td><td>存事件，不存拼好的上下文，重启能重算</td></tr><tr><td>接口单独立出来</td><td>模型、工具、沙箱都先定义接口再实现</td></tr><tr><td>用事件代替 if</td><td>加需求时先想"能不能挂个钩子"</td></tr><tr><td>配置分层可 dump</td><td>base → 应用 → 用户 patch，能打印出最终配置</td></tr></tbody></table></div>
 <p>第一条最实用：把 <code>messages</code> 数组换成"事件 + 启动时重放"，进程崩溃后能从最后一条 <code>seq</code> 接着算，不用回滚到请求起点。</p>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8.5 机制地图：六条主线分别靠什么实现</h2>
+<p>前面讲的是骨架。真正干活的是六条主线，每条都有明确的组件、事件和一句机制。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>主线</th><th>组件</th><th>关键接口/事件</th><th>一句话机制</th><th>详见</th></tr></thead><tbody><tr><td>状态</td><td><code>core/session</code></td><td><code>session.append()</code>、<code>surfaceOp</code>、<code>deriveMessages()</code></td><td>日志只追加，模型历史是投影</td><td>19 章</td></tr><tr><td>上下文</td><td>system-prompt + compaction + spill</td><td><code>system-prompt/assemble</code>、<code>compaction/*</code></td><td>每步重算，超限则遮蔽替换</td><td>20 章</td></tr><tr><td>工具</td><td><code>core/tools</code></td><td><code>tools/pre-execute</code>/<code>execute</code>/<code>post-execute</code></td><td>瀑布可扩展，守卫只能收紧</td><td>21 章</td></tr><tr><td>检索</td><td>fs 工具 + LSP + skills</td><td><code>glob</code>、<code>grep</code>、符号查询</td><td>无向量索引，按需扫盘</td><td>20/21 章</td></tr><tr><td>子 agent</td><td>subagent + agent-team</td><td><code>subagent/*</code>、<code>TeamTaskSnapshot</code></td><td>持久子会话 + 任务 DAG</td><td>22 章</td></tr><tr><td>缓存</td><td>system-prompt 排序</td><td><code>getSectionOrder()</code>、<code>toolOrder</code></td><td>稳定前缀，动态内容后置</td><td>20 章</td></tr></tbody></table></div>
+<p>下面逐条说清"怎么实现的"，每条先给组件与事件，再给约束条件。</p>
+<h3>8.5.1 上下文管理：四道工序</h3>
+<p>上下文由四道工序依次产出，触发条件和落盘位置各不相同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>工序</th><th>何时触发</th><th>做什么</th><th>数据落在哪</th></tr></thead><tbody><tr><td>组装</td><td>每个 step</td><td>按 order 拼 system prompt + 工具 schema + 历史</td><td>不落盘（现算）</td></tr><tr><td>卸载</td><td>工具输出过大</td><td>存成文件，只把定位符给模型</td><td>spill 存储</td></tr><tr><td>剪枝</td><td>压缩之前</td><td>删掉工具结果里的冗余部分</td><td>新的 <code>tool/result</code> 事件</td></tr><tr><td>压缩</td><td>超过阈值</td><td>生成摘要，替换掉一段历史</td><td><code>compaction/summary</code></td></tr></tbody></table></div>
+<p><strong>关键在于第三、四道工序都只"遮蔽"，不"删除"。</strong> 下面这条记录就是遮蔽的载体。</p>
+<p>压缩用的是一条带特殊标记的消息：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>surfaceOp: { op: &#x27;replace&#x27;, startSeq: 118, endSeq: 240 }</code></pre></figure>
+<p>意思是"在模型看到的序列里，用我替换掉 118 到 240 这一段"。日志里 118 到 240 的记录一条没少。</p>
+<p>这带来三个能力：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>能力</th><th>为什么成立</th></tr></thead><tbody><tr><td>压缩后还能审计原始内容</td><td>日志没删</td></tr><tr><td>压缩错了可以重压</td><td>重新选区间即可</td></tr><tr><td>人能看完整对话，模型看压缩版</td><td>transcript 读追加来源，模型读 surface</td></tr></tbody></table></div>
+<p>注意最后一个：<strong>人和模型看到的不是同一份历史。</strong> 人看 transcript（完整），模型看 surface（压缩后）。这不是 bug，是有意设计——审计要全，推理要省。</p>
+<h3>8.5.2 缓存命中：三条规则</h3>
+<p>前缀缓存按 token 前缀匹配，所以命中的前提是"前缀一个 token 都不变"。dsh 用三条规则保证这一点：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>规则</th><th>做法</th></tr></thead><tbody><tr><td>顺序稳定</td><td>段落按 <code>order</code> 数值排序（固定开场白 −1000、persona 前缀 0、persona 后缀 10200）</td></tr><tr><td>动态内容不进系统提示词</td><td>日期、目录、平台信息作为 user 角色快照追加，不进 system</td></tr><tr><td>工具 schema 集合与顺序稳定</td><td>用 <code>toolOrder</code> 显式固定，重排会从第一个变化的 token 起失效</td></tr></tbody></table></div>
+<p>第二条最容易被忽略。把"今天是 2026-11-23"写进 system prompt 的做法，代价是日期每天变一次，<strong>整个系统提示词前缀每天失效一次</strong>。dsh 把它放进 user 角色的运行时快照，system prompt 一个字不变。</p>
+<p>第一条的收益可以算：系统提示词约 3,000 token、工具 schema 约 4,000 token，这 7,000 token 稳定，就意味着每轮请求的这 7,000 token 全部命中缓存。按 ¥10.24 vs ¥0.05 的价差，这 7,000 token 的成本从 0.0717 元降到 0.00035 元，<strong>差 200 倍</strong>。</p>
+<h3>8.5.3 工具流水线：瀑布 + 守卫</h3>
+<p>一次工具调用要过五道，顺序固定：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>顺序</th><th>环节</th><th>能做什么</th><th>能不能放行被拒的调用</th></tr></thead><tbody><tr><td>1</td><td><code>tools/pre-execute</code></td><td>改参数、拒绝、接管</td><td>能（瀑布式，监听器可改）</td></tr><tr><td>2</td><td><code>ToolGuard</code></td><td>只能收紧</td><td><strong>不能</strong></td></tr><tr><td>3</td><td>审批</td><td>问用户</td><td>不能</td></tr><tr><td>4</td><td><code>tools/execute</code></td><td>实际执行、包装超时</td><td>—</td></tr><tr><td>5</td><td><code>tools/post-execute</code></td><td>改结果、标记失败</td><td>—</td></tr></tbody></table></div>
+<p>第 2 道的"只能收紧"是安全边界的关键：前面任何监听器放宽的权限，守卫都能收回来；守卫自己拒绝的，后面谁也放不回来。</p>
+<p>这是单调性（monotonic）设计——<strong>权限只能沿流水线变小，不能变大</strong>。</p>
+<h3>8.5.4 检索与索引：为什么不用向量</h3>
+<p>代码检索用的是 <code>grep</code> 和 <code>glob</code>，不是向量索引。这是个刻意的取舍：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>grep/glob</th><th>向量索引</th></tr></thead><tbody><tr><td>精确匹配（函数名、错误串）</td><td>有</td><td>常漏</td></tr><tr><td>增量成本</td><td>0（现扫）</td><td>要建索引、要维护</td></tr><tr><td>新鲜度</td><td>永远最新</td><td>索引落后于代码</td></tr><tr><td>语义模糊查询</td><td>弱</td><td>强</td></tr></tbody></table></div>
+<p>代码场景里，开发者给的是精确线索（"找 <code>ReactLoopInbox</code>"），grep 直接命中；向量检索反而会返回"看起来相关"的错误结果。<strong>索引的维护成本还随仓库变化线性增长。</strong></p>
+<p>所以 dsh 的检索是：<code>glob</code> 找文件、<code>grep</code> 找内容、LSP 找符号、skills 目录按需注入说明。四样都是"用时才算"，没有后台索引。</p>
+<p>向量检索在另一种场景才值：<strong>业务知识库</strong>（售后政策、商品文档），因为那里的查询是自然语言、答案不在字面里。我们的平台两种都要——代码/配置用 grep，售后知识用向量。</p>
+<h3>8.5.5 子 agent：持久会话 + 任务 DAG</h3>
+<p>一个子 agent 对应一个完整的持久会话，六项特性如下：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>特性</th><th>实现</th></tr></thead><tbody><tr><td>身份</td><td>独立 Session id，持久化</td></tr><tr><td>在线数</td><td>最多一个 activation（同时只能跑一份）</td></tr><tr><td>fork</td><td>用父日志的前缀做种子（从 seq 0 连续的一段）</td></tr><tr><td>命名</td><td>树形路径，根叫 <code>lead</code>，子叫 <code>lead/reviewer</code></td></tr><tr><td>结果</td><td>结构化输出，提交后关闭输入</td></tr><tr><td>空闲</td><td>可冷恢复（历史全在日志里）</td></tr></tbody></table></div>
+<p>并行的协调不靠调度器，靠<strong>共享任务板</strong>，三个字段决定它能不能用：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>作用</th></tr></thead><tbody><tr><td><code>revision</code></td><td>每次修改 +1，compare-and-set 防并发覆盖</td></tr><tr><td><code>blockedBy</code></td><td>依赖边，必须无环</td></tr><tr><td><code>writeScopes</code></td><td>路径前缀提示，<strong>不是锁</strong></td></tr></tbody></table></div>
+<p>注意最后一行：写作用域只是提示，不是互斥锁。多个 agent 写同一片区域仍可能冲突，靠的是任务设计时切分边界，而不是运行时加锁。这条很反直觉，但省掉了分布式锁的全部复杂度。</p>
+<p>汇总时，父 agent 读子 agent 的结果——文本或结构化对象。<strong>没有额外的聚合层</strong>，聚合就是父 agent 自己的下一步。</p>
+<h3>8.5.6 六条主线的共同点</h3>
+<p>六条看起来各不相同，实现上都在做同一件事：<strong>把"当前状态"表示成"日志的投影"，然后让每个机制只负责一段投影规则。</strong></p>
+<ul><li>上下文是投影（surface）</li><li>状态是投影（deriveMessages）</li><li>客户端看到的是投影（session-projection）</li><li>计费是投影（token-meter 从事件算）</li></ul>
+<p>所以加一个新机制，往往是"注册一个投影单元"，不是"改主干"。这是整套架构能长期演进的原因。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 失败模式</h2>
 <div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>循环里 if 越来越多</td><td>把变化写进了不变的地方</td><td>数循环里的分支数</td><td>抽接口，改由配置决定</td></tr><tr><td>重启后行为不一致</td><td>内存里存了第二份状态</td><td>重启前后对比</td><td>只留日志为真源</td></tr><tr><td>换模型要改五处</td><td>没定义接口</td><td>搜模型名出现次数</td><td>抽适配器</td></tr><tr><td>插件卸了还留副作用</td><td>注册没返回撤销函数</td><td>卸载后看指标</td><td>注册即返回 disposer</td></tr><tr><td>配置改了不生效</td><td>patch 层优先级搞错</td><td>dump 配置对比</td><td>按层排查</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 验收</h2>
 <ol><li>能用代码说清"加一个模型"在写死循环和插件架构下各要改什么。</li><li>能说出"只记事实不记成品"带来的三个好处。</li><li>能判断你的系统该不该做插件化。</li></ol>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
 <p>我原来以为 harness 就是一个循环加几个工具，实际差在"循环里该写什么"——写死的部分越少，这个系统活得越久。</p>
 <p>复盘卡里那句"写死的部分越少，这个系统活得越久"，落到工程上就是四件可执行的事：日志只追加、接口先定、需求先想钩子、配置能 dump。</p>
 </section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 延伸</h2>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 延伸</h2>
 <ul><li>第 19 章：那本"只能往后写的账本"怎么设计</li><li>第 20 章：模型看到的内容怎么拼出来</li><li>第 21 章：工具怎么注册、怎么把关</li><li>第 22 章：多 Agent 怎么接进来</li><li>源码：<a href="https://github.com/deepseek-ai/deepseek-harness">deepseek-ai/deepseek-harness</a></li></ul>
 <p>小结：dsh 的复杂度不在"调模型"，在"让变化的东西不写进不变的地方"。四件事——只记事实、接口独立、事件代替 if、配置可查——都在服务这一条。</p>
 </section></article>
