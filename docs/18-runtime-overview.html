@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harness 全景：以 DeepSeek Harness 为样板 · Agent Platform at Scale</title>
+<title>Harness 全景：一次请求在 dsh 里走了一遍 · Agent Platform at Scale</title>
 <style>
 :root{
   --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
@@ -219,124 +219,121 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 问题：不要设想一个 demo，去读一个真系统</a><a href="#s2"><span>02</span>. 第一原则：一切皆插件</a><a href="#s3"><span>03</span>. 组合：profile、bundle、patch</a><a href="#s4"><span>04</span>. 六个核心包</a><a href="#s5"><span>05</span>. 三个事件域</a><a href="#s6"><span>06</span>. 一个轮次里发生了什么</a><a href="#s7"><span>07</span>. 它是 ReAct 吗</a><a href="#s8"><span>08</span>. 能力 seam：换一个 provider 就换了整个产品</a><a href="#s9"><span>09</span>. 这套架构的代价</a><a href="#s10"><span>10</span>. 对我们的启示：四条能借的原则</a><a href="#s11"><span>11</span>. 失败模式</a><a href="#s12"><span>12</span>一个真实的数字：dsh 仓库的规模</a><a href="#s13"><span>13</span>. 什么情况下这些结论不成立</a><a href="#s14"><span>14</span>. 验收</a><a href="#s15"><span>15</span>. 复盘卡</a><a href="#s16"><span>16</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 先看一个具体的麻烦</a><a href="#s2"><span>02</span>. dsh 的架构，其实只回答三个问题</a><a href="#s3"><span>03</span>. 一次请求的流水账</a><a href="#s4"><span>04</span>. 那些名词，一句话一个</a><a href="#s5"><span>05</span>. 这样设计换来了四件"换掉不改主干"</a><a href="#s6"><span>06</span>. 它是 ReAct 吗</a><a href="#s7"><span>07</span>. 代价</a><a href="#s8"><span>08</span>. 我们能借的四条</a><a href="#s9"><span>09</span>. 失败模式</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 延伸</a></nav>
       <div class="rail-foot">Harness</div>
     </div>
   </aside>
   <main class="content">
-    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">18</div><div class="ch-kicker">Harness</div><h1>Harness 全景：以 DeepSeek Harness 为样板</h1><div class="ch-rule"></div></header>
-<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>一个生产级 harness 由哪几部分组成？</li><li>为什么它把"一切皆插件"作为第一原则，代价是什么？</li><li>一个轮次（turn）里到底发生了什么？</li><li>它是 ReAct 吗？</li><li>六个核心包各自管什么，边界在哪？</li></ol></aside>
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">18</div><div class="ch-kicker">Harness</div><h1>Harness 全景：一次请求在 dsh 里走了一遍</h1><div class="ch-rule"></div></header>
+<aside class="intro-card"><div class="intro-label">导读</div><div class="intro-title">读完你能回答</div><ol class="intro-list"><li>"加能力不改主干"具体长什么样？</li><li>一次请求在 DeepSeek Harness 里，依次发生了什么？</li><li>那些名词（Cordis、ctx、事件、profile、seam）各自是什么？</li><li>它是 ReAct 吗？</li><li>这套设计换来了什么，代价是什么？</li></ol></aside>
 <div class="orn"></div>
-<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 问题：不要设想一个 demo，去读一个真系统</h2>
-<p>教科书式的拆法是"循环、状态、上下文、工具、编排"五块。这个拆法没错，但是推演出来的——真实的系统未必这么长。</p>
-<p>DeepSeek Harness（下称 dsh）是开源的，TypeScript 写的，架构文档齐全。用它当样板，能看清一个跑在生产里的 harness 到底怎么分层，以及哪些设计是被真实约束逼出来的。</p>
-<p>这个仓库有 2.6 万个文件、6 个核心包、5 个随附 profile。这一章只讲全景：它的第一原则、它的组成、一个轮次怎么走。后面四章逐个拆它的核心子系统。</p>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 先看一个具体的麻烦</h2>
+<p>最常见的 agent 循环长这样：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def loop(user_msg):
+    resp = call_gpt(user_msg)          # 写死了一个模型
+    while resp.tool_calls:
+        result = run_tool(resp.tool_calls)
+        resp = call_gpt(user_msg + result)
+    return resp.text</code></pre></figure>
+<p>现在要支持第二个模型（DeepSeek），得改成：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def loop(user_msg):
+    resp = call_gpt(user_msg) if model == &quot;gpt&quot; else call_deepseek(user_msg)
+    while resp.tool_calls:
+        result = run_tool(resp.tool_calls)
+        resp = call_gpt(...) if model == &quot;gpt&quot; else call_deepseek(...)
+    return resp.text</code></pre></figure>
+<p>第三个模型（Qwen）再加一个分支。到第五个模型，这个循环里有五个 if，而且<strong>每加一个模型，你都要重新测整个循环</strong>——哪怕逻辑一点没变。</p>
+<p>这是"写死"的代价：<strong>变化的东西被写进了不变的地方。</strong></p>
+<p>dsh 的答案是：</p>
+<figure class="code code--lang"><span class="code-lang">python</span><button class="copy" type="button">复制</button><pre><code>def loop(user_msg):
+    resp = ctx.llm.chat(user_msg)      # 只认&quot;能聊天&quot;这件事，不认具体模型
+    while resp.tool_calls:
+        result = ctx.tools.execute(resp.tool_calls)
+        resp = ctx.llm.chat(user_msg + result)
+    return resp.text</code></pre></figure>
+<p>换模型时，循环<strong>一个字不改</strong>，改的是启动配置：让 <code>ctx.llm</code> 指向另一个实现。</p>
+<p>"旁边挂一个"落到的位置，就是启动配置里那一行，循环的代码不动。</p>
 </section>
-<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 第一原则：一切皆插件</h2>
-<p>dsh 建在 <a href="https://github.com/cordiverse/cordis">Cordis</a> 上。Cordis 提供三样东西：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>机制</th><th>含义</th></tr></thead><tbody><tr><td>共享上下文（ctx）</td><td>插件把服务挂到 <code>ctx.xxx</code> 上，别人按名字取用</td></tr><tr><td>类型化事件</td><td>插件发事件，别的插件监听，不需要互相 import</td></tr><tr><td>可逆副作用</td><td>插件的每一次注册都是副作用，卸载时自动撤销</td></tr></tbody></table></div>
-<p>关键在第三行。<strong>没有特权内核</strong>——模型适配器、工具注册表、会话日志，甚至 agent loop 本身，全都是插件。所以每一个都能从配置里换掉。</p>
-<p>这和"写一个 while 循环"的根本差别是：循环里每加一个能力（比如"支持新模型"），代码就要改一次，第三个模型时循环里已经有 3 个 if；而插件架构里，加能力是"旁边再挂一个插件"，循环一行不用动。</p>
-<p>代价也明显：概念多、调试难、启动慢。后面 §9 会算这笔账。</p>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. dsh 的架构，其实只回答三个问题</h2>
+<p>把上面的例子放大到整个系统，dsh 只是在回答三个问题：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>问题</th><th>答案</th><th>对应的东西</th></tr></thead><tbody><tr><td>发生的事记在哪？</td><td>一本只能往后写的账本</td><td>会话日志</td></tr><tr><td>模型这次该看到什么？</td><td>从账本里算出来</td><td>提示词组装</td></tr><tr><td>想加新能力，改哪？</td><td>加一个插件，不改主干</td><td>Cordis</td></tr></tbody></table></div>
+<p>三个问题答完，架构就清楚了。剩下的名词都是这三件事的零件。</p>
+<p><strong>关键在第二个答案："算出来"。</strong></p>
+<p>多数系统把"模型该看到什么"存在内存里（一个 <code>history</code> 数组），边跑边改。dsh 不存这个数组——它每次<strong>从账本重新算一遍</strong>。</p>
+<p>这一个选择改了下面四件事：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>如果存 history</th><th>如果从账本算</th></tr></thead><tbody><tr><td>进程挂了 history 就没了</td><td>账本在磁盘，重启接着算</td></tr><tr><td>想回放三个月前的请求</td><td>做不到，history 早被覆盖</td><td>账本还在，能重放</td></tr><tr><td>想 fork 一条分支</td><td>要深拷贝数组</td><td>复制账本前缀即可</td></tr><tr><td>内存和磁盘两份状态</td><td>可能不一致</td><td>只有一份真相</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 组合：profile、bundle、patch</h2>
-<p>插件树不是硬编码的，是拼出来的。三层概念、四种叠加来源：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>是什么</th><th>例子</th></tr></thead><tbody><tr><td>profile</td><td>一套具名组装</td><td><code>web</code>、<code>headless</code>、<code>sdk</code>、<code>acp</code></td></tr><tr><td>bundle（组合包）</td><td>配置项 + 挂载代码的发行格式</td><td><code>dsh-base</code>、<code>dsh-web-app</code></td></tr><tr><td>patch</td><td>按 id 定位条目、替换其 config 或插入新条目</td><td><code>cordis.patch.yml</code></td></tr></tbody></table></div>
-<p>叠加顺序是固定的：<strong>profile 里的 bundle（有序）→ 该 profile 的 <code>cordis.patch.yml</code> → home patch → <code>--patch</code> overlay</strong>。后一层覆盖前一层。</p>
-<p><code>dsh-base</code> 是 web/headless/sdk/acp 四个 profile 共享的第一层，装的是模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。<code>dsh-web-app</code> 在上面加浏览器应用，<code>dsh-headless</code> 加一次性运行器。</p>
-<p>想看清自己机器上跑的是什么树，一条命令：</p>
-<figure class="code code--lang"><span class="code-lang">sh</span><button class="copy" type="button">复制</button><pre><code>dsh --profile web --dump-config</code></pre></figure>
-<p>它打印出的每个条目都能被你自己的 patch 替换。这是"可组合"和"可定制"的分界线——<strong>能 dump 出来，才算真的可配置</strong>。</p>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 一次请求的流水账</h2>
+<p>用户说："我要退第 3 件商品。"</p>
+<p>dsh 依次做下面这八件事，每一步结束后都会往账本追加至少一条记录，下面是完整顺序：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>谁做</th><th>做什么</th><th>写进账本</th></tr></thead><tbody><tr><td>1</td><td>循环</td><td>领到这句话，开一个"轮次"</td><td><code>turn/start</code></td></tr><tr><td>2</td><td>循环</td><td>问插件：这一步该用哪个模型</td><td>（快照保存，不写）</td></tr><tr><td>3</td><td>提示词组装</td><td>拼出"系统规则 + 最近对话 + 工具说明"</td><td>无（拼出来的）</td></tr><tr><td>4</td><td>循环</td><td>把拼好的东西发给模型</td><td><code>request/header</code></td></tr><tr><td>5</td><td>模型</td><td>回："先查订单，参数是 order_123"</td><td><code>assistant/message</code></td></tr><tr><td>6</td><td>工具层</td><td>执行 <code>query_order</code>，拿到"已签收"</td><td><code>tool/call</code> + <code>tool/result</code></td></tr><tr><td>7</td><td>循环</td><td>还有工具调用欠着，进下一步</td><td><code>step/end</code>，然后回到第 3 步</td></tr><tr><td>8</td><td>循环</td><td>模型这次回了最终答案，没有工具调用</td><td><code>turn/end</code></td></tr></tbody></table></div>
+<p>一个 5 步的请求，这样的记录大约 47 条，占 47 KB 左右。</p>
+<p><strong>注意第 3 步</strong>：模型看到的内容不是存着的，是<strong>现拼的</strong>。拼的原料是账本里的记录（第 4、5、6 步写进去的那些）。</p>
+<p>"唯一真源"落到操作层，就是账本是原料、其他都是成品，成品可以随时重做。</p>
+<h3>3.1 账本真的长这样</h3>
+<p>上面那张表是抽象说法。真实的记录是这样一行行追加的：</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{&quot;seq&quot;:118,&quot;turn&quot;:7,&quot;step&quot;:3,&quot;type&quot;:&quot;tool/call&quot;,&quot;ts&quot;:1732435218447,
+ &quot;call_id&quot;:&quot;call_9f2&quot;,&quot;name&quot;:&quot;query_order&quot;,&quot;args&quot;:{&quot;order_id&quot;:&quot;order_123&quot;},&quot;bytes&quot;:86}
+{&quot;seq&quot;:119,&quot;turn&quot;:7,&quot;step&quot;:3,&quot;type&quot;:&quot;tool/result&quot;,&quot;ts&quot;:1732435218552,
+ &quot;call_id&quot;:&quot;call_9f2&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;bytes&quot;:1240,&quot;tokens&quot;:412}
+{&quot;seq&quot;:120,&quot;turn&quot;:7,&quot;step&quot;:3,&quot;type&quot;:&quot;step/end&quot;,&quot;ts&quot;:1732435218560,
+ &quot;usage&quot;:{&quot;input&quot;:3184,&quot;cached&quot;:2902,&quot;output&quot;:96},&quot;ms&quot;:1153}
+{&quot;seq&quot;:121,&quot;turn&quot;:7,&quot;step&quot;:4,&quot;type&quot;:&quot;step/start&quot;,&quot;ts&quot;:1732435218561}</code></pre></figure>
+<p>四个字段值得注意：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>作用</th></tr></thead><tbody><tr><td><code>seq</code></td><td>严格递增的序号，并发写入时靠它定序</td></tr><tr><td><code>turn</code> / <code>step</code></td><td>定位这条记录属于哪一轮哪一步</td></tr><tr><td><code>ts</code></td><td>毫秒时间戳，用于算耗时和超时</td></tr><tr><td><code>bytes</code> / <code>tokens</code></td><td>这条记录占多大，用于算成本和截断</td></tr></tbody></table></div>
+<p><code>seq</code> 连续且递增，意味着<strong>任何两条记录之间不会插进第三条</strong>。这是"日志即真相"能成立的基础——如果顺序会乱，重放出来的历史就是错的。</p>
+<p>一次 5 步的请求，<code>seq</code> 大约从 100 走到 147，共 47 条。第 120 行那条 <code>step/end</code> 里的 <code>usage</code> 告诉我们：这一步输入 3,184 token，其中 2,902 命中缓存（91%），输出 96 token，耗时 1,153 ms。</p>
+<p>这三个数直接对应成本：命中部分按 ¥0.05/百万算，未命中的 282 token 按 ¥10.24/百万算，输出 96 token 按 ¥6.42/百万算。加起来约 0.0012 元。</p>
+<p><strong>日志不只是审计，它就是计费的数据源。</strong> 这是"只记一份"的另一个好处。</p>
 </section>
-<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 六个核心包</h2>
-<p>不管挂多少插件，主干是这六个：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>包</th><th>职责</th><th>ctx 键</th></tr></thead><tbody><tr><td><code>core/session</code></td><td>仅追加的会话事件日志与内存存储，唯一真源</td><td><code>ctx.sessions</code></td></tr><tr><td><code>core/system-prompt</code></td><td>提示词片段与工具 schema 的组装</td><td><code>ctx.systemPrompt</code></td></tr><tr><td><code>core/tools</code></td><td>作用域化的工具注册表 + 带把关的执行流水线</td><td><code>ctx.tools</code></td></tr><tr><td><code>core/agent</code></td><td><code>Agent</code> 接口、活跃注册表、<code>agent/*</code> 事件</td><td><code>ctx.agents</code></td></tr><tr><td><code>core/agent-loop</code></td><td>实现该接口的默认驱动器</td><td><code>ctx.agentLoop</code></td></tr><tr><td><code>core/scope</code></td><td>按 agent 划分作用域的注册原语（纯库）</td><td>无</td></tr></tbody></table></div>
-<p>两个设计点值得注意。</p>
-<p><strong><code>agent</code> 和 <code>agent-loop</code> 是分开的。</strong> 前者是接口，后者是默认实现。扩展插件只依赖 <code>agent</code>（要发起 agent 时也是），<strong>绝不直接依赖 <code>agent-loop</code></strong>。所以循环是可替换的——这是插件架构落到具体模块上的体现。</p>
-<p><strong><code>scope</code> 是纯库，没有 ctx 键。</strong> 它在模块图里位于 <code>session</code> 和 <code>system-prompt</code> 之下，正是为了让这两个消费它而不形成循环依赖。依赖方向是被精心安排过的。</p>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 那些名词，一句话一个</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>名词</th><th>一句话</th><th>为什么需要它</th></tr></thead><tbody><tr><td><strong>Cordis</strong></td><td>让"挂插件"这件事成立的框架</td><td>提供"注册/撤销"的机制</td></tr><tr><td><strong>ctx</strong></td><td>插件之间互相找人的通讯录</td><td><code>ctx.llm</code> 就是"谁能聊天"</td></tr><tr><td><strong>事件</strong></td><td>广播：谁想听谁听，发的人不需要知道谁在听</td><td>加功能不用改发的人</td></tr><tr><td><strong>插件树</strong></td><td>谁依附于谁的层级</td><td>卸载一个，下面的一起卸</td></tr><tr><td><strong>profile</strong></td><td>一套插件清单</td><td><code>web</code> / <code>headless</code> / <code>sdk</code> 就是三份清单</td></tr><tr><td><strong>seam</strong></td><td>一个"岗位说明书"：接口 + 实现 + 使用方</td><td>换实现不影响使用方</td></tr><tr><td><strong>patch</strong></td><td>按 id 改某个插件配置</td><td>不改源码就能定制</td></tr></tbody></table></div>
+<p>七个名词里，只有 <strong>ctx</strong> 和 <strong>事件</strong> 是真正需要理解的，其余五个都是它们的衍生物。下面这张表说明每个名词分别由谁衍生出来。</p>
+<ul><li>有 ctx，才有"换零件不改循环"</li><li>有事件，才有"加功能不改主干"</li><li>seam 是 ctx 的用法规范（接口要单独立出来）</li><li>profile / patch 是启动时怎么组装这棵树的配置格式</li><li>Cordis 是上面这些机制的总称</li></ul>
 </section>
-<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 三个事件域</h2>
-<p>事件不都在一个池子里。dsh 分三个域，判断标准很实用：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>域</th><th>例子</th><th>什么时候用</th><th>存在哪</th></tr></thead><tbody><tr><td>会话事件</td><td><code>turn/start</code>、<code>step/end</code>、<code>tool/result</code></td><td><strong>重载后还要存在的事实</strong></td><td>持久日志</td></tr><tr><td>Agent 事件</td><td><code>agent/pre-step</code>、<code>agent/request</code></td><td>观察或拦截进行中的工作</td><td>内存</td></tr><tr><td>能力事件</td><td><code>fs/<em></code>、<code>tools/</em></code>、<code>telemetry/*</code></td><td>给某个 seam 挂策略或适配器</td><td>由 seam 定义</td></tr></tbody></table></div>
-<p>一条判据：<strong>这个事实在重载后还必须存在吗？</strong> 是，就进会话日志；不是，就走 agent 事件。</p>
-<p>这条判据直接决定了恢复能力。会话日志是"模型可见即已记录"——每个模型请求都必须能从日志重建。所以断线、重启、fork 全都从日志派生，不需要额外的状态机。</p>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 这样设计换来了四件"换掉不改主干"</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>换什么</th><th>改哪</th><th>主干代码</th></tr></thead><tbody><tr><td>换模型</td><td>启动配置里换一个适配器插件</td><td>不动</td></tr><tr><td>加工具</td><td>写一个工具插件注册到 <code>ctx.tools</code></td><td>不动</td></tr><tr><td>换沙箱</td><td>换文件系统/进程的 provider</td><td>不动，Bash/PTY/LSP 一起搬走</td></tr><tr><td>加行为（比如"危险操作先确认"）</td><td>监听 <code>tools/pre-execute</code> 事件</td><td>不动</td></tr></tbody></table></div>
+<p>第四行最能说明价值。"危险操作先确认"这个需求，在写死的循环里要加 if；在 dsh 里是挂一个监听器——<strong>需求变了加监听器，不是改循环</strong>。</p>
+<p>上面四行都是"换东西"。还有一种更常见的需求是"加东西"，下一节用加一个工具走一遍。</p>
+<h3>5.1 加一个工具，具体改哪</h3>
+<p>"加工具"这句话太抽象。具体到文件层面是这样：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>做什么</th><th>代码量</th></tr></thead><tbody><tr><td>1</td><td>写一个文件，声明名称、参数 schema、执行函数</td><td>约 60 行</td></tr><tr><td>2</td><td>在插件里注册到 <code>ctx.tools</code></td><td>1 行</td></tr><tr><td>3</td><td>在启动配置里加上这个插件</td><td>1 行</td></tr><tr><td>4</td><td>重启，模型看到新工具</td><td>0 行</td></tr></tbody></table></div>
+<p>第 1 步的 60 行里，真正有逻辑的约 20 行，其余是参数声明和错误处理。第 4 步是 0 行——提示词里列哪些工具，是<strong>从注册表算出来的</strong>，不是手写的清单。</p>
+<p>这一点经常被忽略：如果工具清单是手写的，加工具就要同时改注册代码和提示词字符串，两处容易不一致——模型被告知有一个叫 <code>query_order</code> 的工具，实际注册的是 <code>queryOrder</code>，于是永远调不对。</p>
+<p><strong>清单从注册表算出来，"不一致"这个 bug 类别就消失了。</strong></p>
 </section>
-<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 一个轮次里发生了什么</h2>
-<p>先定两个词，多数人混：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>词</th><th>定义</th></tr></thead><tbody><tr><td><strong>步骤（step）</strong></td><td>一次模型请求 + 它调用的工具</td></tr><tr><td><strong>轮次（turn）</strong></td><td>零或多个步骤；在领取首条输入前打开，在不再欠任何工作时关闭</td></tr></tbody></table></div>
-<p>一个轮次的骨架：</p>
-<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>turn/start
-  领取下一条输入（+ 一条排队消息）
-  快照模型选择；组装提示词片段 + 本步准入的工具 schema
-  → agent/pre-step        ← 可拒绝、可改写、可放行
-     step/start
-     → agent/request      ← 准备调用（取消则系统与用户消息都不提交）
-     提交系统/用户消息；从日志派生模型历史
-     流式请求 → llm/stream → assistant-stream chunk*
-     tool/call* → tools/pre-execute → tools/execute → tools/post-execute → tool/result*
-     step/end
-     还有工具欠一次请求，或来了新输入 → 领下一条，进入下一步
-  → agent/turn-stopping
-turn/end</code></pre></figure>
-<p>三个细节体现了真实系统的复杂度：</p>
-<p><strong>① <code>agent/pre-step</code> 是"瀑布式"事件。</strong> 监听器必须调 <code>next()</code> 才往下传——所以它能改、能拒、能完全接管这一步。这是"在不改循环的前提下改变行为"的关键机制。</p>
-<p><strong>② 取消的语义是精确的。</strong> 在任一异步阶段取消，系统候选与已接纳的用户消息都不提交。所以"用户点了停止"不会留下半条脏数据。</p>
-<p><strong>③ 每次尝试都刷新运行时事实并派生历史。</strong> 重试会复用组装结果，但历史重新从日志派生——所以日志永远是唯一真源，内存里没有第二份真相。</p>
-<h3>6.1 一次轮次的开销，可以用事件数估</h3>
-<p>这套架构的每个动作都会落事件。数一下就知道成本在哪：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>事件</th><th>每步数量</th><th>5 步合计</th></tr></thead><tbody><tr><td><code>step/start</code> / <code>step/end</code></td><td>2</td><td>10</td></tr><tr><td><code>request/header</code></td><td>1</td><td>5</td></tr><tr><td><code>user/message</code></td><td>1</td><td>5</td></tr><tr><td><code>assistant/message</code></td><td>1</td><td>5</td></tr><tr><td><code>tool/call</code> + <code>tool/result</code></td><td>2×工具数</td><td>约 20</td></tr><tr><td><code>turn/start</code> / <code>turn/end</code></td><td>各 1</td><td>2</td></tr></tbody></table></div>
-<p>一个 5 步、每步 2 次工具调用的轮次，约产生 <strong>47 个持久事件</strong>。按每事件平均 1 KB 算，单轮日志约 47 KB。</p>
-<p>对比一下：完整上下文（含 8K token 的观察）是 200 KB 量级。所以<strong>日志比上下文小 4 倍</strong>——这是"事件溯源"能落地的关键，它存的是增量，不是全量快照。</p>
-<p>如果改成每步存全量快照，5 步就是 5 × 200 KB = 1 MB，膨胀 20 倍。这也是为什么 dsh 选择"只追加事件 + 从日志派生"，而不是存快照。</p>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 它是 ReAct 吗</h2>
+<p>形态上是。默认的循环实现里，一个类就叫 <code>ReactLoopInbox</code>，干的正是 ReAct 那件事：请求 → 调工具 → 看结果 → 再请求。</p>
+<p>但两点要说清：</p>
+<p><strong>第一，循环是可替换的。</strong> <code>agent-loop</code> 只是一个默认实现，插件依赖的是 <code>agent</code> 接口。换一个循环不用改其他任何东西。</p>
+<p><strong>第二，ReAct 里的"Thought"不在循环里。</strong> 论文里的 Thought 是提示词结构（让模型输出"思考：… 行动：…"）；在 dsh 里，思考发生在模型内部，循环拿到的只有结构化的工具调用。</p>
+<p>所以准确定位是：<strong>默认实现是 ReAct 形态，架构本身是"轮次 + 步骤"的状态机。</strong></p>
 </section>
-<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 它是 ReAct 吗</h2>
-<p>形态上是。默认驱动器的 inbox 类叫 <code>ReactLoopInbox</code>，干的正是 ReAct 那件事：请求 → 调工具 → 看结果 → 再请求。</p>
-<p>但有三点要说清：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>说法</th><th>准确性</th></tr></thead><tbody><tr><td>"dsh 是 ReAct"</td><td>形态上是，默认 driver 就是 ReAct 循环</td></tr><tr><td>"dsh 硬编码了 ReAct"</td><td>不对，loop 是可替换插件（<code>ctx.agentLoop</code>）</td></tr><tr><td>"ReAct 的 Thought 是一个独立阶段"</td><td>不对，思考在模型内部（reasoning token），循环只看到"请求"和"工具调用"</td></tr></tbody></table></div>
-<p>第三行值得展开。ReAct 论文里的 Thought 是<strong>提示词结构</strong>，让模型输出"思考：…… 行动：……"。而在 dsh 里，思考发生在模型内部，循环拿到的只有结构化的 tool call。所以同一套循环既能跑 ReAct 式的提示，也能跑纯 function calling——差别在提示词，不在循环。</p>
-<p><strong>一句话：形态是 ReAct，架构是可替换的 turn/step 状态机。</strong></p>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 代价</h2>
+<p>不能只讲好处。这套设计有四笔账：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>代价</th><th>表现</th></tr></thead><tbody><tr><td>概念多</td><td>要理解 ctx、事件、scope、realm 才能改代码</td></tr><tr><td>调试绕</td><td>一个行为跨 3–5 个插件，看调用栈看不出全貌</td></tr><tr><td>启动慢</td><td>插件初始化 200–500 ms，比单体慢 3–5 倍</td></tr><tr><td>需要文档</td><td>改之前得先查"这个行为归谁"，不能靠读代码猜</td></tr></tbody></table></div>
+<p>它适合<strong>要被外部扩展、生命周期以年计</strong>的平台。自己团队做一个固定流程的 agent，200 行循环更好维护。</p>
+<p>判断标准：<strong>你的 harness 会不会被第三方扩展？</strong></p>
 </section>
-<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 能力 seam：换一个 provider 就换了整个产品</h2>
-<p>seam 是一组三角：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>角色</th><th>做什么</th></tr></thead><tbody><tr><td>Service Definition</td><td>声明接口</td></tr><tr><td>Service Provider</td><td>实现它</td></tr><tr><td>Consumer</td><td>用它（通常是面向模型的工具）</td></tr></tbody></table></div>
-<p>一个包可以兼任多个角色，但<strong>单一角色本身不是 seam</strong>——加一项能力要把三者一起设计。</p>
-<p>seam 的威力在文件系统那个例子里：文件系统与进程提供方共享同一个"执行世界"，所以把它们指向远程沙箱，Bash、PTY、LSP 会一起搬过去，不需要为沙箱做专门的 fork。</p>
-<p>换一个 provider 的连锁效应，就是从这个共用执行世界来的。</p>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 我们能借的四条</h2>
+<p>不做插件架构，也能借这四条：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>原则</th><th>怎么用</th></tr></thead><tbody><tr><td>只记事实，不记成品</td><td>存事件，不存拼好的上下文，重启能重算</td></tr><tr><td>接口单独立出来</td><td>模型、工具、沙箱都先定义接口再实现</td></tr><tr><td>用事件代替 if</td><td>加需求时先想"能不能挂个钩子"</td></tr><tr><td>配置分层可 dump</td><td>base → 应用 → 用户 patch，能打印出最终配置</td></tr></tbody></table></div>
+<p>第一条最实用：把 <code>messages</code> 数组换成"事件 + 启动时重放"，进程崩溃后能从最后一条 <code>seq</code> 接着算，不用回滚到请求起点。</p>
 </section>
-<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 这套架构的代价</h2>
-<p>不能只讲好处。插件化有四笔账：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>代价</th><th>表现</th></tr></thead><tbody><tr><td>学习曲线</td><td>Cordis 的服务、事件、realm、scope 四组概念，比 while 循环多约 10 倍的概念量</td></tr><tr><td>调试难</td><td>一个行为要跨 3–5 个插件才看得全，调用栈不直观</td></tr><tr><td>性能</td><td>每次注册要走事件分发，插件初始化约 200–500 ms，冷启动比单体慢 3–5 倍</td></tr><tr><td>认知负担</td><td>"改这里会不会影响那里"要靠架构文档，不能靠读代码</td></tr></tbody></table></div>
-<p>所以它适合<strong>要长期演进、要给别人扩展</strong>的平台。如果只是给自己团队做一个固定流程的 agent，这套架构是负债——一个 200 行的循环更好维护。</p>
-<p>判断标准：<strong>你的 harness 会不会被第三方扩展？</strong> 会，插件化值得；不会，别学。</p>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>循环里 if 越来越多</td><td>把变化写进了不变的地方</td><td>数循环里的分支数</td><td>抽接口，改由配置决定</td></tr><tr><td>重启后行为不一致</td><td>内存里存了第二份状态</td><td>重启前后对比</td><td>只留日志为真源</td></tr><tr><td>换模型要改五处</td><td>没定义接口</td><td>搜模型名出现次数</td><td>抽适配器</td></tr><tr><td>插件卸了还留副作用</td><td>注册没返回撤销函数</td><td>卸载后看指标</td><td>注册即返回 disposer</td></tr><tr><td>配置改了不生效</td><td>patch 层优先级搞错</td><td>dump 配置对比</td><td>按层排查</td></tr></tbody></table></div>
 </section>
-<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 对我们的启示：四条能借的原则</h2>
-<p>即使不做插件架构，dsh 有四个设计原则可以直接借：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>原则</th><th>怎么用</th></tr></thead><tbody><tr><td>单一真源</td><td>会话日志是唯一真相，内存里的状态都是投影，可随时重建</td></tr><tr><td>事件分区</td><td>用"重载后是否还需要"判断该不该持久化</td></tr><tr><td>seam 化</td><td>模型、工具、沙箱都定义接口，实现可替换</td></tr><tr><td>配置分层</td><td>base → 应用 → 用户 patch，三层覆盖，能 dump</td></tr></tbody></table></div>
-<p>第二条最实用：有的系统把"这一步用了多少 token"也持久化了，导致日志膨胀；按这条判据它应该走内存事件。</p>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<ol><li>能用代码说清"加一个模型"在写死循环和插件架构下各要改什么。</li><li>能说出"只记事实不记成品"带来的三个好处。</li><li>能判断你的系统该不该做插件化。</li></ol>
 </section>
-<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 失败模式</h2>
-<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>加了功能后循环越来越乱</td><td>直接改 loop，没走事件</td><td>看 loop 文件的 if 分支数</td><td>改成 waterfall 事件</td></tr><tr><td>重启后行为不一致</td><td>内存里存了第二份状态</td><td>重启前后对比</td><td>只保留日志为真源</td></tr><tr><td>换模型要改五处</td><td>没做 seam</td><td>搜模型名字出现次数</td><td>抽适配器接口</td></tr><tr><td>插件卸载后残留行为</td><td>注册没做可逆</td><td>卸载后看指标</td><td>所有注册返回 disposer</td></tr><tr><td>配置改了不生效</td><td>patch 层优先级搞错</td><td>dump-config 对比</td><td>按层序排查</td></tr></tbody></table></div>
-<p>第一条最常见：一开始循环很干净，三个月后里面塞了 20 个 if。dsh 的解法是把这些 if 变成事件监听器——加功能不改循环，挂插件。</p>
-</section>
-<section class="sec" id="s12"><h2><span class="sec-num">12</span>11.5 一个真实的数字：dsh 仓库的规模</h2>
-<p>如果要照着做一个，先知道量级：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>数值</th></tr></thead><tbody><tr><td>仓库文件</td><td>26,160</td></tr><tr><td>TypeScript 为主</td><td>是</td></tr><tr><td>核心包</td><td>6 个</td></tr><tr><td>随附 profile</td><td>5 个（web/headless/sdk/sdk-minimal/acp）</td></tr><tr><td>架构文档</td><td>179 行，覆盖从启动到扩展点</td></tr><tr><td>桌面应用体积</td><td>210 MB（asar 包，含渲染进程）</td></tr></tbody></table></div>
-<p>6 个核心包对应的代码量，官方文档没给，但从职责推：session 最重（日志、迁移、投影），tools 次之（注册表、执行流水线、把关），agent-loop 最轻（driver 逻辑）。</p>
-<p>这也解释了为什么"照着写一个"很难：不是代码量的问题，是<strong>每个包都要处理迁移</strong>——session 有 v0/v1 到 vN 的格式迁移，配置有 patch 层序，事件有版本兼容。这些都不产生功能，但少了就没法演进。</p>
-</section>
-<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 什么情况下这些结论不成立</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>结论</th><th>推翻条件</th></tr></thead><tbody><tr><td>一切皆插件</td><td>单团队、单产品、不做扩展时，直接写更省</td></tr><tr><td>日志是唯一真源</td><td>请求量大到日志写不动时，要分级（热状态存 Redis）</td></tr><tr><td>loop 可替换</td><td>只有一个模型适配器时，抽象是浪费</td></tr></tbody></table></div>
-</section>
-<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 验收</h2>
-<ol><li>能说出 profile、bundle、patch 三者的关系，以及叠加顺序。</li><li>能说出六个核心包各自管什么，<code>agent</code> 和 <code>agent-loop</code> 为什么分开。</li><li>能用"重载后是否还需要"判断一个事实该进哪个事件域。</li><li>能解释"形态是 ReAct，架构不是硬编码 ReAct"。</li></ol>
-</section>
-<section class="sec" id="s15"><h2><span class="sec-num">15</span>14. 复盘卡</h2>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
 <figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
-<p>我原来以为 harness 就是一个循环加上几个工具，实际差在循环外面还有一层——事件、seam、配置分层，这些东西不产生功能，但决定了这个系统能不能被别人扩展。</p>
+<p>我原来以为 harness 就是一个循环加几个工具，实际差在"循环里该写什么"——写死的部分越少，这个系统活得越久。</p>
+<p>复盘卡里那句"写死的部分越少，这个系统活得越久"，落到工程上就是四件可执行的事：日志只追加、接口先定、需求先想钩子、配置能 dump。</p>
 </section>
-<section class="sec" id="s16"><h2><span class="sec-num">16</span>15. 延伸</h2>
-<ul><li>第 19 章：会话日志，唯一真源怎么设计</li><li>第 20 章：提示词组装，七个片段怎么拼</li><li>第 21 章：工具注册表与执行流水线</li><li>第 22 章：多 Agent，subagent 与 Agent Teams</li><li>源码：<a href="https://github.com/deepseek-ai/deepseek-harness">deepseek-ai/deepseek-harness</a></li></ul>
-<p>结论是：一个生产级 harness 的复杂度不在"调模型"，在"让一切可替换"。Cordis 的插件树、三域事件、能力 seam、配置分层，四件事都在解决同一个问题——怎么让这个系统在两年后还能加东西，而不是重写。</p>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 延伸</h2>
+<ul><li>第 19 章：那本"只能往后写的账本"怎么设计</li><li>第 20 章：模型看到的内容怎么拼出来</li><li>第 21 章：工具怎么注册、怎么把关</li><li>第 22 章：多 Agent 怎么接进来</li><li>源码：<a href="https://github.com/deepseek-ai/deepseek-harness">deepseek-ai/deepseek-harness</a></li></ul>
+<p>小结：dsh 的复杂度不在"调模型"，在"让变化的东西不写进不变的地方"。四件事——只记事实、接口独立、事件代替 if、配置可查——都在服务这一条。</p>
 </section></article>
     <nav class="pager"><a class="nav-prev" href="17-pricing-margin-reconciliation.html"><span>上一章</span><b>17 · 定价、毛利与对账：三套数字怎么对上</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
     <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
