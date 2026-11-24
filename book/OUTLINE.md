@@ -112,7 +112,7 @@
 | 18A | [插件怎么管：代码组织、依赖与语言](part-06-harness/18A-plugin-and-code-organization.md) ✅ | 插件在文件层面是什么？装包五道门？为什么全用 TS？ | 装包流程 + 十一组清单 |
 | 18B | [DSH 的架构图、流程图与时序图](part-06-harness/18B-dsh-diagrams.md) ✅ | 分层怎么画？一次 turn 的事件顺序？三域怎么分？ | 十张图 + 四条协调规则 |
 | 19 | [日志：唯一真源与事件词汇](part-06-harness/19-session-log-and-replay.md) ✅ | 13 类事件各自负责什么？seq 为什么必须连续？请求头为什么也在日志里？ | 事件表 + 封套规范 |
-| 19A | surface 与投影 | `surfaceOp` 怎么遮蔽？为什么用 seq 不用下标？四种投影为什么不打架？ | fold 伪代码 + 投影表 |
+| 19A | [surface 与投影](part-06-harness/19A-surface-and-projection.md) ✅ | `surfaceOp` 怎么遮蔽？为什么用 seq 不用下标？四种投影为什么不打架？ | fold 伪代码 + 投影表 |
 | 19B | 压缩与卸载 | 70%/85% 两个阈值怎么定？为什么先剪后压？摘要丢了什么会致命？ | 四道工序 + 摘要规范 |
 | 19C | 持久化与崩溃恢复 | 一个 seam 两个后端怎么选？write-behind 窗口多长？崩溃后为什么补而不修？ | 写路径时序 + closer 规则 |
 | 19D | 重放、fork 与格式迁移 | 种子为什么必须是连续前缀？四次迁移怎么排？旧程序读到新日志怎么办？ | 重放实验 + 迁移链 |
