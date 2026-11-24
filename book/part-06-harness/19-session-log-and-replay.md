@@ -120,7 +120,7 @@ flowchart TB
 
 五组的划分标准是**回答什么问题**：骨架回答"什么时候"，输入回答"给了什么"，输出回答"产出了什么"，工具回答"做了什么"，元信息回答"用什么配置做的"。
 
-这 14 类之外，插件还能通过 declaration merging 往同一张表里加仅日志事件。当前版本一共 65 类、36 个命名空间，其中只有 5 类是产生消息的 surface 事件（`system/message`、`developer/message`、`user/message`、`assistant/message`、`tool/result`）——只有这 5 类必须带 `surfaceOp`。
+这 14 类之外，插件还能通过 declaration merging 往同一张表里加仅日志事件。当前版本一共 65 类、36 个命名空间，其中只有 5 类是产生消息的 surface 事件（`system/message`、`developer/message`、`user/message`、`assistant/message`、`tool/result`）——只有这 5 类要带 `surfaceOp`。
 
 `turn` 和 `step` 是两层循环：turn 是一次用户交互，step 是一次模型调用加它触发的工具执行。一个 turn 可以有零个 step——用户发了一句"你好"，模型直接回，没有工具调用，那这个 turn 里就只有一条 `assistant/message`。
 
@@ -137,7 +137,7 @@ flowchart TB
 | 定时任务 | cron | 到点触发的提醒 |
 | 目标续轮 | goal | 长目标自动进入下一轮 |
 
-四种来源的消息对模型来说都是 user 角色，投影时原样展开。但日志里必须能区分——因为计费要区分（注入的 token 不该算用户头上），排障也要区分（模型"莫名其妙知道"某个文件变了，是因为有一条注入消息）。
+四种来源的消息对模型来说都是 user 角色，投影时原样展开。但日志里要能区分——因为计费要区分（注入的 token 不该算用户头上），排障也要区分（模型"莫名其妙知道"某个文件变了，是因为有一条注入消息）。
 
 `source` 字段存在的理由在此：**结构上等价，语义上不等价**。
 
@@ -193,7 +193,7 @@ flowchart TB
 |---|---|---|
 | `content` | 模型 | 结果正文，进 surface |
 | `error` | 系统 | 失败身份，仅 `isError: true` 时可带 |
-| `meta` | 前端 | 渲染载荷，核心不管形状，但必须可序列化 |
+| `meta` | 前端 | 渲染载荷，核心不管形状，但要可序列化 |
 
 `meta` 是"给界面用、不给模型看"的那部分。比如编辑文件的结果，模型只需要知道"改成功了"，前端需要知道"改了哪几行、diff 长什么样"。这份 diff 就放 `meta`，重放时能画出一样的卡片。
 

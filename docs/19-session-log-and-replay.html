@@ -295,14 +295,14 @@ blockquote p{margin:.4em 0}
     E3[&quot;session/end-seed&quot;]
   end</pre></figure>
 <p>五组的划分标准是<strong>回答什么问题</strong>：骨架回答"什么时候"，输入回答"给了什么"，输出回答"产出了什么"，工具回答"做了什么"，元信息回答"用什么配置做的"。</p>
-<p>这 14 类之外，插件还能通过 declaration merging 往同一张表里加仅日志事件。当前版本一共 65 类、36 个命名空间，其中只有 5 类是产生消息的 surface 事件（<code>system/message</code>、<code>developer/message</code>、<code>user/message</code>、<code>assistant/message</code>、<code>tool/result</code>）——只有这 5 类必须带 <code>surfaceOp</code>。</p>
+<p>这 14 类之外，插件还能通过 declaration merging 往同一张表里加仅日志事件。当前版本一共 65 类、36 个命名空间，其中只有 5 类是产生消息的 surface 事件（<code>system/message</code>、<code>developer/message</code>、<code>user/message</code>、<code>assistant/message</code>、<code>tool/result</code>）——只有这 5 类要带 <code>surfaceOp</code>。</p>
 <p><code>turn</code> 和 <code>step</code> 是两层循环：turn 是一次用户交互，step 是一次模型调用加它触发的工具执行。一个 turn 可以有零个 step——用户发了一句"你好"，模型直接回，没有工具调用，那这个 turn 里就只有一条 <code>assistant/message</code>。</p>
 <p>零 step 是合法的，所以要允许。但反过来不成立：没有 <code>turn/start</code> 的 <code>step/start</code> 是脏数据，加载时会拒绝。</p>
 </section>
 <section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 三种输入：为什么 user 也要分来源</h2>
 <p><code>user/message</code> 看起来最直白：用户说的话。但实际有四种来源：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>来源</th><th><code>source</code> 标记</th><th>典型场景</th></tr></thead><tbody><tr><td>真人输入</td><td>无（默认）</td><td>用户打字</td></tr><tr><td>系统注入</td><td><code>agent.inject()</code></td><td>文件变更通知、子目录 AGENTS.md、技能内容</td></tr><tr><td>定时任务</td><td>cron</td><td>到点触发的提醒</td></tr><tr><td>目标续轮</td><td>goal</td><td>长目标自动进入下一轮</td></tr></tbody></table></div>
-<p>四种来源的消息对模型来说都是 user 角色，投影时原样展开。但日志里必须能区分——因为计费要区分（注入的 token 不该算用户头上），排障也要区分（模型"莫名其妙知道"某个文件变了，是因为有一条注入消息）。</p>
+<p>四种来源的消息对模型来说都是 user 角色，投影时原样展开。但日志里要能区分——因为计费要区分（注入的 token 不该算用户头上），排障也要区分（模型"莫名其妙知道"某个文件变了，是因为有一条注入消息）。</p>
 <p><code>source</code> 字段存在的理由在此：<strong>结构上等价，语义上不等价</strong>。</p>
 <p><code>system/message</code> 更细，它有三个规则：</p>
 <ul><li>第一次组装的系统提示词占<strong>节点 0</strong>，哪怕内容是空的也要占位</li><li>空内容的系统节点保留在 surface 上，但投影时<strong>不产生</strong>模型消息</li><li>后续系统节点可以被压缩遮蔽，节点 0 只能被系统消息自己替换</li></ul>
@@ -326,7 +326,7 @@ blockquote p{margin:.4em 0}
 <p>为什么不在写入时就解析成对象？因为解析失败本身是重要信息。模型可能吐出格式错误的 JSON，或者参数类型不对——如果写入时解析，失败就丢了，你只知道"这条工具没执行"，不知道"模型吐了什么"。</p>
 <p>存原始字符串，解析推迟到执行前，失败原因就能完整保留：<code>Invalid JSON at position 12</code>。</p>
 <p><code>tool/result</code> 有三个可选字段，容易混淆：</p>
-<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>给谁看</th><th>说明</th></tr></thead><tbody><tr><td><code>content</code></td><td>模型</td><td>结果正文，进 surface</td></tr><tr><td><code>error</code></td><td>系统</td><td>失败身份，仅 <code>isError: true</code> 时可带</td></tr><tr><td><code>meta</code></td><td>前端</td><td>渲染载荷，核心不管形状，但必须可序列化</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>给谁看</th><th>说明</th></tr></thead><tbody><tr><td><code>content</code></td><td>模型</td><td>结果正文，进 surface</td></tr><tr><td><code>error</code></td><td>系统</td><td>失败身份，仅 <code>isError: true</code> 时可带</td></tr><tr><td><code>meta</code></td><td>前端</td><td>渲染载荷，核心不管形状，但要可序列化</td></tr></tbody></table></div>
 <p><code>meta</code> 是"给界面用、不给模型看"的那部分。比如编辑文件的结果，模型只需要知道"改成功了"，前端需要知道"改了哪几行、diff 长什么样"。这份 diff 就放 <code>meta</code>，重放时能画出一样的卡片。</p>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 请求头：让每个请求成为日志的纯函数</h2>
