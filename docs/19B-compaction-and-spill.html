@@ -319,6 +319,21 @@ blockquote p{margin:.4em 0}
 <p>回取的三个前提：</p>
 <ul><li><strong>有工具</strong>：<code>read</code>、<code>grep</code>、会话全文检索，至少一个。</li><li><strong>有线索</strong>：定位符要带语义（文件名、行列号），不能是一串 UUID。</li><li><strong>代价可接受</strong>：一次回取约 2 秒、2,000 token。如果模型判断"回取比重问用户还贵"，它就不查了。</li></ul>
 <p>第三条最容易被忽略。回取率低，往往不是模型懒，是回取的路径太长——比如要求模型先 <code>list</code> 再 <code>read</code> 再 <code>grep</code>，三步才能拿到一个数字，那它宁愿猜。</p>
+<h3>6.1 压缩产物的结构</h3>
+<p>压缩的产物不是一段自然语言，是一个分槽的结构化对象，随摘要事件一起落盘：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>部分</th><th>内容</th><th>为什么单独留一段</th></tr></thead><tbody><tr><td><code>covers</code></td><td>被遮蔽的 seq 区间</td><td>下次压缩要判区间是否还活着</td></tr><tr><td><code>facts</code></td><td>已确认事实数组，每条带 <code>srcSeq</code></td><td>可逐条回溯到原文</td></tr><tr><td><code>open</code></td><td>未决问题数组</td><td>决定模型下一步问什么</td></tr><tr><td><code>done</code></td><td>已完成动作数组，每条带结果</td><td>防止重复执行</td></tr><tr><td><code>refs</code></td><td>可回取清单：地址、体积、时刻、一句话结论</td><td>回取的入口</td></tr><tr><td><code>budget</code></td><td>用了多少、上限多少</td><td>下次压缩看余量</td></tr><tr><td><code>ver</code></td><td>结构版本号</td><td>换模板时能识别旧产物</td></tr></tbody></table></div>
+<p><code>facts</code> 里的每一条都是五元组：<strong>槽位、文本、实体列表、来源 seq、置信度</strong>。槽位只有四种（约束、结论、状态、偏好），文本一句话，实体是字面量，来源 seq 指回原文，置信度用于冲突时取舍。</p>
+<p>这四段分开存，好处在三个消费方各取所需：模型看到的是渲染后的自然语言（按 <code>facts</code>、<code>open</code>、<code>done</code> 顺序拼），回取器只读 <code>refs</code>，审计读全部字段并逐条比对 <code>srcSeq</code>。</p>
+<h3>6.2 事实怎么抽出来</h3>
+<p>抽取分三层，成本从低到高，只在前一层抽不到时才用下一层：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>适用</th><th>方法</th><th>成本</th></tr></thead><tbody><tr><td>规则层</td><td>单号、金额、日期、路径、URL、状态码</td><td>正则与模式匹配</td><td>微秒级</td></tr><tr><td>结构层</td><td>JSON、CSV、表格、日志行</td><td>按 schema 取字段</td><td>毫秒级</td></tr><tr><td>模型层</td><td>自由文本里的断言（"退款失败因为余额不足"）</td><td>小模型按固定槽位填空</td><td>数十毫秒</td></tr></tbody></table></div>
+<p>三层都要求同一件事：<strong>每条事实必须带来源</strong>。抽不到 <code>srcSeq</code> 的事实直接丢——它无法被校验，也无法在冲突时判断哪条更新。</p>
+<p>抽取之后还有两步收尾。<strong>去重</strong>：同一实体同一槽位出现多次，保留最新一条，旧的降级成历史（不是删除）。<strong>冲突检测</strong>：同一实体同一槽位出现两条不同值，两条都留，标 <code>conflict</code>，让模型在回答时显式说明"系统里有两个不一致的记录"。悄悄选一个，比报错更坏。</p>
+<h3>6.3 用户提起时，怎么找回来</h3>
+<p>回取不是"把摘要展开"，是一条三步的短路：</p>
+<ol><li><strong>抽实体。</strong> 用户新消息进来，先抽实体（单号、金额、文件名、日期）。这一步和 §6.2 的规则层共用同一套抽取器。</li><li><strong>查倒排。</strong> 会话里维护一张 <code>实体 → (seq, refId, factId)</code> 的倒排表。命中就拿到对应的记录。</li><li><strong>决定注入还是点名。</strong> 命中 1–3 条且体积小（单条 2 KB 以内），直接注入上下文；超过 3 条或体积大，就在提示里列一份"可回取清单"，由模型自己点名去读。</li></ol>
+<p>倒排表不需要持久化。会话恢复时重扫一遍日志就能重建，代价是几万条事件的一次遍历——比维护一份需要强一致的外部索引便宜得多。</p>
+<p>这条短路解释了为什么 <code>gist</code> 字段值钱：用户提到"那笔退款"，倒排命中退款单号，<code>gist</code> 一句话就能让模型判断"要不要读详情"。没有 <code>gist</code>，模型只能看到一串定位符，它没有依据判断哪个值得读。</p>
 </section>
 <section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 第四道：兜底截断</h2>
 <p>前三步做完还超，说明这段对话本身装不进窗口。这时只能截断最老的轮次。</p>
