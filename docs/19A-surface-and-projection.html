@@ -295,7 +295,11 @@ blockquote p{margin:.4em 0}
   }
   return nodes
 }</code></pre></figure>
-<p>复杂度：追加摊还 O(1)，遮蔽 O(被遮节点数)，索引重建 O(当前节点数)。真实实现用分块索引把这最后一项也压下去，但语义就是上面这十几行。</p>
+<p>复杂度：追加摊还 O(1)，遮蔽 O(被遮节点数)，索引重建 O(当前节点数)。</p>
+<p>这里的"索引"指的是 <code>index</code> 那个哈希表：seq → 它在 <code>nodes</code> 里的下标。它只为一件事服务——把"118 在 surface 第几位"从线性扫描变成 O(1)。<code>splice</code> 之后，被遮区间后面的节点全部前移，映射里存的下标集体失效，所以上面这版直接 <code>clear()</code> 再全量重建，求的是正确，不是效率。</p>
+<p>真实实现换一种数据结构就不需要"位置"这个数：按 surface 顺序建一棵带子树大小的平衡树（或按块存的分块链表），遮蔽区间是两次分裂加一次合并，代价 O(log n) 或 O(块数)，不再与节点总数挂钩。三种做法的差别：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>结构</th><th>追加</th><th>遮蔽一段</th><th>适合的规模</th></tr></thead><tbody><tr><td>数组 + 哈希表</td><td>O(1)</td><td>O(n)，要重排后面所有位置</td><td>几千节点，压缩不频繁</td></tr><tr><td>分块链表</td><td>O(1)</td><td>O(√n)，只重排受影响的块</td><td>几万节点</td></tr><tr><td>带子树大小的平衡树</td><td>O(log n)</td><td>O(log n)，区间当一等公民</td><td>十万节点以上</td></tr></tbody></table></div>
+<p>判断标准不是"哪个更快"，是<strong>压缩频率 × 节点数</strong>。一天压几十次、节点几千个，数组版本完全够用；把它换成平衡树属于提前优化，反而增加出错面。</p>
 <p>一次具体演化：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>步骤</th><th>日志追加</th><th>surface 节点序列</th></tr></thead><tbody><tr><td>起点</td><td>10, 22, 41, 77, 118, 240</td><td>10, 22, 41, 77, 118, 240</td></tr><tr><td>第一次压缩</td><td>300，带 <code>replace{118,240}</code></td><td>10, 22, 41, 77, 300</td></tr><tr><td>第二次压缩</td><td>410，带 <code>replace{41,300}</code></td><td>10, 22, 410</td></tr><tr><td>又来一条消息</td><td>420，<code>append</code></td><td>10, 22, 410, 420</td></tr></tbody></table></div>
 <p>日志里此时有 9 条事件，surface 上剩 4 个节点，模型只看到 4 条消息。被遮掉的 6 条一条没删。</p>
