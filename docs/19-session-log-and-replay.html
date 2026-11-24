@@ -223,7 +223,7 @@ blockquote p{margin:.4em 0}
   <aside class="rail">
     <div class="rail-inner">
       <div class="rail-label">本章目录</div>
-      <nav class="toc"><a href="#s1"><span>01</span>. 结论：消息数组根本不存在</a><a href="#s2"><span>02</span>. 事件长什么样</a><a href="#s3"><span>03</span>. 十三类事件，五组分工</a><a href="#s4"><span>04</span>. 三种输入：为什么 user 也要分来源</a><a href="#s5"><span>05</span>. 两种输出：成功的一条，失败的一条</a><a href="#s6"><span>06</span>. 两种工具事件：参数为什么存原始字符串</a><a href="#s7"><span>07</span>. 请求头：让每个请求成为日志的纯函数</a><a href="#s8"><span>08</span>. 一次典型请求有多少条事件</a><a href="#s9"><span>09</span>. 本章没讲什么</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下这套事件模型不成立</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
+      <nav class="toc"><a href="#s1"><span>01</span>. 结论：消息数组根本不存在</a><a href="#s2"><span>02</span>. 事件长什么样</a><a href="#s3"><span>03</span>. 十四类事件，五组分工</a><a href="#s4"><span>04</span>. 三种输入：为什么 user 也要分来源</a><a href="#s5"><span>05</span>. 两种输出：成功的一条，失败的一条</a><a href="#s6"><span>06</span>. 两种工具事件：参数为什么存原始字符串</a><a href="#s7"><span>07</span>. 请求头：让每个请求成为日志的纯函数</a><a href="#s8"><span>08</span>. 一次典型请求有多少条事件</a><a href="#s9"><span>09</span>. 本章没讲什么</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下这套事件模型不成立</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
       <div class="rail-foot">Harness</div>
     </div>
   </aside>
@@ -269,8 +269,8 @@ blockquote p{margin:.4em 0}
 <p>一句话：<code>seq</code> 管顺序，<code>time</code> 管时序，<code>turn</code>/<code>step</code> 管归属，<code>callId</code> 管配对，<code>content</code> 管模型，<code>surfaceOp</code> 管记忆。</p>
 <p>同一条结果其实有三份内容，给三个不同的读者：<code>content</code> 给模型，<code>meta</code> 给前端渲染卡片，<code>error</code> 给系统判定失败（三者的分工见 §6）。用户看到的那张带状态标签的卡片来自 <code>meta</code>，模型看到的是 <code>content</code> 里那段 JSON 文字。两者不冲突，因为各取所需；但 <code>meta</code> 一旦没通过 <code>isJsonValue</code> 校验，重放时卡片就画不出来——这是那条硬约束在界面上的后果。</p>
 </section>
-<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 十三类事件，五组分工</h2>
-<p>核心事件 13 类。按职责分五组：</p>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 十四类事件，五组分工</h2>
+<p>核心事件 14 类。按职责分五组：</p>
 <figure class="diagram"><pre class="mermaid">flowchart TB
   subgraph S1[&quot;骨架：时间轴&quot;]
     A1[&quot;turn/start · turn/end&quot;]
@@ -291,9 +291,11 @@ blockquote p{margin:.4em 0}
   end
   subgraph S5[&quot;元信息&quot;]
     E1[&quot;request/header&quot;]
-    E2[&quot;session/end-seed&quot;]
+    E2[&quot;request/context&quot;]
+    E3[&quot;session/end-seed&quot;]
   end</pre></figure>
 <p>五组的划分标准是<strong>回答什么问题</strong>：骨架回答"什么时候"，输入回答"给了什么"，输出回答"产出了什么"，工具回答"做了什么"，元信息回答"用什么配置做的"。</p>
+<p>这 14 类之外，插件还能通过 declaration merging 往同一张表里加仅日志事件。当前版本一共 65 类、36 个命名空间，其中只有 5 类是产生消息的 surface 事件（<code>system/message</code>、<code>developer/message</code>、<code>user/message</code>、<code>assistant/message</code>、<code>tool/result</code>）——只有这 5 类必须带 <code>surfaceOp</code>。</p>
 <p><code>turn</code> 和 <code>step</code> 是两层循环：turn 是一次用户交互，step 是一次模型调用加它触发的工具执行。一个 turn 可以有零个 step——用户发了一句"你好"，模型直接回，没有工具调用，那这个 turn 里就只有一条 <code>assistant/message</code>。</p>
 <p>零 step 是合法的，所以要允许。但反过来不成立：没有 <code>turn/start</code> 的 <code>step/start</code> 是脏数据，加载时会拒绝。</p>
 </section>
@@ -331,6 +333,7 @@ blockquote p{margin:.4em 0}
 <p><code>request/header</code> 存的是发给模型的信封：哪个适配器、什么参数、工具 schema 长什么样。</p>
 <p>四种写入原因：</p>
 <div class="table-wrap"><table class="table"><thead><tr><th>reason</th><th>何时写</th></tr></thead><tbody><tr><td><code>initial</code></td><td>会话第一条请求</td></tr><tr><td><code>resume</code></td><td>进程重启后恢复</td></tr><tr><td><code>change</code></td><td>参数或工具集变了</td></tr><tr><td><code>series</code></td><td>没变，但开了一条新的消息序列</td></tr></tbody></table></div>
+<p><code>request/context</code> 是另一条只记日志的元信息事件：路由、容量、系统提示更新模式变化时才写一条。它不参与请求重建，也不参与信封相等性比较——换句话说，它记录的是"这条请求走了哪条路"，而不是"这条请求长什么样"。两者分开的原因很实际：路由变了不该让前缀缓存失效，而信封变了必须失效。</p>
 <p><code>foldRequestHeader(events)</code> 取最新快照即可重建当前信封。于是有了一个很强的性质：<strong>给定日志的任意前缀，能精确复原当时发出的那个请求</strong>。</p>
 <p>这条性质在排障时价值极高。线上最常见的问题是"同样的输入，为什么今天答得不一样"，答案通常在信封里：温度改了、工具集少了一个、<code>max_tokens</code> 被调小了。如果只存消息不存信封，这些差异全部不可见。</p>
 <p>信封平均 3–5 KB，其中工具 schema 占八成：20 个工具的 schema 约 2,800 token，比大多数对话正文还长。工具集少给一个不只是权限问题，也是每次请求 3 KB 的传输与缓存问题。</p>

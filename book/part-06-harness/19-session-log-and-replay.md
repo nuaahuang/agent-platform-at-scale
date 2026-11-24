@@ -88,9 +88,9 @@ flowchart LR
 
 同一条结果其实有三份内容，给三个不同的读者：`content` 给模型，`meta` 给前端渲染卡片，`error` 给系统判定失败（三者的分工见 §6）。用户看到的那张带状态标签的卡片来自 `meta`，模型看到的是 `content` 里那段 JSON 文字。两者不冲突，因为各取所需；但 `meta` 一旦没通过 `isJsonValue` 校验，重放时卡片就画不出来——这是那条硬约束在界面上的后果。
 
-## 3. 十三类事件，五组分工
+## 3. 十四类事件，五组分工
 
-核心事件 13 类。按职责分五组：
+核心事件 14 类。按职责分五组：
 
 ```mermaid
 flowchart TB
@@ -113,11 +113,14 @@ flowchart TB
   end
   subgraph S5["元信息"]
     E1["request/header"]
-    E2["session/end-seed"]
+    E2["request/context"]
+    E3["session/end-seed"]
   end
 ```
 
 五组的划分标准是**回答什么问题**：骨架回答"什么时候"，输入回答"给了什么"，输出回答"产出了什么"，工具回答"做了什么"，元信息回答"用什么配置做的"。
+
+这 14 类之外，插件还能通过 declaration merging 往同一张表里加仅日志事件。当前版本一共 65 类、36 个命名空间，其中只有 5 类是产生消息的 surface 事件（`system/message`、`developer/message`、`user/message`、`assistant/message`、`tool/result`）——只有这 5 类必须带 `surfaceOp`。
 
 `turn` 和 `step` 是两层循环：turn 是一次用户交互，step 是一次模型调用加它触发的工具执行。一个 turn 可以有零个 step——用户发了一句"你好"，模型直接回，没有工具调用，那这个 turn 里就只有一条 `assistant/message`。
 
@@ -206,6 +209,8 @@ flowchart TB
 | `resume` | 进程重启后恢复 |
 | `change` | 参数或工具集变了 |
 | `series` | 没变，但开了一条新的消息序列 |
+
+`request/context` 是另一条只记日志的元信息事件：路由、容量、系统提示更新模式变化时才写一条。它不参与请求重建，也不参与信封相等性比较——换句话说，它记录的是"这条请求走了哪条路"，而不是"这条请求长什么样"。两者分开的原因很实际：路由变了不该让前缀缓存失效，而信封变了必须失效。
 
 `foldRequestHeader(events)` 取最新快照即可重建当前信封。于是有了一个很强的性质：**给定日志的任意前缀，能精确复原当时发出的那个请求**。
 
