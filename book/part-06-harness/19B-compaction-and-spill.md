@@ -69,6 +69,92 @@ flowchart LR
 
 分类定完之后不是就完了。上线两周看两个数：**哪些定位符被真正回取过**、**回取失败的是哪几类**。从没被回取过的可以降级成冗余（省 token），回取失败的要升级成不可重建（数据打脸了假设）。这套清单是拿数据校准出来的，不是一次评审定死的。
 
+### 1.2 工程上怎么写：把判断挂到工具定义上
+
+判断不能写在压缩器里。压缩器一旦写成 `switch (toolName)`，每加一个工具就要改一次压缩逻辑，而且没人记得改——半年后这段代码就是一堆过期分支。
+
+正确的落点是**工具注册时声明策略**，压缩器只读策略、不做判断：
+
+```ts
+type Replay =
+  | { kind: 'addressable'; ref: Ref }          // 有稳定地址，能再读
+  | { kind: 'replayable'; cmd: string; at: number }  // 能重跑，但结果可能变
+  | { kind: 'opaque' }                          // 拿不回来，只能进摘要
+
+interface ToolPolicy {
+  sideEffect: 'none' | 'write' | 'external'
+  /** 能从参数和结果里算出稳定地址就返回它 */
+  addressable?: (args: JsonValue, result: ToolResult) => Ref | null
+  /** 只读且幂等，才允许重跑 */
+  replayable?: boolean
+}
+
+ctx.tools.registerTool({
+  name: 'read_file',
+  schema: readFileSchema,
+  policy: {
+    sideEffect: 'none',
+    addressable: (a) => ({ scheme: 'file', path: (a as any).path }),
+    replayable: true,
+  },
+  execute: readFile,
+})
+```
+
+压缩时对每条超阈值的工具结果只调一次分类函数：
+
+```ts
+function classify(ev: ToolResultEvent, reg: ToolRegistry): Replay {
+  const def = reg.get(ev.data.name)
+  if (!def) return { kind: 'opaque' }
+
+  const ref = def.policy.addressable?.(ev.data.arguments, ev.data)
+  if (ref) return { kind: 'addressable', ref }
+  if (def.policy.replayable && def.policy.sideEffect === 'none')
+    return { kind: 'replayable', cmd: renderCall(ev), at: ev.time }
+  return { kind: 'opaque' }
+}
+```
+
+三种结果对应三种落盘形态：
+
+| 分类 | 上下文里留下什么 | 谁负责还原 |
+|---|---|---|
+| `addressable` | `spill://…` 或 `file://…` 加一行说明 | `read`/`grep` 直接读 |
+| `replayable` | 命令 + 工作目录 + 发生时刻 | 模型重跑，但要自己判断数据是否已变 |
+| `opaque` | 原文进摘要，不截断 | 无，只能靠摘要写全 |
+
+内置工具的默认策略可以直接抄下面这张表。判断依据只有两条：这个工具读还是写，它的输出有没有一个跨时间稳定的地址。
+
+| 工具 | 策略 | 理由 |
+|---|---|---|
+| `read_file`、`glob`、`grep`、`lsp_*` | addressable + replayable | 只读，输入即地址 |
+| `bash` | replayable，不 addressable | 命令可追溯，但输出随时间变 |
+| `web_fetch` | addressable（URL）+ 不可重跑 | 地址稳定，内容会变 |
+| 数据库只读查询 | replayable 且带参数 | SQL 可复现，但要带隔离级别 |
+| 支付、发消息、删文件 | opaque | 有副作用，重跑就是事故 |
+| 用户消息 | 恒为 opaque | 不分类，直接进摘要 |
+
+这张表是压测时的起点，不是终点。真正的取值要靠回取数据校准：某个工具连续两周没有任何定位符被读过，说明它的输出本来就没人回头查，可以从 addressable 降级成冗余，直接省掉一次 spill 写入。
+
+最后一行是硬编码的：`source === 'user'` 的事件一律不进卸载管道，不管多大。用户可能粘贴一份 200 KB 的日志，那也得原样留着——把用户的话换成定位符，等于告诉模型"你从没收到过这段输入"。
+
+还有一道校验，防止摘要悄悄丢实体：
+
+```ts
+async function assertSummaryCovers(summary: string, retained: RetainedSet) {
+  const missing: string[] = []
+  for (const e of extractEntities(summary)) {   // 单号、金额、日期、路径、URL
+    if (retained.has(e)) continue
+    if (await spill.search(e)) continue
+    missing.push(e)
+  }
+  if (missing.length) throw new SummaryInvariantError(missing)
+}
+```
+
+这段代码不产生任何用户可见的输出，它只做一件事：摘要里提到的每个实体，要么还在保留集里，要么能在 spill 里搜到。两边都找不到，说明摘要凭空写了一个实体——直接报错，比让模型拿着假单号去查库强。
+
 ## 2. 四道工序，按信息损失从小到大
 
 压缩是按顺序做四次减法，阈值从宽到紧：
