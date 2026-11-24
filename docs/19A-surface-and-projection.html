@@ -326,6 +326,15 @@ blockquote p{margin:.4em 0}
 <p><strong>空内容的 system 节点。</strong> 节点 0 即使没有内容也留在 surface 上，作为前缀锚点。它在面上，但投影时不产生消息——存在和可见是两件事。</p>
 <p><strong>节点 0 只能被系统消息精确替换。</strong> 系统提示变了，旧节点 0 被遮掉、换成新的。但它不能被一次跨越它的压缩区间顺手遮掉，否则前缀锚点丢了，缓存和重建都出问题。</p>
 <p><strong>跨窗口的 replace 会失败。</strong> 折叠时只加载了从 <code>baseSeq=300</code> 开始的一段，某条 replace 声明的区间是 <code>[118,240]</code>——端点不在这段里。fold 抛 stale range，调用方要么往前多加载一段，要么跳过这条并记日志。生产上这个错通常出现在分页读历史的时候。</p>
+<h3>7.1 跨窗口与跨会话</h3>
+<p>"窗口"在这里指<strong>加载窗口</strong>（一次从存储读多少事件），与模型的上下文窗口是两件事。两者经常被混为一谈，但一个是 IO 分页，一个是 token 预算。</p>
+<p><strong>跨窗口，指的是同一个会话分段折叠。</strong> 十万条事件不会一次读进内存，UI 滚动、重放、崩溃恢复都按段读。这时有三种做法：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>做法</th><th>怎么保证一致</th><th>代价</th></tr></thead><tbody><tr><td>往前多读一段</td><td>读到能覆盖 replace 区间起点的位置</td><td>多一次 IO，最坏退化成全量读</td></tr><tr><td>延迟应用</td><td>把跨段的 replace 挂起，等窗口补齐再折</td><td>窗口内看到的是压缩前的历史，token 会偏大</td></tr><tr><td>存检查点</td><td>每 N 条事件存一份节点序列 + 两个 generation 计数，从最近检查点往后增量折</td><td>存储增加，N 越小读得越快、存得越多</td></tr></tbody></table></div>
+<p>第三种的数字：一百万条事件、每两千条一个检查点，就有五百个检查点；每个检查点存的是节点 seq 列表，几万个整数，约几十 KB。总量几十 MB，换来的是一次读取最多只折两千条。</p>
+<p><strong>跨会话，指的是另一份日志。</strong> 有三种关系，机制完全不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>关系</th><th>做法</th><th>关键约束</th></tr></thead><tbody><tr><td>fork（分叉）</td><td>取父会话从 seq 0 开始的连续前缀作种子，新会话 seq 从 0 重编，<code>session/end-seed</code> 记下边界</td><td>种子必须是连续前缀，中间断一条就不能用——否则 replace 的端点会落在种子之外</td></tr><tr><td>resume（恢复）</td><td>同一个会话 id 接着写，从最后一条完整事件续上</td><td>依赖崩溃恢复的"补而不修"，见 19C</td></tr><tr><td>无关（两个独立会话）</td><td>日志不共享</td><td>要跨会话记忆只能走日志之外：注入文件、外部库、技能</td></tr></tbody></table></div>
+<p>fork 有一个容易踩的点：种子是<strong>快照</strong>，不是引用。分叉之后父会话继续写，子会话看不到；子会话写的东西也不会回流。想让两边同步，得有一条显式的合并路径，而这套日志模型里没有——它是单写者模型。</p>
+<p>另一条实践中的约束：fork 出来的子会话要能独立重放，父日志就不能立刻删。保留期至少覆盖子会话的存活期。</p>
 </section>
 <section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 代价</h2>
 <p><strong>增量便宜。</strong> 纯尾部追加时，fold 只处理新增事件，前面的节点序列原样复用。一次请求新增 47 条事件，摊到每条约 0.5 μs，可以忽略。</p>
