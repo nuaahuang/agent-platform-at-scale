@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>压缩与卸载 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 19B 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 结论：压缩不是"把对话写短"</a><a href="#s2"><span>02</span>. 四道工序，按信息损失从小到大</a><a href="#s3"><span>03</span>. 第一道：卸载（spill）</a><a href="#s4"><span>04</span>. 第二道：剪枝（prune）</a><a href="#s5"><span>05</span>. 第三道：摘要（compact）</a><a href="#s6"><span>06</span>. 回取：压缩的另一半</a><a href="#s7"><span>07</span>. 第四道：兜底截断</a><a href="#s8"><span>08</span>. 两个阈值怎么定</a><a href="#s9"><span>09</span>. 压缩自己也要花钱</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 什么情况下不需要这套机制</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">19B</div><div class="ch-kicker">Harness</div><h1>压缩与卸载</h1><div class="ch-rule"></div></header>
+<blockquote><p>19A 说清了"遮蔽"这个动作：追加一条带 <code>replace</code> 的事件，把一段历史从模型眼前拿掉。</p><p>这一章说清"拿掉什么、换成什么"。遮蔽只是手段，真正难的是决定哪段能扔、哪段扔了会出事。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 结论：压缩不是"把对话写短"</h2>
+<p>多数人第一次做压缩，写的是这个提示词：</p>
+<blockquote><p>请把以上对话总结成 500 字以内的摘要，保留关键信息。</p></blockquote>
+<p>跑起来也能用，直到某天用户问"我那个订单 20241108 的退款到哪一步了"，模型答"您还没有提到过订单号"。</p>
+<p>问题不在摘要写得不好，在于<strong>摘要把"可重建"和"不可重建"的信息一起压了</strong>。订单号属于后者：它只存在于用户那句话里，扔了就再也找不回来。</p>
+<p>所以压缩的第一性问题是分类，不是写作。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>信息</th><th>判据</th><th>处理</th></tr></thead><tbody><tr><td>不可重建</td><td>只存在于对话里，系统别处查不到：用户约束、偏好、单号、口头承诺</td><td>原样保留，进摘要</td></tr><tr><td>可重建</td><td>系统里还有原件：工具输出、文件内容、网页、日志</td><td>留定位符 + 一句结论</td></tr><tr><td>冗余</td><td>重复输出、已解决的报错、被后续结论覆盖的中间过程</td><td>直接丢</td></tr></tbody></table></div>
+<p>一段历史该走哪条路，按这张图判断：</p>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  I[&quot;一段历史信息&quot;] --&gt; Q{&quot;能从系统重新拿到吗？&quot;}
+  Q -- 能 --&gt; R[&quot;可重建&lt;br/&gt;留指针 + 一句结论&quot;]
+  Q -- 不能 --&gt; S{&quot;后面还会用到吗？&quot;}
+  S -- 会 --&gt; T[&quot;不可重建&lt;br/&gt;原样写进摘要&quot;]
+  S -- 不会 --&gt; U[&quot;冗余&lt;br/&gt;直接丢弃&quot;]</pre></figure>
+<p>判断"可重建"时有个便宜的检验：<strong>这句话里的每个实体，能不能在系统里被一个查询命中？</strong> 订单号能，用户的语气不能；文件内容能，用户为什么改这个文件不能。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 四道工序，按信息损失从小到大</h2>
+<p>压缩是按顺序做四次减法，阈值从宽到紧：</p>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  A[&quot;每个 step 开始&lt;br/&gt;估算当前占用&quot;] --&gt; B{&quot;超过 70%？&quot;}
+  B -- 否 --&gt; Z[&quot;直接发请求&quot;]
+  B -- 是 --&gt; C[&quot;① 卸载&lt;br/&gt;单个工具结果 &gt; 32KB&quot;]
+  C --&gt; D[&quot;② 剪枝&lt;br/&gt;删冗余的工具结果&quot;]
+  D --&gt; E{&quot;仍超过 85%？&quot;}
+  E -- 否 --&gt; Z
+  E -- 是 --&gt; F[&quot;③ 摘要&lt;br/&gt;四段槽位模板&quot;]
+  F --&gt; G[&quot;④ 兜底&lt;br/&gt;仍超则截断最老轮次&quot;]
+  G --&gt; Z</pre></figure>
+<p>顺序不能换，因为四步的损失递增：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>工序</th><th>丢了什么</th><th>还能找回来吗</th><th>典型收益</th></tr></thead><tbody><tr><td>卸载</td><td>正文离开上下文，模型只看到定位符</td><td>能，一条 <code>read</code> 命令</td><td>单条最大 1 MB</td></tr><tr><td>剪枝</td><td>工具结果的原始结构</td><td>部分，靠回取</td><td>每次省 20–40%</td></tr><tr><td>摘要</td><td>对话细节与过程</td><td>不能，只能从原文重读</td><td>一次能把 10 万 token 压到 2 千</td></tr><tr><td>截断</td><td>整轮历史</td><td>不能</td><td>最后手段</td></tr></tbody></table></div>
+<p>先卸载再剪枝，因为卸载只是"搬家"，剪枝是真的"删"。这个顺序看着琐碎，但它决定了最坏情况：如果先摘要把长输出压成一句结论，后面再想卸载就只剩那句结论了。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 第一道：卸载（spill）</h2>
+<p>工具输出最容易把上下文撑爆。一次 <code>grep</code> 全仓、一次 <code>read</code> 大文件、一次网页抓取，都能轻松吐出一兆字节。</p>
+<p>处理办法是把正文搬出去，只给模型一个句柄：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>结果已卸载：spill://session/8f3a/step-12-grep.txt（128 KB，约 31,000 行）
+提示：用 read 工具按行读取，或 grep 搜索关键字</code></pre></figure>
+<p>模型看到三样东西：<strong>位置、大小、怎么拿</strong>。三样缺一，卸载就等于丢失——只给路径不给工具，模型会礼貌地告诉你它看不到文件。</p>
+<p>阈值定在 32 KB，理由是边际收益：小于这个体积的结果，模型一次读得完，卸载反而多一次工具往返（约 2 秒 + 2,000 token 开销）。实测分布里，工具结果的中位数在 2 KB 量级，超过 32 KB 的不到 5%，但它们的体积占了总量的六成以上。</p>
+<p>卸载还有个副作用值得利用：<strong>卸载之后的引用是稳定的</strong>。同一次会话里 <code>spill://…/step-12-grep.txt</code> 永远指向同一份内容，可以反复读、可以 grep、可以被后续步骤引用。这一点比"记住摘要"可靠得多。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 第二道：剪枝（prune）</h2>
+<p>剪枝删的是"还剩在原地、但已经没用了"的工具结果。三类最常见：</p>
+<ul><li><strong>被后续结果覆盖的</strong>：先 <code>grep</code> 出 200 个文件，再 <code>read</code> 了其中 3 个，那 200 行的清单已经没用了。</li><li><strong>重复的</strong>：同一文件读了两遍，第二遍只改了三行。</li><li><strong>已解决的报错</strong>：编译错误改完之后，那一大段报错就是噪声。</li></ul>
+<p>剪枝有一条硬约束：<strong>工具调用和结果成对保留</strong>。删了 <code>tool/result</code> 却留着 <code>tool/call</code>，下一次请求的 <code>messages</code> 里就有一个没有响应的工具调用，多数厂商会直接返回 400。所以剪枝的单位是"一对事件"，而非单条。</p>
+<p>剪枝之后要重算 token 数，而不是按删掉的字节估算——tokenizer 对 JSON 和代码的切分与自然语言差得远，按字符数估会低估 30% 以上。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 第三道：摘要（compact）</h2>
+<p>摘要只在做完前两步还超标时启动。它不追求写一段好总结，只要求<strong>四个槽位全部填满</strong>：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>槽位</th><th>写什么</th><th>预算</th><th>验收</th></tr></thead><tbody><tr><td>已确认事实</td><td>用户给的约束、单号、金额、时间、偏好</td><td>≤300 token</td><td>每个实体能在原文里子串匹配到</td></tr><tr><td>未决问题</td><td>还没答完的问题、待确认的条件</td><td>≤200 token</td><td>每条能对应一个后续动作</td></tr><tr><td>已完成动作</td><td>改过哪些文件、调过哪些接口、结论是什么</td><td>≤400 token</td><td>动作可复核</td></tr><tr><td>可回取</td><td>卸载文件的位置、可重新查询的键</td><td>≤300 token</td><td>至少一条能被工具命中</td></tr></tbody></table></div>
+<p>四条要求，每条都有对应的失败：</p>
+<ol><li><strong>只写结论，不写过程。</strong> "已确认用户要退 20241108 的订单，金额 299 元"是结论；"用户先问了物流，然后说商品有质量问题，我又问了……"是过程。过程留给 transcript。</li><li><strong>实体逐个列出，不做归纳。</strong> "用户提到了几个订单"这种写法等于没写。订单号要写成字面量，能被 <code>grep</code> 找到。</li><li><strong>动作写清结果，不写意图。</strong> "尝试调用退款接口"没有信息量；"退款接口返回 200，退款单号 R20241108001"才有。</li><li><strong>不写"我们讨论了……"。</strong> 这句话占 token，且不可验证。</li></ol>
+<p>一个反直觉的观察：<strong>摘要长度和压缩效果不是单调关系</strong>。把 10 万 token 压到 2,000 是对的，压到 300 就开始丢事实——模型随后会反复追问已经确认过的东西，用户感受是"它怎么又忘了"。表现指标是重复提问率，不是摘要长度。</p>
+<h3>5.1 压缩发生在哪，那把锁怎么用</h3>
+<p>压缩的位置有两个，各管一段：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>位置</th><th>时机</th><th>作用</th></tr></thead><tbody><tr><td><code>agent/pre-step</code></td><td>每一步开始前</td><td>主动压缩，压缩完立刻投影，不会把"压到一半"的状态发出去</td></tr><tr><td><code>agent/request</code></td><td>请求组装前</td><td>兜底，处理上一步工具结果突然把窗口撑满的情况</td></tr></tbody></table></div>
+<p>真正麻烦的是并发。同一个会话可能被两个进程同时打开：用户在网页上发消息，同时一条后台任务在跑。如果两边都判断"该压缩了"，就会写出两条互相嵌套的 <code>replace</code>，其中一条的端点必然已经失效。</p>
+<p>解法是在日志里做互斥，不加外部锁：压缩开始时写一条 <code>compaction/start</code>，结束时写 <code>compaction/end</code>。后来者读到"有 start 没有 end"，就跳过本次压缩。这把锁有个天然的好处——它随日志一起持久化，进程崩了也不会留下悬空的锁表项。</p>
+<p>崩溃留下的遗留锁需要超时释放：超过五分钟没有 <code>compaction/end</code>，下一次启动时补一条 <code>compaction/end</code> 并标记为 <code>abandoned</code>。补这一条而不是删 <code>start</code>，因为日志只追加——这也是 19C 那条"补而不修"原则的第一次出场。</p>
+<h3>5.2 压缩的成本记在谁头上</h3>
+<p>压缩调用是一次完整的模型请求，按 token 计费，记在会话所属租户头上。这一点不做特殊处理，但要在成本归因里单独列一个"压缩"科目——否则运营看到某个租户成本偏高，会去查业务逻辑，而真实原因是它的会话特别长、反复触发压缩。</p>
+<p>预算控制放在会话维度：单个会话单日压缩成本超过阈值（比如 5 元），后续压缩退化为只卸载不摘要。这个降级是可接受的：长会话本来就更适合"查得到"而不是"记得住"。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 回取：压缩的另一半</h2>
+<p>只要遮蔽不删日志，就能回取。这是 19A 那套设计的直接红利：摘要里写"订单详情见 spill://…/order-20241108.json"，模型需要时能真的去读。</p>
+<p>回取的三个前提：</p>
+<ul><li><strong>有工具</strong>：<code>read</code>、<code>grep</code>、会话全文检索，至少一个。</li><li><strong>有线索</strong>：定位符要带语义（文件名、行列号），不能是一串 UUID。</li><li><strong>代价可接受</strong>：一次回取约 2 秒、2,000 token。如果模型判断"回取比重问用户还贵"，它就不查了。</li></ul>
+<p>第三条最容易被忽略。回取率低，往往不是模型懒，是回取的路径太长——比如要求模型先 <code>list</code> 再 <code>read</code> 再 <code>grep</code>，三步才能拿到一个数字，那它宁愿猜。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 第四道：兜底截断</h2>
+<p>前三步做完还超，说明这段对话本身装不进窗口。这时只能截断最老的轮次。</p>
+<p>截断的判断依据不是"最老"，是"最不相关"：用当前用户消息与各轮的相似度排序，从最低的开始丢。但这一步已经是事故处理，不该出现在常规路径上——正常情况下 70% 阈值应该在会话中期就触发，让上下文永远到不了 85%。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 两个阈值怎么定</h2>
+<p>70% 和 85% 不是拍的，各有一个来源。</p>
+<p><strong>70% 是留给"一次完整工具往返"的余量。</strong> 一个 step 里模型可能连续调 3 个工具，每个结果平均 4,000 token，加请求本身的 system prompt 与 schema 约 3,000 token。留 30% 的窗口（8K 上下文里约 2,400 token）刚好够一轮工具往返，不必在半路中断。</p>
+<p><strong>85% 是"再压就要影响首 token 延迟"的临界点。</strong> 摘要本身是一次模型调用：输入是当前全部历史（多数是缓存命中），输出 1,200 token。以 8K 窗口计，一次摘要在卡上约占 300 毫秒，加上排队，用户能感知到卡顿。所以 85% 之前要压完，不能等到 95% 才开始。</p>
+<p>阈值也不是越小越好。压得太早，模型反复丢失上下文，重复提问率上升；压得太晚，TTFT 抖动。判断阈值是否合适，看两个数：<strong>重复提问率</strong>（用户重复同一个问题的比例）和<strong>压缩触发的分布</strong>（如果集中在少数长会话，说明阈值合理；如果普遍触发，说明 system prompt 或工具输出本身太大）。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 压缩自己也要花钱</h2>
+<p>一次摘要调用的账：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>数量</th><th>单价</th><th>成本</th></tr></thead><tbody><tr><td>输入（历史，多数命中缓存）</td><td>28,000 token</td><td>¥0.05/百万</td><td>0.14 分</td></tr><tr><td>输出（四段摘要）</td><td>1,200 token</td><td>¥6.42/百万</td><td>0.77 分</td></tr><tr><td>合计</td><td></td><td></td><td>约 0.9 分</td></tr></tbody></table></div>
+<p>一次压缩约等于 1.7 个正常轮次的成本。按 5% 的轮次触发压缩估算，一天 750 万次，约 ¥6.8 万/日、2,500 万/年——占 2.83 亿年成本的 0.9%。这个比例可以接受，但如果压缩频率翻倍，就该回头看工具输出是不是太大了。</p>
+<p>省这笔钱的办法不是"少压缩"，是<strong>让触发点更晚、单次压得更狠</strong>：一次压到 40% 比压到 68% 更划算，因为后者很快会再触发一次。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>用户重复说过的信息，模型又追问</td><td>摘要把不可重建的信息当过程压了</td><td>记忆探针掉分；重复提问率上升</td><td>四段槽位模板，实体写成字面量</td></tr><tr><td>模型说"我看不到这个文件"</td><td>只给了定位符，没给读取工具</td><td>回取率为 0</td><td>卸载时同时给出读取方式</td></tr><tr><td>压缩后回答开始编造</td><td>摘要写成了自由发挥的叙述</td><td>抽查摘要有无原文不存在的实体</td><td>槽位 + 实体子串校验</td></tr><tr><td>压缩后 TTFT 从 258 跳到 1,900 ms</td><td>压缩发生在请求路径上，且缓存全失效</td><td>按 <code>compaction/start</code> 打点</td><td>挪到 <code>agent/pre-step</code>，摘要复用前缀</td></tr><tr><td>摘要的摘要越来越空</td><td>同一段被压了两次</td><td>看 <code>replace</code> 区间是否嵌套在已遮蔽区间里</td><td>压缩前检查区间是否还活着</td></tr><tr><td>剪枝后请求 400</td><td>删了 <code>tool/result</code> 留了 <code>tool/call</code></td><td>厂商返回 messages 结构错误</td><td>剪枝以"调用+结果"为单位</td></tr><tr><td>上下文没超但一直触发压缩</td><td>token 估算按字符数算</td><td>估算值与实际 usage 差 30%</td><td>用 tokenizer 实测，或按 usage 校准</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 什么情况下不需要这套机制</h2>
+<ol><li><strong>会话天然短。</strong> P95 会话在窗口的 30% 以内，压缩就是纯开销。判据是 token 分布，不是轮次。</li><li><strong>上下文窗口足够大且同价。</strong> 1M 上下文与 8K 同价时，压缩从"必须"降级为"省钱手段"，可以只做卸载不做摘要。</li><li><strong>业务要求逐字审计。</strong> 摘要天然不可审计。这类场景只能外置 + 检索，把"记住"换成"查得到"。</li></ol>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 验收</h2>
+<p>五件事，都能用现有数据回答：</p>
+<ol><li>20 道记忆探针（实体召回、约束召回、结论召回、溯源各 5 道），压缩前后各跑一次，掉分不超过 1 道。</li><li>重复提问率：压缩上线前后对比，上升不超过 2 个百分点。</li><li>回取率：模型在压缩后主动回取的比例，低于 5% 说明线索不够好。</li><li>单次压缩成本：约 0.9 分，波动不超过 20%。</li><li>压缩触发分布：集中在长会话（P95 以上），而不是普遍触发。</li></ol>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>13. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为压缩是把对话写短。实际差在它是把"可重建的信息"换成"指针加结论"，长度只是副产品。搞错这一点，摘要就会写成一篇读后感——读着挺好，干活时全是漏洞。</p>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>14. 延伸</h2>
+<ul><li><strong>19C 持久化与崩溃恢复</strong>：一个 seam 两个后端怎么选、write-behind 窗口多长、崩溃后为什么补而不修。</li><li><strong>19D 重放、fork 与格式迁移</strong>：种子为什么必须是连续前缀、四次迁移怎么排。</li><li><strong>第 20 章 提示词组装</strong>：压缩产物怎么和 system prompt 拼在一起，顺序为什么影响缓存。</li></ul>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="19A-surface-and-projection.html"><span>上一章</span><b>19A · surface 与投影</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>
