@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>持久化与崩溃恢复 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 19C 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 结论：持久化是一个接口，两个后端</a><a href="#s2"><span>02</span>. 写路径：先问能丢多少</a><a href="#s3"><span>03</span>. 崩溃恢复：补而不修</a><a href="#s4"><span>04</span>. 恢复之后还要修三样东西</a><a href="#s5"><span>05</span>. 恢复要多久</a><a href="#s6"><span>06</span>. 多实例与共享存储</a><a href="#s7"><span>07</span>. 保留与归档</a><a href="#s8"><span>08</span>. 失败模式</a><a href="#s9"><span>09</span>. 什么情况下不用这套</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">19C</div><div class="ch-kicker">Harness</div><h1>持久化与崩溃恢复</h1><div class="ch-rule"></div></header>
+<blockquote><p>19A 讲可见层怎么折，19B 讲上下文怎么压。这两件事都建立在一个前提上：日志在磁盘上是完整的。</p><p>这一章讲这个前提怎么保证——写多快、丢多少、崩了之后怎么接上。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 结论：持久化是一个接口，两个后端</h2>
+<p>日志的写入口只有一个 seam（可替换的能力接口），下面是两个实现：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>后端</th><th>形态</th><th>适合</th><th>不适合</th></tr></thead><tbody><tr><td>JSONL</td><td>一个会话一个文件，一行一条事件，只追加</td><td>单机、调试、审计、grep 友好</td><td>高并发写、行级查询</td></tr><tr><td>SQLite</td><td>一张表一行，WAL 模式</td><td>多进程读、按 seq 或 type 查、事务边界清晰</td><td>跨机、超大单文件</td></tr></tbody></table></div>
+<p>选哪个不取决于"哪个更快"。两个后端在单会话写入上都够快——每秒 120 到 140 条、每条 0.5 到 1 KB，合计 60 到 140 KB/s，任何本地介质都吃得下。</p>
+<p>真正的判据是<strong>并发模型</strong>：一个会话同时被几个进程打开，读多还是写多，要不要按条件查历史。单写者、读全量的场景，JSONL 更省事；要按 type 过滤、要多个进程同时读、要事务性提交，SQLite 更省心。</p>
+<p>接口这一层要窄。只暴露四个操作：<code>append(events)</code>、<code>read(fromSeq, limit)</code>、<code>lastSeq()</code>、<code>close()</code>。窄接口的价值是可以在测试里塞一个内存实现，跑重放和崩溃恢复的用例不用碰磁盘。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 写路径：先问能丢多少</h2>
+<p>日志写入有三种时序，差别在"什么时候真正落盘"：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>模式</th><th>落盘时机</th><th>崩溃丢什么</th><th>代价</th></tr></thead><tbody><tr><td>write-through</td><td>每条事件写完就 fsync</td><td>最多丢当前这一条</td><td>每条约 0.1–1 ms，吞吐受限</td></tr><tr><td>write-behind</td><td>进程内缓冲，定时或按事件类型 flush</td><td>最多丢一个窗口</td><td>需要处理"缓冲里有半轮"</td></tr><tr><td>异步批</td><td>攒到 N 条或 T 毫秒再写</td><td>最多丢一批</td><td>延迟抖动，恢复要重排</td></tr></tbody></table></div>
+<p>一台卡每秒跑 2.8 轮，每轮 40 到 50 条事件，就是一秒 120 多次写入。每条都 fsync 的话，光落盘就占掉 12% 到 100% 的时间——在 SSD 上勉强可行，在共享存储上直接拖垮吞吐。</p>
+<p>所以实际用的是 write-behind，窗口按<strong>事件类型</strong>划分，不按时间：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>事件</th><th>刷盘时机</th><th>理由</th></tr></thead><tbody><tr><td><code>turn/end</code>、<code>session/end-seed</code></td><td>立即</td><td>轮次边界，丢了这一轮等于白跑</td></tr><tr><td><code>assistant/message</code>、<code>tool/result</code></td><td>200 ms 内</td><td>内容大，攒一下摊薄开销</td></tr><tr><td><code>step/start</code>、<code>step/end</code></td><td>随下一批</td><td>纯骨架，丢了能从上下文推断</td></tr></tbody></table></div>
+<p>这个划分的实质是：<strong>丢一个 turn 可以接受，丢半个 turn 不行。</strong> 用户重说一遍的成本，远高于每条 fsync 的成本；但恢复出一个做到一半的 turn，模型会基于残缺历史继续执行，那比丢整轮危险得多。</p>
+<p>缓冲本身要设上限，而且上限到了要<strong>阻塞写入</strong>，不能丢数据。按每条 1 KB 估，4 MB 的环形缓冲大约装 4,000 条事件，相当于 33 秒的正常写入量。缓冲写满说明下游已经慢到不正常（磁盘打满、网络存储掉线），这时候阻塞会沿调用链往上传导，最终表现为模型请求变慢——这是对的，比静默丢事件好。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 崩溃恢复：补而不修</h2>
+<p>进程被杀、机器断电、容器被驱逐，落盘的文件可能长这样：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>{&quot;seq&quot;:118,...}
+{&quot;seq&quot;:119,...}
+{&quot;seq&quot;:120,&quot;type&quot;:&quot;tool/res</code></pre></figure>
+<p>最后一行断在半截。也可能出现另一种损坏：每行都完整，但 seq 从 120 直接跳到 123——中间三条没写进去。</p>
+<p>恢复算法的四步：</p>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  A[&quot;打开日志&quot;] --&gt; B[&quot;逐行解析，记录最后一条完整事件&quot;]
+  B --&gt; C{&quot;seq 从 0 连续吗&quot;}
+  C -- 是 --&gt; F[&quot;写 recovery 事件，结束&quot;]
+  C -- 否 --&gt; D[&quot;截断到最后一个连续点&lt;br/&gt;残片另存 .corrupt&quot;]
+  D --&gt; E[&quot;写 recovery 事件&lt;br/&gt;记录截断字节数与最后有效 seq&quot;]
+  E --&gt; F</pre></figure>
+<p>关键在最后一步：<strong>恢复不是把日志改对，是追加一条记录说明发生了什么。</strong></p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>{&quot;seq&quot;:121,&quot;type&quot;:&quot;session/recovered&quot;,
+ &quot;data&quot;:{&quot;lastValidSeq&quot;:119,&quot;truncatedBytes&quot;:37,&quot;reason&quot;:&quot;partial-line&quot;}}</code></pre></figure>
+<p>这条事件本身就是历史的一部分。之后任何人读这份日志，都能看到"这里崩过一次、丢了多少、从哪接上的"。如果改成静默截断，日志看上去永远干净，但你就失去了唯一能解释"为什么模型少了一轮记忆"的证据。</p>
+<p>这条原则叫<strong>补而不修</strong>：已有字节一个不动，只在尾部截断加追加。它对上层有三个直接好处：</p>
+<ul><li>重放是确定的——同一份日志，恢复前后折出来的 surface 一致（除了被截掉的那部分）。</li><li>审计可追溯——损坏本身有记录，不是黑箱。</li><li>多副本好对齐——两份日志比对时，差异点就是崩溃点，不用猜。</li></ul>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. 恢复之后还要修三样东西</h2>
+<p>日志接上了，不代表系统能用。三样东西要从日志重新推出来：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>东西</th><th>怎么推</th><th>推不出来的后果</th></tr></thead><tbody><tr><td>surface</td><td>重放 fold（19A）</td><td>模型看到残缺历史，重复干活</td></tr><tr><td>token 计数</td><td>累加 <code>usage</code></td><td>计费少算，对账差异</td></tr><tr><td>会话状态</td><td>折叠 <code>turn/start</code> 到 <code>turn/end</code></td><td>界面显示"进行中"，实际已死</td></tr></tbody></table></div>
+<p>第三样最容易被忽略。一个 turn 有 <code>turn/start</code> 但没有 <code>turn/end</code>，说明它死在中途。恢复时要补一条 <code>turn/end</code>，标 <code>reason:"recovered"</code>，否则前端会一直转圈，用户以为还在跑。</p>
+<p>补 <code>turn/end</code> 而不是删 <code>turn/start</code>，还是同一条原则：只追加。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 恢复要多久</h2>
+<p>时间是能算的：一次恢复要做的事是"从最后一条有效事件往前找到最近的完整边界，再重放折叠"。折叠本身是线性的，10 万条事件在普通机器上约 0.5 到 2 秒。</p>
+<p>这个数量级决定了策略：<strong>恢复必须在打开会话时同步完成</strong>，不能放到后台。用户点开一个历史会话，等两秒可以接受；等十秒就会重复点击，而重复点击会并发触发两次恢复——第二次读到的还是旧状态，两次恢复的结果互相覆盖。</p>
+<p>事件数再往上，2 秒就守不住了。120 万条事件的会话重放一次要 12 到 24 秒，用户点开就是一片空白。解法是<strong>检查点</strong>：每 2,000 条事件落一个 surface 快照，约 40 KB。恢复时从最近的快照开始，只需重放尾部不超过 2,000 条，耗时降到 40 ms 左右。</p>
+<p>代价是快照本身要写、要占空间，按 2,000 条一个算，额外存储开销约 2%。快照还必须带两个版本号：日志的 <code>lastSeq</code> 和投影的 <code>contentGeneration</code>。只带 <code>lastSeq</code> 不够——同一段日志如果因为插件升级改变了投影规则，旧快照就和新规则对不上，这时要用 <code>contentGeneration</code> 判定作废。</p>
+<p>防并发的办法是单写者加租约：会话打开时拿一个带过期时间的写锁（比如 30 秒自动续期），拿不到就降级成只读。租约要带 epoch（单调递增的编号），每次续期加一；写入时把 epoch 一起带上，服务端拒绝过期 epoch 的写。这套东西和分布式系统里的 fencing token 是同一个思路，只是规模小得多。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 多实例与共享存储</h2>
+<p>一个会话在集群里可能被调度到任意一台机器。三种部署形态，代价递增：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>形态</th><th>做法</th><th>问题</th></tr></thead><tbody><tr><td>单机绑定</td><td>会话固定在一台机器，后续请求路由回去</td><td>机器挂了会话就不可用</td></tr><tr><td>共享文件系统</td><td>所有机器挂同一个卷，靠文件锁</td><td>锁的语义在 NFS 上不可靠</td></tr><tr><td>日志服务化</td><td>写入走一个服务，后端是数据库或消息队列</td><td>多一跳网络，热路径 +1–2 ms</td></tr></tbody></table></div>
+<p>第三种是规模化之后的必然选择，但它把"日志"从一个文件变成了一项服务，可用性要求跟着上升：日志服务挂了，所有会话都写不进去。缓解办法是本地缓冲加补写——先写本地磁盘，恢复联网后再同步，代价是要处理"本地有、远端有、两边不一样"的冲突。</p>
+<p>这里能给的判据是：<strong>单会话 QPS 低、会话数多</strong>的场景，优先选"服务化 + 本地补写"；反过来，会话少、单会话写入密集，单机绑定更省事。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 保留与归档</h2>
+<p>日志不能无限留。三层保留，各有各的判据：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>层</th><th>时长</th><th>用途</th><th>删除前提</th></tr></thead><tbody><tr><td>热</td><td>30 天</td><td>会话恢复、回取、排障</td><td>无</td></tr><tr><td>温</td><td>180 天</td><td>审计、复盘、评测取样</td><td>已归档到对象存储</td></tr><tr><td>冷</td><td>3 年（合规要求）</td><td>法律与对账</td><td>合规到期</td></tr></tbody></table></div>
+<p>有一个例外：<strong>被 fork 出去的父会话不能按常规期限删。</strong> 子会话的种子是父日志的一段前缀，父日志没了，子会话就打不开。保留期要取"子会话存活期"和"常规期限"的较大值。</p>
+<p>归档本身也有格式问题。压缩成 gzip 会丢掉"按行读取"的能力，回取时要先解压整个文件；10 万条事件解压约 1 秒，能接受但不适合热路径。折中办法是按天分片、每片单独压缩，回取时只解压相关那一片。</p>
+<p>删除也要有判据，不能只看日期。三条都满足才删：没有活跃子会话引用它、不在任何评测集的取样范围内、最近 90 天没有被回取过。第三条靠回取日志统计，没有这份日志就只能按最保守的期限留。</p>
+<p>一个常被低估的量：按 1.5 亿轮/日、每轮 24 KB 估算，日增 3.6 TB，热层 30 天就是 108 TB。这个数字决定了"热层能不能放本地盘"，答案通常是不能，于是又回到服务化。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>恢复后少了一轮对话</td><td>write-behind 缓冲没刷，崩溃在 turn 中间</td><td>日志里有 <code>turn/start</code> 没 <code>turn/end</code></td><td>补 <code>turn/end</code> 标 recovered</td></tr><tr><td>seq 出现重复</td><td>两个进程同时写同一会话</td><td>同一 seq 两条事件</td><td>租约加 epoch，拒绝过期写</td></tr><tr><td>恢复报 JSON 解析错误</td><td>尾部半行</td><td>最后一行不以 <code>}</code> 结尾</td><td>截断到上一个完整行，残片另存</td></tr><tr><td>计费少算</td><td>恢复后没重算 usage</td><td>对账差异集中在崩溃时段</td><td>恢复流程里加一步累加</td></tr><tr><td>前端一直转圈</td><td>turn 没有结束事件</td><td>界面上有个会话永远"进行中"</td><td>恢复时补 <code>turn/end</code></td></tr><tr><td>子会话打不开</td><td>父日志被归档删了</td><td>报 seed 不可用</td><td>保留期取父子较大值</td></tr><tr><td>恢复耗时 10 秒以上</td><td>事件数超百万且逐条解析</td><td>打开会话的 P99</td><td>加检查点，或按分片并行解析</td></tr><tr><td>快照与日志对不上</td><td>插件升级改了投影规则，<code>contentGeneration</code> 没变</td><td>恢复出的 surface 与线上不一致</td><td>快照带 generation，不匹配就丢弃重建</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 什么情况下不用这套</h2>
+<ol><li><strong>会话很短、事件很少。</strong> 单会话不到一万条事件时，内存里维护全量、结束时一次性落盘就够，不需要 write-behind 窗口。</li><li><strong>只要事后审计，不需要恢复。</strong> 那写路径可以极简：批量导入、不做 fsync、坏了就丢。</li><li><strong>已经有强一致的日志基础设施。</strong> Kafka、Pulsar 这类系统把顺序、持久化、多副本都解决了，自研写路径就是重复劳动，做一层适配即可。</li></ol>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<p>五个测试，都能自动化：</p>
+<ol><li>强杀进程 100 次，每次恢复后 seq 连续、无重复、无空洞。</li><li>人为写入半行 JSON，恢复后截断位置正确，残片文件保留。</li><li>10 万条事件的会话，恢复耗时在 2 秒内。</li><li>崩溃点前后对比：丢的事件不超过一个 turn。</li><li>两个进程同时打开同一会话，只读的那个降级成功，不产生重复 seq。</li></ol>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为持久化就是"把事件写进文件"。实际差在<strong>它能丢多少</strong>才是设计参数：write-behind 窗口、fsync 频率、租约时长，全都在回答"崩溃时最多损失什么"。先定损失，再定实现。</p>
+<p>一句话：崩溃恢复的目标不是"恢复得像没崩过"，是"崩了之后每一方都能算出自己少知道了什么"。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 延伸</h2>
+<ul><li><strong>19D 重放、fork 与格式迁移</strong>：种子为什么必须是连续前缀、四次迁移怎么排、旧程序读到新日志怎么办。</li><li><strong>第 20 章 提示词组装</strong>：日志里的历史怎么和 system prompt 拼成一次请求。</li><li><strong>第 25 章 全链路背压</strong>：日志服务化之后，它也会成为背压链上的一跳。</li></ul>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="19B-compaction-and-spill.html"><span>上一章</span><b>19B · 压缩与卸载</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>
