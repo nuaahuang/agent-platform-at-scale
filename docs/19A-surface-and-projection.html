@@ -247,6 +247,10 @@ blockquote p{margin:.4em 0}
 </section>
 <section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 五个词</h2>
 <div class="table-wrap"><table class="table"><thead><tr><th>词</th><th>一句话</th><th>在哪</th></tr></thead><tbody><tr><td>节点</td><td>surface 上的一个位置，用 seq 标识</td><td>折叠结果</td></tr><tr><td>锚点</td><td>节点的 seq，绝对坐标，永不重用</td><td>日志</td></tr><tr><td>遮蔽</td><td>让某个区间在当前 surface 上不可见</td><td><code>surfaceOp</code></td></tr><tr><td>fold</td><td>把日志折成节点序列的纯函数</td><td>投影层</td></tr><tr><td>投影</td><td>从日志算出某种画面的过程</td><td>共四种</td></tr></tbody></table></div>
+<p>这两个词容易混。<strong>投影是总称</strong>：任何"从日志算出一幅画面"的过程都叫投影。<strong>fold 是其中一种</strong>，而且只做第一步——它只决定哪些节点可见、按什么顺序，输出的是一串 seq，还没有变成消息。</p>
+<p>把 seq 变成 <code>messages[]</code> 的是消息投影（<code>deriveMessages()</code>），它才处理角色、<code>tool_calls</code> 结构、厂商格式这些事。所以 surface 这条链是两段：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>日志 ──fold──&gt; 节点序列 [10, 22, 410] ──消息投影──&gt; messages[]</code></pre></figure>
+<p>分成两段的好处是可分开失效：遮蔽变了只需重折（节点序列重算），消息内容变了才需重投影（文本重渲）。两者的缓存键也不同，<code>replaceGeneration</code> 管前者，<code>contentGeneration</code> 管后者。</p>
 </section>
 <section class="sec" id="s3"><h2><span class="sec-num">03</span>3. surfaceOp：两种放法</h2>
 <p>只有 5 类事件带这个字段：<code>system/message</code>、<code>developer/message</code>、<code>user/message</code>、<code>assistant/message</code>、<code>tool/result</code>。其余 60 类在 TypeScript 的类型层就拒绝这个字段——写错编译不过，不靠运行时检查。</p>
@@ -304,7 +308,7 @@ blockquote p{margin:.4em 0}
 <p>代价也真实：replace 的端点没法凭空算出来，只能从 fold 结果里查。压缩器因此总要先投影一次、拿到当前节点列表，才能构造区间。这也是压缩为什么发生在 <code>agent/pre-step</code>、紧跟在一次投影之后——那时代价最低。</p>
 </section>
 <section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 四个投影</h2>
-<div class="table-wrap"><table class="table"><thead><tr><th>投影</th><th>读什么</th><th>过滤</th><th>给谁</th><th>压缩之后</th></tr></thead><tbody><tr><td>surface</td><td>全部事件，应用 <code>surfaceOp</code></td><td>只留当前节点</td><td>模型</td><td>变短</td></tr><tr><td>transcript</td><td>全部事件，忽略 <code>surfaceOp</code></td><td>按时间排</td><td>人（审查、回放、执行轨迹）</td><td>不变</td></tr><tr><td>计费</td><td><code>assistant/message</code> 与 <code>assistant/attempt</code></td><td>取 usage</td><td>财务</td><td>不变</td></tr><tr><td>客户端列表</td><td><code>session/title</code> 一类</td><td>取最新值</td><td>列表页</td><td>不变</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>投影</th><th>读什么</th><th>过滤</th><th>给谁</th><th>压缩之后</th></tr></thead><tbody><tr><td>surface</td><td>全部事件，应用 <code>surfaceOp</code>，再投影成消息</td><td>只留当前节点</td><td>模型</td><td>变短</td></tr><tr><td>transcript</td><td>全部事件，忽略 <code>surfaceOp</code></td><td>按时间排</td><td>人（审查、回放、执行轨迹）</td><td>不变</td></tr><tr><td>计费</td><td><code>assistant/message</code> 与 <code>assistant/attempt</code></td><td>取 usage</td><td>财务</td><td>不变</td></tr><tr><td>客户端列表</td><td><code>session/title</code> 一类</td><td>取最新值</td><td>列表页</td><td>不变</td></tr></tbody></table></div>
 <p>只有 surface 受压缩影响。这是故意的：压缩是给模型腾地方，不该影响审计、账单和侧边栏。</p>
 <p>数字上的差距会很大。一个跑了一周的会话，transcript 累计 300 万 token 很正常，而 surface 可能只有 4 万 token——差 75 倍。账单按累计输入算，一次请求一次计费；审计按 300 万算，全量可查；模型按 4 万算，装得下就行。</p>
 <h3>6.1 执行轨迹：transcript 的一个视图</h3>

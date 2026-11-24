@@ -44,6 +44,16 @@ flowchart LR
 | fold | 把日志折成节点序列的纯函数 | 投影层 |
 | 投影 | 从日志算出某种画面的过程 | 共四种 |
 
+这两个词容易混。**投影是总称**：任何"从日志算出一幅画面"的过程都叫投影。**fold 是其中一种**，而且只做第一步——它只决定哪些节点可见、按什么顺序，输出的是一串 seq，还没有变成消息。
+
+把 seq 变成 `messages[]` 的是消息投影（`deriveMessages()`），它才处理角色、`tool_calls` 结构、厂商格式这些事。所以 surface 这条链是两段：
+
+```
+日志 ──fold──> 节点序列 [10, 22, 410] ──消息投影──> messages[]
+```
+
+分成两段的好处是可分开失效：遮蔽变了只需重折（节点序列重算），消息内容变了才需重投影（文本重渲）。两者的缓存键也不同，`replaceGeneration` 管前者，`contentGeneration` 管后者。
+
 ## 3. surfaceOp：两种放法
 
 只有 5 类事件带这个字段：`system/message`、`developer/message`、`user/message`、`assistant/message`、`tool/result`。其余 60 类在 TypeScript 的类型层就拒绝这个字段——写错编译不过，不靠运行时检查。
@@ -136,7 +146,7 @@ function foldSurface(events: SessionEvent[]): SessionSeq[] {
 
 | 投影 | 读什么 | 过滤 | 给谁 | 压缩之后 |
 |---|---|---|---|---|
-| surface | 全部事件，应用 `surfaceOp` | 只留当前节点 | 模型 | 变短 |
+| surface | 全部事件，应用 `surfaceOp`，再投影成消息 | 只留当前节点 | 模型 | 变短 |
 | transcript | 全部事件，忽略 `surfaceOp` | 按时间排 | 人（审查、回放、执行轨迹） | 不变 |
 | 计费 | `assistant/message` 与 `assistant/attempt` | 取 usage | 财务 | 不变 |
 | 客户端列表 | `session/title` 一类 | 取最新值 | 列表页 | 不变 |
