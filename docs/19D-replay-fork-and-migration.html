@@ -246,7 +246,7 @@ blockquote p{margin:.4em 0}
   B --&gt; E[&quot;看当时看到什么&quot;]
   C --&gt; F[&quot;比新旧模型差异&quot;]
   D --&gt; G[&quot;验证修复是否生效&quot;]</pre></figure>
-<div class="table-wrap"><table class="table"><thead><tr><th>粒度</th><th>工具调用</th><th>能否并行</th><th>风险</th></tr></thead><tbody><tr><td>只读</td><td>不执行，直接读 <code>tool/result</code></td><td>完全可并行</td><td>无</td></tr><tr><td>假执行</td><td>按 <code>(callId, 参数哈希)</code> 命中录制结果</td><td>可并行</td><td>录制过期会骗人</td></tr><tr><td>真执行</td><td>真的调用</td><td>受外部系统限制</td><td>写操作会改真实世界</td></tr></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>粒度</th><th>工具调用</th><th>能否并行</th><th>风险</th></tr></thead><tbody><tr><td>只读</td><td>不执行，直接读 <code>tool/result</code></td><td>完全可并行</td><td>无</td></tr><tr><td>假执行</td><td>按 <code>(工具名, 参数哈希)</code> 命中录制结果</td><td>可并行</td><td>录制过期会骗人</td></tr><tr><td>真执行</td><td>真的调用</td><td>受外部系统限制</td><td>写操作会改真实世界</td></tr></tbody></table></div>
 <p>选哪个由目的决定：想回答"换个模型会不会更好"，用假执行；想回答"这个 bug 修了没有"，用真执行；想回答"当时到底发生了什么"，只读就够。</p>
 <p>假执行要一份录制。录制的单位是一次工具调用，字段只有五个：工具名、参数哈希、结果内容、<code>isError</code>、录制时间。匹配键用"工具名 + 参数哈希"，不用 <code>callId</code>——<code>callId</code> 每次重跑都会变，参数才是语义上的同一个调用。</p>
 <figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{ &quot;name&quot;: &quot;read_file&quot;, &quot;argsHash&quot;: &quot;8f2c…&quot;, &quot;result&quot;: {&quot;content&quot;: &quot;…&quot;},
