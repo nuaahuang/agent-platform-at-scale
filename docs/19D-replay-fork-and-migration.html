@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>重放、fork 与格式迁移 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 19D 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 结论：重放是检验日志设计的唯一手段</a><a href="#s2"><span>02</span>. 重放的三种粒度</a><a href="#s3"><span>03</span>. 重放对不上的四个来源</a><a href="#s4"><span>04</span>. fork：种子必须是连续前缀</a><a href="#s5"><span>05</span>. 格式迁移：四次迁移怎么排</a><a href="#s6"><span>06</span>. 旧程序读到新日志怎么办</a><a href="#s7"><span>07</span>. 怎么判断重放是对的</a><a href="#s8"><span>08</span>. 失败模式</a><a href="#s9"><span>09</span>. 什么情况下不用这套</a><a href="#s10"><span>10</span>. 验收</a><a href="#s11"><span>11</span>. 复盘卡</a><a href="#s12"><span>12</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">19D</div><div class="ch-kicker">Harness</div><h1>重放、fork 与格式迁移</h1><div class="ch-rule"></div></header>
+<blockquote><p>19C 解决了"日志不会丢"。这一章解决"日志还能被再用一次"——重放验证、fork 分支、旧日志升级。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 结论：重放是检验日志设计的唯一手段</h2>
+<p>日志设计得好不好，不看写得多快，看<strong>能不能拿它重放</strong>。重放不出来的日志，只是一堆事后没人看的字节。</p>
+<p>这一章要解决三个问题：同一份日志能不能算出同一个结果、能不能从中间分出一条新会话、格式升级后老日志还能不能打开。三个问题各自有硬约束，破一条整套就用不了。</p>
+<p>重放有三个用途，成本差一个数量级：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>用途</th><th>要什么</th><th>副作用</th><th>典型耗时</th></tr></thead><tbody><tr><td>排障回看</td><td>折出 surface，看模型当时看到什么</td><td>无</td><td>毫秒到秒</td></tr><tr><td>回放评测</td><td>换模型/换提示词，跑同一批轨迹</td><td>无（工具走录制）</td><td>分钟级</td></tr><tr><td>分支试错</td><td>从某个点 fork，另走一条路</td><td>可能有（真调工具）</td><td>分钟到小时</td></tr></tbody></table></div>
+<p>三个用途共用同一套基础设施，差别只在"工具调用怎么处理"。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 重放的三种粒度</h2>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  A[&quot;日志&quot;] --&gt; B[&quot;① 只读取投影&quot;]
+  A --&gt; C[&quot;② 换模型重跑&lt;br/&gt;工具走 cassette&quot;]
+  A --&gt; D[&quot;③ 真执行重跑&lt;br/&gt;沙箱内&quot;]
+  B --&gt; E[&quot;看当时看到什么&quot;]
+  C --&gt; F[&quot;比新旧模型差异&quot;]
+  D --&gt; G[&quot;验证修复是否生效&quot;]</pre></figure>
+<div class="table-wrap"><table class="table"><thead><tr><th>粒度</th><th>工具调用</th><th>能否并行</th><th>风险</th></tr></thead><tbody><tr><td>只读</td><td>不执行，直接读 <code>tool/result</code></td><td>完全可并行</td><td>无</td></tr><tr><td>假执行</td><td>按 <code>(callId, 参数哈希)</code> 命中录制结果</td><td>可并行</td><td>录制过期会骗人</td></tr><tr><td>真执行</td><td>真的调用</td><td>受外部系统限制</td><td>写操作会改真实世界</td></tr></tbody></table></div>
+<p>选哪个由目的决定：想回答"换个模型会不会更好"，用假执行；想回答"这个 bug 修了没有"，用真执行；想回答"当时到底发生了什么"，只读就够。</p>
+<p>假执行要一份录制。录制的单位是一次工具调用，字段只有五个：工具名、参数哈希、结果内容、<code>isError</code>、录制时间。匹配键用"工具名 + 参数哈希"，不用 <code>callId</code>——<code>callId</code> 每次重跑都会变，参数才是语义上的同一个调用。</p>
+<figure class="code code--lang"><span class="code-lang">json</span><button class="copy" type="button">复制</button><pre><code>{ &quot;name&quot;: &quot;read_file&quot;, &quot;argsHash&quot;: &quot;8f2c…&quot;, &quot;result&quot;: {&quot;content&quot;: &quot;…&quot;},
+  &quot;isError&quot;: false, &quot;at&quot;: 1763887441223 }</code></pre></figure>
+<p>体积上，一条录制平均 2 KB，一次 10 万轮的真实取样大约 200 万条、4 GB。这决定了 cassette 不适合长期保留，按批次生成、用完即弃更实际。录制过期是假执行最大的坑：工具行为变了，录制还是旧的，重放通过但线上照样报错。</p>
+<p>真执行要付的代价不只是风险，还有<strong>不可复现</strong>。同一个退款请求跑第二次，会得到"已退款"而不是"退款成功"，工具结果变了，后面的推理全变。所以真执行重放通常只做一次，且必须在隔离环境里。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. 重放对不上的四个来源</h2>
+<p>第一次做重放的人常以为"同一份日志重放，结果应该一模一样"。实际能对上的只有一部分：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>来源</th><th>是否可复现</th><th>处理</th></tr></thead><tbody><tr><td>日志里记录的内容（消息、工具结果原文）</td><td>完全可复现</td><td>直接读</td></tr><tr><td>模型输出</td><td>不可复现（采样、版本、硬件）</td><td>重放时记录新输出，与旧的并列</td></tr><tr><td>工具的实际效果</td><td>不可复现（外部状态变了）</td><td>只比对"调用序列与参数"，不比对结果</td></tr><tr><td>时间戳、ID、随机数</td><td>不可复现</td><td>重放时注入固定时钟与 ID 生成器</td></tr></tbody></table></div>
+<p>判据是：<strong>重放验证的是"被记录的部分"，不是"重现未来"</strong>。日志记了什么，就能保证什么；日志没记的，重放时只能猜。</p>
+<p>这也解释了为什么 <code>request/header</code> 要存全量（19 章）——它是"这次请求的信封"，重放时要拿它比对，才知道是不是同一份输入。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. fork：种子必须是连续前缀</h2>
+<p>fork 是从已有会话分叉出一条新会话。它有个硬约束：<strong>种子只能取从 seq 0 开始的一段连续前缀</strong>。</p>
+<p>原因有三层，任何一层破了都 fork 不了：</p>
+<ol><li><strong>配对</strong>。<code>tool/result</code> 必须能找到对应的 <code>tool/call</code>。如果种子从中间截断，第一条可能是孤立的 <code>tool/result</code>，投影出来的 messages 里会出现没有 <code>tool_calls</code> 的 tool 角色消息，多数厂商直接返回 400。</li><li><strong>边界</strong>。截断点必须落在 turn 边界上。落在 turn 中间，新会话一开始就带着一个没有 <code>turn/end</code> 的 turn，恢复逻辑会把它判成"崩溃中"。</li><li><strong>依赖</strong>。<code>surfaceOp</code> 的 <code>replace</code> 端点指向的是<strong>当时还活着的节点</strong>。如果种子从某条 <code>replace</code> 之后开始，端点就可能落在种子外面，fold 直接报错。</li></ol>
+<p>所以 fork 的实现是三步：找到目标 turn 的结束点 k、校验 <code>[0, k]</code> 内所有 <code>replace</code> 端点都闭包在区间内、把这段前缀复制成子会话的初始日志，再追加一条 <code>session/end-seed</code> 记录父会话 id 与 <code>parentSeq=k</code>。</p>
+<p>复制本身的成本不高：5 万条事件约 50 MB，本地复制耗时 0.3 秒，跨可用区走对象存储约 2 秒。真正贵的是 token——子会话从第 5 万条开始继续跑，第一次请求要带上整段种子，5 万条约 6 万 token，单次 prefill 约 0.5 秒、成本 0.6 分。</p>
+<p>种子是<strong>快照不是引用</strong>。父日志之后怎么变、甚至被删，子会话都能独立打开。这是刻意的：如果做成引用，父会话的归档期就成了子会话的寿命上限，而子会话可能活得更久（19C §7 的保留例外说的就是这件事）。</p>
+<p>fork 的三个用法：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>用法</th><th>怎么用</th><th>代价</th></tr></thead><tbody><tr><td>试两条路</td><td>同一个点 fork 两次，走不同提示词</td><td>两份 token</td></tr><tr><td>评测对照</td><td>线上轨迹 fork 出来，换模型重跑</td><td>一批 GPU 时间</td></tr><tr><td>回滚到分歧点</td><td>用户说"回到刚才那步"，fork 出干净分支</td><td>一次复制</td></tr></tbody></table></div>
+<p>第三种最容易做错：它看起来像"撤销"，实际是"另开一条"。原会话不删，新会话从分歧点长出来，用户看到的是两条历史。界面要显式说明这一点，否则用户会以为旧的那条被改掉了。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 格式迁移：四次迁移怎么排</h2>
+<p>事件 schema 会变。DSH 的会话域有 4 个迁移包（v0→v1、v1→v2、v2→v3、v3→v4），加一个 format 包和一个 catalog 包。这个数量说明一件事：<strong>迁移是常态，不是意外</strong>。</p>
+<p>迁移的对象是 <code>data</code> 里的字段结构，不是日志文件本身。文件格式（一行一个 JSON）从头到尾没变过，变的只是某些事件类型多一个字段、少一个字段、改个名字。</p>
+<p>排布方式是一条单向链：</p>
+<figure class="diagram"><pre class="mermaid">flowchart LR
+  A[&quot;v0 日志&quot;] --&gt; B[&quot;migrate v0→v1&quot;]
+  B --&gt; C[&quot;v1&quot;]
+  C --&gt; D[&quot;migrate v1→v2&quot;]
+  D --&gt; E[&quot;v2&quot;]
+  E --&gt; F[&quot;… → v4&quot;]
+  F --&gt; G[&quot;当前格式&quot;]</pre></figure>
+<p>三条规则让这条链条可用：</p>
+<ul><li><strong>每步只认相邻版本</strong>。v0→v2 写成 v0→v1→v2，不做跳跃。跳跃迁移在版本多了以后是指数级的组合。</li><li><strong>每步幂等</strong>。同一份 v1 日志跑两次 v1→v2，结果一致。迁移途中崩了可以重跑，不用专门做断点。</li><li><strong>每步可回滚</strong>。迁移前把原文件留一份（或写到一个新文件），失败就回退。100 万条事件的迁移大约几分钟，回滚成本是磁盘空间。</li></ul>
+<p>迁移读的是 <code>__format</code> 头或 catalog 里记的版本号。每条事件都带版本太浪费（一天 30 亿条），文件头带一次就够；跨文件拼接时靠 catalog 对齐。</p>
+<p>什么时候迁也有两种选择：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>时机</th><th>做法</th><th>适合</th><th>代价</th></tr></thead><tbody><tr><td>读时懒迁</td><td>打开旧日志时按需转换，不写回</td><td>旧会话很少被打开（不足 5%）</td><td>每次打开都付转换成本</td></tr><tr><td>批量迁移</td><td>定时任务扫全量，一次性升级</td><td>旧日志占比高、要统一查询</td><td>一次扫全表，100 万条约几分钟</td></tr></tbody></table></div>
+<p>判据是<strong>打开频率</strong>：旧日志一周被打开不到 10 次，懒迁更省；每天有上千个旧会话被回取，批量迁移一次付清更划算。两种可以并存——先批量迁近 90 天的，更早的保持懒迁。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 旧程序读到新日志怎么办</h2>
+<p>两个方向，处理方式不同：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>场景</th><th>现象</th><th>策略</th></tr></thead><tbody><tr><td>旧程序读新日志</td><td>遇到未知 <code>type</code> 或未知字段</td><td>未知类型分两类：<strong>可跳过的</strong>（<code>telemetry/<em></code>、<code>feedback/</em></code>）跳过并计数；<strong>不可跳过的</strong>（surface 事件、<code>turn/*</code>）拒绝加载</td></tr><tr><td>新程序读旧日志</td><td>字段缺失或语义变化</td><td>懒迁移：读的时候按当前版本解释，缺字段填默认，不认识的旧字段丢弃</td></tr></tbody></table></div>
+<p>"不可跳过"的判断标准很简单：<strong>跳过它会不会改变模型看到的历史</strong>。会，就必须拒绝——宁可打不开，也不能打开一个少了几轮记忆的会话让模型接着说。</p>
+<p>未知字段的处理要宽松（向前兼容），未知类型的处理要严格（向后兼容的安全边界）。这两条经常被写反：字段宽松是对的，类型宽松会让新版本引入的语义悄悄丢失。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>7. 怎么判断重放是对的</h2>
+<p>重放不是"跑完不出错"，要逐点比对。五个比对点，从强到弱：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>比对点</th><th>比什么</th><th>不一致说明</th></tr></thead><tbody><tr><td>surface 节点序列</td><td>seq 列表完全相等</td><td>折叠逻辑变了，或日志被改过</td></tr><tr><td>请求信封哈希</td><td><code>request/header</code> 的规范化哈希</td><td>组装逻辑变了，缓存会全失效</td></tr><tr><td>工具调用序列</td><td><code>(name, 参数哈希)</code> 的有序列表</td><td>模型行为或提示词变了</td></tr><tr><td>usage 累计</td><td>input/cached/output 三项</td><td>计量口径变了</td></tr><tr><td>最终消息</td><td>文本相似度</td><td>采样差异，通常不算错</td></tr></tbody></table></div>
+<p>差异要分级：结构不一致是致命（必须修），文本差异是警告（记录下来），时间戳差异直接忽略。</p>
+<p>一个实用做法是<strong>把重放当回归测试</strong>：每次改折叠、改组装、改提示词，都拿 20 条固定轨迹跑一遍，五个点全过才算没破坏兼容性。20 条的时间成本约 1 分钟，比线上发现"历史打不开"便宜得多。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>8. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>fork 后第一条消息是 tool 角色</td><td>截断点不在 turn 边界</td><td>投影出的 messages 首条 type 异常</td><td>校验截断点必须是 <code>turn/end</code></td></tr><tr><td>fork 报 stale range</td><td>种子内 <code>replace</code> 端点落在区间外</td><td>fold 抛错</td><td>fork 前做闭包校验，不合法就往前退一个 turn</td></tr><tr><td>重放结果每次不同</td><td>用了真实时钟与随机 ID</td><td>两次重放哈希不一致</td><td>注入固定时钟与 ID 生成器</td></tr><tr><td>假执行重放骗人</td><td>cassette 过期，工具行为已变</td><td>重放通过但线上仍报错</td><td>给 cassette 加有效期，过期就转真执行</td></tr><tr><td>迁移跑一半失败</td><td>中途崩溃且没留原文件</td><td>日志版本混杂</td><td>每步迁移写新文件，原文件保留</td></tr><tr><td>旧程序打开新日志后少了几轮</td><td>未知类型被静默跳过</td><td>会话变短</td><td>按"是否改变模型所见"分类，surface 类直接拒绝</td></tr><tr><td>迁移后体积翻倍</td><td>每步都追加而不替换</td><td>文件大小线性增长</td><td>迁移是重写，不是追加</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>9. 什么情况下不用这套</h2>
+<ol><li><strong>日志只做审计，不做重放。</strong> 那不需要 fork 与迁移链，归档成压缩包即可。</li><li><strong>会话生命周期短于 schema 变更周期。</strong> 日志 7 天就删，迁移成本高于重写，让旧日志自然过期更划算。</li><li><strong>只有单版本、不跨厂商。</strong> 没有格式差异，<code>request/header</code> 的规范化也可以省掉。</li></ol>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>10. 验收</h2>
+<p>五个测试：</p>
+<ol><li>从任意 turn 边界 fork，子会话能独立打开，模型看到的 messages 首条是 user 或 system。</li><li>fork 一个内部含 <code>replace</code> 的会话，端点校验通过或按规则回退一个 turn。</li><li>同一份日志重放两次，surface 节点序列与信封哈希完全一致。</li><li>一份 v0 日志迁移到 v4，五个比对点全部通过，原文件仍可读。</li><li>人为注入一个未知类型事件，旧程序拒绝加载而不是静默跳过。</li></ol>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>11. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为 fork 就是"复制一段历史"。实际差在<strong>连续前缀</strong>这个约束：三条依赖（配对、边界、闭包）任何一条破了，复制出来的会话就打不开或者语义错乱。所以 fork 不是复制，是一次带校验的快照。</p>
+<p>一句话：日志的价值 = 写入时的完整性 × 事后还能被重放几次。</p>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>12. 延伸</h2>
+<ul><li><strong>19A surface 与投影</strong>：<code>replace</code> 的闭区间语义与 fold 的报错条件。</li><li><strong>19C 持久化与崩溃恢复</strong>：为什么父会话保留期要覆盖子会话。</li><li><strong>第 20 章 提示词组装</strong>：信封哈希由什么决定，为什么改顺序会让缓存全失效。</li></ul>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="19C-persistence-and-recovery.html"><span>上一章</span><b>19C · 持久化与崩溃恢复</b></a><a class="nav-next" href="25-backpressure-admission.html"><span>下一章</span><b>25 · 全链路背压与准入控制：压力怎么传，谁有权拒绝</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>
