@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S1 · 两个实现：真源放在相反的位置 · Agent Platform at Scale</title>
+<style>
+:root{
+  --paper:#fbf9f4; --paper-2:#f4f1e9; --ink:#1a1a1a; --ink-soft:#4a4a48;
+  --muted:#7a766d; --rule:#e3ded1; --navy:#16324f; --accent:#b23a24;
+  --teal:#14665f; --amber:#9a5b13;
+  --serif:"Songti SC","Source Han Serif SC","Noto Serif CJK SC",Georgia,serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --num:"Charter","Iowan Old Style",Georgia,serif;
+  --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --maxw:41rem;
+}
+[data-theme="dark"]{
+  --paper:#14140f; --paper-2:#1c1c16; --ink:#f0ece1; --ink-soft:#c9c4b6;
+  --muted:#928d7e; --rule:#2f2e26; --navy:#a8c6e0; --accent:#e0705a;
+  --teal:#7fc9bf; --amber:#d8a45c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;
+  text-align:justify;text-justify:inter-ideograph}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+em{font-style:italic;color:var(--ink-soft)}
+
+/* 顶栏 */
+.progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;
+  padding:14px 34px;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.brand{font-family:var(--sans);font-weight:650;font-size:14px;letter-spacing:.02em;
+  color:var(--ink);border:0}
+.brand span{color:var(--muted);font-weight:400;margin-left:5px}
+.crumb{font-family:var(--sans);font-size:12.5px;color:var(--muted);letter-spacing:.04em}
+.theme{margin-left:auto;border:1px solid var(--rule);background:transparent;color:var(--ink);
+  width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1}
+.theme:hover{border-color:var(--accent);color:var(--accent)}
+
+/* 骨架 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;max-width:1120px;margin:0 auto}
+.rail{border-right:1px solid var(--rule)}
+.rail-inner{position:sticky;top:60px;padding:42px 20px 60px 34px}
+.rail-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:14px}
+.toc{display:flex;flex-direction:column;gap:2px}
+.toc a{display:flex;gap:9px;font-family:var(--sans);font-size:12.5px;line-height:1.5;
+  color:var(--muted);padding:5px 8px 5px 0;border:0;border-left:2px solid transparent;
+  padding-left:10px;text-align:left;transition:color .15s,border-color .15s}
+.toc a span{font-family:var(--num);font-size:11px;color:color-mix(in srgb,var(--muted) 70%,transparent);
+  padding-top:1px}
+.toc a:hover{color:var(--ink)}
+.toc a.active{color:var(--accent);border-left-color:var(--accent)}
+.toc a.active span{color:var(--accent)}
+.rail-foot{margin-top:26px;font-family:var(--sans);font-size:11px;color:var(--muted);
+  border-top:1px solid var(--rule);padding-top:12px}
+
+/* 正文 */
+.content{padding:0 44px 80px 56px;min-width:0}
+.prose{max-width:var(--maxw)}
+.prose--wide{max-width:54rem}
+.prose--wide table{font-size:13.5px}
+.prose--wide thead th{font-size:12px;white-space:normal}
+.ch-head{position:relative;padding:52px 0 0;margin-bottom:34px}
+.ch-ghost{position:absolute;top:-6px;left:-14px;font-family:var(--num);font-size:190px;
+  line-height:1;color:color-mix(in srgb,var(--accent) 9%,transparent);z-index:0;
+  letter-spacing:-.04em;pointer-events:none;user-select:none}
+.ch-kicker{position:relative;font-family:var(--sans);font-size:11.5px;letter-spacing:.2em;
+  color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+.ch-head h1{position:relative;font-family:var(--sans);font-size:37px;line-height:1.28;
+  font-weight:640;letter-spacing:-.015em;margin:0;color:var(--ink)}
+.ch-rule{height:1px;background:var(--ink);opacity:.85;margin-top:26px;width:64px}
+
+.sec{margin-top:52px}
+.sec h2{position:relative;font-family:var(--sans);font-size:24px;line-height:1.4;font-weight:620;
+  letter-spacing:-.01em;margin:0 0 20px;padding-top:18px;border-top:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:12px}
+.sec-num{font-family:var(--num);font-size:13px;color:var(--accent);letter-spacing:.06em;
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;
+  padding:1px 7px;flex:none;position:relative;top:-2px}
+h3{font-family:var(--sans);font-size:19px;font-weight:620;margin:34px 0 10px;color:var(--navy);
+  letter-spacing:-.005em}
+h4{font-family:var(--sans);font-size:16px;font-weight:600;margin:24px 0 8px;color:var(--ink-soft)}
+p{margin:0 0 1.05em}
+.prose > p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.92;
+  padding:6px 8px 0 0;color:var(--accent);font-family:var(--serif)}
+strong{font-weight:700;color:var(--ink);
+  background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 15%,transparent) 60%)}
+[data-theme="dark"] strong{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--accent) 22%,transparent) 60%)}
+
+ul,ol{margin:0 0 1.1em;padding-left:1.35em}
+li{margin:.32em 0}
+li::marker{color:var(--accent)}
+
+/* 表格 */
+.table-wrap{margin:26px 0;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;
+  background:color-mix(in srgb,var(--paper-2) 55%,var(--paper))}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.62}
+thead th{position:sticky;top:0;background:var(--paper-2);text-align:left;font-weight:600;
+  font-size:12.5px;letter-spacing:.04em;color:var(--ink-soft);padding:11px 14px;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody td{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--rule) 65%,transparent);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--paper-2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tbody td:first-child{font-weight:600;color:var(--ink)}
+.table--failure thead th{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--paper-2))}
+.table--spec thead th{color:var(--teal);background:color-mix(in srgb,var(--teal) 7%,var(--paper-2))}
+
+/* 代码 */
+.diagram{margin:34px 0;padding:26px 20px;background:#fbfaf6;border:1px solid var(--line,#e4dfd2);border-radius:4px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;font-size:14px}
+.diagram svg{max-width:100%;height:auto}
+.diagram figcaption{margin-top:12px;text-align:center;font-size:13px;color:#7a7466}
+.code{position:relative;margin:26px 0;border-radius:4px;overflow:hidden;
+  background:#17181c;border:1px solid #0d0e11}
+.code pre{margin:0;padding:20px 22px;overflow-x:auto}
+.code code{font-family:var(--mono);font-size:13px;line-height:1.75;color:#e8e3d7;
+  background:none;padding:0;white-space:pre}
+.code--ascii code{font-size:12.5px;line-height:1.6;color:#d8d2c4}
+.code-lang{position:absolute;top:9px;right:52px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;color:#7d7768;text-transform:uppercase}
+.copy{position:absolute;top:6px;right:8px;font-family:var(--sans);font-size:10.5px;
+  color:#8b8577;background:transparent;border:1px solid #33333a;border-radius:3px;
+  padding:3px 7px;cursor:pointer;opacity:0;transition:opacity .15s}
+.code:hover .copy{opacity:1}
+.copy:hover{color:#e8e3d7;border-color:#55555f}
+code{font-family:var(--mono);font-size:.87em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding:.12em .38em;border-radius:3px}
+
+/* 引用与组件 */
+blockquote{margin:24px 0;padding:4px 0 4px 18px;border-left:2px solid var(--rule);color:var(--ink-soft)}
+blockquote p{margin:.4em 0}
+.intro-card{margin:30px 0 34px;padding:22px 24px;background:color-mix(in srgb,var(--navy) 4%,var(--paper));
+  border:1px solid color-mix(in srgb,var(--navy) 18%,var(--rule));border-radius:3px}
+.intro-label{font-family:var(--sans);font-size:10.5px;letter-spacing:.22em;color:var(--navy);
+  text-transform:uppercase;margin-bottom:8px}
+.intro-title{font-family:var(--sans);font-size:14px;color:var(--ink);margin-bottom:10px}
+.intro-list{margin:0;padding-left:1.2em;font-size:16px;line-height:1.8}
+.intro-list li::marker{color:var(--navy)}
+
+.callout{position:relative;margin:26px 0;padding:18px 22px 18px 22px;border-radius:3px;
+  font-size:16.5px;line-height:1.8;border:1px solid}
+.callout-tag{position:absolute;top:-9px;left:14px;font-family:var(--sans);font-size:10.5px;
+  letter-spacing:.14em;padding:1px 8px;background:var(--paper);border-radius:2px}
+.callout--conclusion{border-color:color-mix(in srgb,var(--navy) 30%,transparent);
+  background:color-mix(in srgb,var(--navy) 5%,transparent)}
+.callout--conclusion .callout-tag{color:var(--navy);border:1px solid color-mix(in srgb,var(--navy) 30%,transparent)}
+.callout--warn{border-color:color-mix(in srgb,var(--amber) 35%,transparent);
+  background:color-mix(in srgb,var(--amber) 6%,transparent)}
+.callout--warn .callout-tag{color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.callout--check{border-color:color-mix(in srgb,var(--teal) 32%,transparent);
+  background:color-mix(in srgb,var(--teal) 5%,transparent)}
+.callout--check .callout-tag{color:var(--teal);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent)}
+
+.orn{height:1px;width:38px;background:var(--rule);margin:40px 0;position:relative}
+.orn::after{content:"";position:absolute;left:50%;top:-2px;width:5px;height:5px;
+  background:var(--accent);transform:translateX(-50%) rotate(45deg)}
+
+.closing{font-family:var(--sans);font-size:19px;line-height:1.75;color:var(--ink);
+  border-left:3px solid var(--accent);padding-left:18px;margin:22px 0}
+
+/* 翻页与页脚 */
+.pager{display:flex;gap:16px;margin:64px 0 0;max-width:var(--maxw)}
+.pager a,.pager i{flex:1;display:flex;flex-direction:column;gap:5px;padding:16px 18px;
+  border:1px solid var(--rule);border-radius:3px;border-bottom-width:1px}
+.pager a:hover{border-color:var(--accent)}
+.pager span{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+.pager b{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink)}
+.nav-next{text-align:right}
+.foot{max-width:var(--maxw);margin:52px 0 0;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--sans);font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+
+/* 首页 */
+.home-main{max-width:980px;margin:0 auto;padding:64px 34px 90px}
+.home-kicker{font-family:var(--sans);font-size:11px;letter-spacing:.22em;color:var(--accent);
+  text-transform:uppercase;margin-bottom:18px}
+.home-head h1{font-family:var(--sans);font-size:58px;line-height:1.1;font-weight:660;
+  letter-spacing:-.03em;margin:0 0 20px}
+.home-head h1 .dot{color:var(--accent)}
+.home-sub{font-size:17px;color:var(--ink-soft);max-width:34em;margin:0 0 46px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{display:flex;gap:16px;align-items:flex-start;padding:20px 20px 18px;border:1px solid var(--rule);
+  border-radius:3px;background:color-mix(in srgb,var(--paper-2) 40%,var(--paper));border-bottom-width:1px}
+.card:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--paper))}
+.card-num{font-family:var(--num);font-size:26px;line-height:1;color:var(--accent);opacity:.75;flex:none}
+.card-part{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.card-title{font-family:var(--sans);font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink)}
+.card-meta{margin-left:auto;font-family:var(--num);font-size:11px;color:var(--muted);flex:none}
+
+/* 响应式 */
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .content{padding:0 26px 60px}
+  .ch-ghost{font-size:140px}
+  .home-head h1{font-size:40px}
+}
+@media print{
+  .topbar,.rail,.progress,.pager,.copy{display:none}
+  body{background:#fff;font-size:11.5pt}
+  .content{padding:0}
+  .sec{break-inside:avoid-page}
+}
+</style>
+</head>
+<body>
+<div class="progress"><i id="bar"></i></div>
+<header class="topbar">
+  <a class="brand" href="index.html">Agent Platform<span>at Scale</span></a>
+  <div class="crumb">Harness · 第 00 章</div>
+  <button class="theme" id="theme" aria-label="切换主题">☾</button>
+</header>
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-inner">
+      <div class="rail-label">本章目录</div>
+      <nav class="toc"><a href="#s1"><span>01</span>. 结论：读第二个实现的价值在"相反答案"</a><a href="#s2"><span>02</span>. 三条路线，不是两条</a><a href="#s3"><span>03</span>. AgentScope 的三层抽象</a><a href="#s4"><span>04</span>. AgentState 到底装了什么</a><a href="#s5"><span>05</span>. 事件在 AgentScope 里的位置</a><a href="#s6"><span>06</span>. 两种选择的代价清单</a><a href="#s7"><span>07</span>在 1.5 亿轮/日的账本上算一遍</a><a href="#s8"><span>08</span>. 选哪条：四个判据</a><a href="#s9"><span>09</span>. 可以同时要</a><a href="#s10"><span>10</span>. 失败模式</a><a href="#s11"><span>11</span>. 推翻条件：什么情况下这套结论不成立</a><a href="#s12"><span>12</span>. 验收</a><a href="#s13"><span>13</span>. 复盘卡</a><a href="#s14"><span>14</span>. 延伸</a></nav>
+      <div class="rail-foot">Harness</div>
+    </div>
+  </aside>
+  <main class="content">
+    <article class="prose{{WIDE}}"><header class="ch-head"><div class="ch-ghost">00</div><div class="ch-kicker">Harness</div><h1>S1 · 两个实现：真源放在相反的位置</h1><div class="ch-rule"></div></header>
+<blockquote><p>这一组章节（S1–S8）读第二个实现：<a href="https://github.com/agentscope-ai/agentscope-java"><strong>AgentScope Java</strong></a>（Apache-2.0，JDK 17+，6,470 stars）。</p><p>它和 DeepSeek Harness 解决同一组问题——长任务、工具、上下文、多副本——但把"什么是真的"放在了相反的位置。这个差别决定了后面所有工程的形状。</p></blockquote>
+<div class="orn"></div>
+<section class="sec" id="s1"><h2><span class="sec-num">01</span>1. 结论：读第二个实现的价值在"相反答案"</h2>
+<p>只读一个实现，你会把它的选择当成唯一解。读第二个，你会看到同一组约束下还有另一条路，而且两条都跑通了生产。</p>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>DeepSeek Harness</th><th>AgentScope Java</th></tr></thead><tbody><tr><td>真源</td><td><strong>事件日志</strong>（只追加，65 类事件）</td><td><strong>状态快照</strong>（<code>AgentState</code>，一次 call 一份）</td></tr><tr><td>模型可见的历史</td><td>从日志投影（surface）</td><td>快照里的 <code>context</code> 字段，就地改写</td></tr><tr><td>事件的角色</td><td>持久化的事实</td><td>传给前端的流式形状（32 类）</td></tr><tr><td>快照的角色</td><td>可选检查点，为了恢复快</td><td>唯一的真相，每次 call 结束整体写</td></tr><tr><td>压缩</td><td>追加一条遮蔽事件，原文不动</td><td>直接改写 <code>context</code>，把前缀换成摘要</td></tr></tbody></table></div>
+<p>分歧可以概括成一句：<strong>DSH 认为"发生过的每一件事"是真源；AgentScope 认为"此刻的状态"是真源。</strong></p>
+<p>两种都成立，因为约束不同：前者要重放、要审计、要 fork；后者要让一个无状态实例同时服务 5 万个会话，且后端是 Redis 这种键值存储。</p>
+</section>
+<section class="sec" id="s2"><h2><span class="sec-num">02</span>2. 三条路线，不是两条</h2>
+<p>把"真源放哪"摊开，其实有三种做法：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>路线</th><th>存什么</th><th>恢复靠什么</th><th>典型实现</th></tr></thead><tbody><tr><td>纯无状态</td><td>不存，每次请求带全量 messages</td><td>客户端</td><td>大多数模型 API 的直接用法</td></tr><tr><td>状态快照</td><td>每次调用后存一份完整状态</td><td>读回快照</td><td>AgentScope、多数企业 Agent 平台</td></tr><tr><td>事件溯源</td><td>存所有变更事件</td><td>重放日志</td><td>DSH、事件驱动系统</td></tr></tbody></table></div>
+<p>第一条在 Agent 场景撑不住：一次任务几十轮、几百次工具调用，messages 数组涨到几十万 token，客户端带不动，服务端也没法做压缩和记忆。</p>
+<p>第二条和第三条的分界是<strong>"要不要还原中间过程"</strong>。只要"接着上次继续"，快照就够；凡是要"回到第 37 步看看模型当时看到了什么"，就必须有日志。</p>
+</section>
+<section class="sec" id="s3"><h2><span class="sec-num">03</span>3. AgentScope 的三层抽象</h2>
+<figure class="diagram"><pre class="mermaid">flowchart TB
+  A[&quot;ReActAgent&lt;br/&gt;推理-行动循环&quot;] --&gt; B[&quot;HarnessAgent&lt;br/&gt;上下文、工作区、记忆、子 Agent、沙箱&quot;]
+  B --&gt; C[&quot;Durable&lt;br/&gt;持久 Turn、排队、插话、跨实例接管&quot;]
+  B --&gt; D[&quot;AgentState&lt;br/&gt;本次 call 的完整状态&quot;]
+  D --&gt; E[&quot;AgentStateStore&lt;br/&gt;JsonFile / Redis / MySQL&quot;]</pre></figure>
+<p>三层各管一段：</p>
+<ul><li><strong>ReActAgent</strong> 只管一次"请求 → 推理 → 工具 → 回复"。它是无状态引擎：实例本身只持有不可变配置（system prompt、模型、工具集、中间件链），所有会话相关的可变数据都在 <code>AgentState</code> 里，按 <code>(userId, sessionId)</code> 寻址。</li><li><strong>HarnessAgent</strong> 把长期运行需要的东西叠加上去：工作区、记忆、压缩、子 Agent、沙箱、技能、计划模式。</li><li><strong>Durable</strong> 管"跨实例的延续"：排队、执行中插话、断线重连、工具异步执行后的认领。</li></ul>
+<p>这个分层和 DSH 的"插件树"是两种组织方式：DSH 按<strong>能力</strong>切（每个能力一个插件，通过 ctx 与事件协作），AgentScope 按<strong>抽象层级</strong>切（循环 / 上下文 / 持久执行），层与层之间是包含关系。</p>
+<p><strong>单例服务多用户</strong>是这套设计最直接的收益。一个 <code>HarnessAgent</code> 实例服务全部用户，每次请求只传不同的 <code>RuntimeContext</code>；相同 <code>(userId, sessionId)</code> 的请求自动串行，不同会话完全并行。这省掉了"agent 实例与用户绑定"的注册表和内存开销。</p>
+</section>
+<section class="sec" id="s4"><h2><span class="sec-num">04</span>4. AgentState 到底装了什么</h2>
+<p>它是"这一次调用需要的全部可变状态"，八个字段：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>字段</th><th>内容</th><th>变了会怎样</th></tr></thead><tbody><tr><td><code>sessionId</code> / <code>userId</code></td><td>归属</td><td>存错槽位，串号</td></tr><tr><td><code>context</code></td><td>对话历史（用户、assistant、工具调用、工具结果）</td><td>模型看到的历史</td></tr><tr><td><code>summary</code></td><td>压缩后的摘要</td><td>与 context 拼接后送模型</td></tr><tr><td><code>permissionContext</code></td><td>工具权限规则</td><td>同一会话里审批过的规则还在</td></tr><tr><td><code>planModeContext</code></td><td>计划模式是否激活、计划文件路径</td><td>只读阶段与执行阶段的分界</td></tr><tr><td><code>tasksContext</code></td><td><code>todo_write</code> 维护的任务清单</td><td>长任务的进度</td></tr><tr><td><code>toolContext</code></td><td>工具组激活状态</td><td>按需打开一组工具</td></tr></tbody></table></div>
+<p>写盘时机是关键：<strong>一次 call 结束（或进程 shutdown）整体写一次</strong>，不在每条消息后落盘。</p>
+<p>这个选择换来两个好处：后端压力小（每轮一次写，而不是每事件一次），并且写下去的一定是"压缩后、权限调整后"的最终状态——不存在"日志里有、快照里没有"的中间态。</p>
+<p>代价也很清楚：一次 call 中途崩了，这次 call 里发生的所有变更全丢，重试等于从头再来。DSH 那边丢的是"最后一个 write-behind 窗口"，通常不到一个 turn。</p>
+</section>
+<section class="sec" id="s5"><h2><span class="sec-num">05</span>5. 事件在 AgentScope 里的位置</h2>
+<p>AgentScope 有 32 种类型化事件，形态是 <strong>start → delta → end</strong>：</p>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>AgentStartEvent
+  ModelCallStartEvent
+    TextBlockStartEvent → TextBlockDeltaEvent ×N → TextBlockEndEvent
+    ToolCallStartEvent  → ToolCallDeltaEvent ×N  → ToolCallEndEvent
+  ModelCallEndEvent
+  ToolResultStartEvent → ToolProgressEvent ×N → ToolResultEndEvent
+AgentEndEvent</code></pre></figure>
+<p>关联靠三个 id：<code>replyId</code> 把事件绑到"正在构建的这条回复"，<code>blockId</code> 绑到某段文本/数据块，<code>toolCallId</code> 绑到某次工具调用。</p>
+<p>它的定位是<strong>传输形状</strong>：通过 SSE（Server-Sent Events，服务端推送事件）推给前端做实时渲染，或者被客户端按 block 聚合还原成完整消息。文档里的说法是"事件与消息是同一数据的两种视图"，还特别强调"从任意检查点重放事件序列也能精确恢复消息状态"。</p>
+<p>但注意这句的边界：能恢复的是<strong>消息</strong>，不是"当时那次调用的完整状态"。权限规则、计划模式、任务清单不在事件流里，它们在 <code>AgentState</code>。</p>
+<p>所以两边的分工正好相反：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th></th><th>谁负责"模型看到的历史"</th><th>谁负责"UI 实时"</th></tr></thead><tbody><tr><td>DSH</td><td>事件日志（投影出 surface）</td><td>事件日志（另一个投影）</td></tr><tr><td>AgentScope</td><td><code>AgentState.context</code></td><td>事件流</td></tr></tbody></table></div>
+<p>DSH 用同一份数据供两个消费者，代价是投影层要保证确定性；AgentScope 用两份数据各供一个消费者，代价是两者可能不一致——修复方式是把消息也写进 <code>sessions/&lt;id&gt;.log.jsonl</code>，一份永不压缩的原始日志留作回放与审计。</p>
+</section>
+<section class="sec" id="s6"><h2><span class="sec-num">06</span>6. 两种选择的代价清单</h2>
+<div class="table-wrap"><table class="table"><thead><tr><th>维度</th><th>事件溯源（DSH）</th><th>状态快照（AgentScope）</th></tr></thead><tbody><tr><td>恢复粒度</td><td>任意 seq</td><td>一次 call</td></tr><tr><td>写放大</td><td>每事件一行，约 0.5–1 KB</td><td>一次 call 一份，几 KB 到几 MB</td></tr><tr><td>审计</td><td>天然完整</td><td>靠旁路的 <code>.log.jsonl</code></td></tr><tr><td>回放评测</td><td>直接可用</td><td>需要先重建事件</td></tr><tr><td>多副本</td><td>日志服务或共享存储</td><td>KV 读回，天然适合 Redis</td></tr><tr><td>跨版本</td><td>迁移链</td><td>反序列化兼容</td></tr><tr><td>压缩</td><td>追加遮蔽事件</td><td>直接改写 context</td></tr><tr><td>状态体积</td><td>与事件数成正比</td><td>与上下文长度成正比（有上界）</td></tr></tbody></table></div>
+<p>最后一行是分水岭：快照派的存储量有天花板（上下文再长也就几万 token），事件派的存储量随会话长度线性增长。一个跑了三个月的 Agent 会话，事件可能几十万条，快照只有几 MB。</p>
+<p>反过来，事件派能回答"第 37 步模型看到了什么"，快照派只能回答"最后一次调用时模型看到了什么"。前者是排障与评测的基础，后者是"接着干"的基础。</p>
+</section>
+<section class="sec" id="s7"><h2><span class="sec-num">07</span>6.1 在 1.5 亿轮/日的账本上算一遍</h2>
+<p>把两种设计放到本书的平台规模上，差别是量级：</p>
+<div class="table-wrap"><table class="table"><thead><tr><th>项</th><th>事件溯源（DSH）</th><th>状态快照（AgentScope）</th></tr></thead><tbody><tr><td>一天写多少条</td><td>1.5 亿轮 × 45 条 = 67.5 亿条</td><td>1.5 亿次 call，每次 1 份</td></tr><tr><td>一天写多少字节</td><td>67.5 亿 × 0.8 KB ≈ 5.4 TB</td><td>1.5 亿 × 37 KB ≈ 5.6 TB</td></tr><tr><td>峰值写入 QPS</td><td>67.5 亿 ÷ 86,400 × 4.03 ≈ 31 万/秒</td><td>7,000/秒</td></tr><tr><td>单次恢复耗时</td><td>重放 5 万条约 1 秒</td><td>读一次快照约 30 毫秒</td></tr><tr><td>存储是否封顶</td><td>不封顶，随会话长度线性涨</td><td>封顶，等于上下文上限</td></tr><tr><td>压缩后的体积</td><td>原文全在，体积不降</td><td>只留摘要，体积降 60%–80%</td></tr></tbody></table></div>
+<p>两边的日增量居然接近（5.4 TB 对 5.6 TB），因为事件派写得多但每条小，快照派写得少但每份大。真正的差别在<strong>峰值</strong>：31 万条/秒对 7,000 次/秒，差了 44 倍。于是事件派最后都要走日志服务，而快照派接一个 Redis 就能撑。</p>
+<p>另一处差别是恢复：1 秒对 30 毫秒，差 33 倍。会话数从 1 万涨到 10 万，这个差距不缩小——用户点开历史的等待时间，直接由它决定。</p>
+</section>
+<section class="sec" id="s8"><h2><span class="sec-num">08</span>7. 选哪条：四个判据</h2>
+<ol><li><strong>要不要还原中间过程？</strong> 要（排障、评测、合规审计逐条可查）→ 事件派。只要"接着上次继续"→ 快照派。</li><li><strong>会话有多长？</strong> 周级、几十万条事件 → 快照派更省存储；分钟级、几百条 → 事件派不贵。</li><li><strong>后端是什么？</strong> 已有 Redis/MySQL 且要水平扩副本 → 快照派阻力最小；有 Kafka 这类日志基础设施 → 事件派顺手。</li><li><strong>要不要 fork/分支？</strong> 要按中间点分叉 → 事件派天然支持（连续前缀），快照派要额外存历史快照。</li></ol>
+<p>四个判据里，第一个权重最高。它决定了你未来能不能回答"为什么模型当时那么答"——这个问题在生产上一定会出现。</p>
+</section>
+<section class="sec" id="s9"><h2><span class="sec-num">09</span>8. 可以同时要</h2>
+<p>两条路不互斥。AgentScope 自己也留了一份永不压缩的 <code>.log.jsonl</code>，等于"快照负责跑，日志负责查"。DSH 也存检查点，等于"日志负责真，快照负责快"。</p>
+<p>真正要避免的是<strong>只做一半</strong>：只有快照没有日志，出问题只能看最后状态；只有日志没有快照，每次打开会话都要重放几十万条事件。</p>
+<p>判断自己属于哪种，看两个指标：打开一个历史会话要多久（超过 2 秒，说明快照这一半缺了），以及恢复出来的历史比预期少几轮（少 1 轮以上，说明日志这一半缺了）。</p>
+</section>
+<section class="sec" id="s10"><h2><span class="sec-num">10</span>9. 失败模式</h2>
+<div class="table-wrap"><table class="table table--failure"><thead><tr><th>现象</th><th>根因</th><th>怎么发现</th><th>怎么修</th></tr></thead><tbody><tr><td>两个副本读到不同历史</td><td>快照存本地，没换分布式 store</td><td>同一会话在不同 pod 上答案不同</td><td>换 Redis/MySQL，构建期强制校验</td></tr><tr><td>崩溃后丢一整轮对话</td><td>快照在 call 结束才写</td><td>日志有、快照没有</td><td>关键节点（审批、工具完成）额外存一次</td></tr><tr><td>会话体积无限增长</td><td>只追加日志，没做归档</td><td>单文件超 GB</td><td>分层保留 + 检查点</td></tr><tr><td>重放结果对不上</td><td>事件流缺了非消息类状态</td><td>重放出的权限规则是空的</td><td>状态类信息进快照，不进事件流</td></tr><tr><td>压缩把原文改没了</td><td>快照派直接覆盖 context</td><td>用户问细节，查不到</td><td>原文另存 <code>.log.jsonl</code>，压缩只改视图</td></tr><tr><td>多副本并发写同一会话</td><td>没有 per-session 门</td><td>两条回复交错</td><td>按 <code>(uid, sid)</code> 串行化，跨进程用锁</td></tr></tbody></table></div>
+</section>
+<section class="sec" id="s11"><h2><span class="sec-num">11</span>10. 推翻条件：什么情况下这套结论不成立</h2>
+<ol><li><strong>会话生命周期短于一次部署。</strong> 单次请求、无多轮，两条路都不需要，纯无状态即可。</li><li><strong>只有一个副本、且不要求高可用。</strong> 快照存本地文件就够，不必上 Redis。</li><li><strong>合规要求"每个 token 可追溯"。</strong> 这时事件派是硬要求，快照派要补的日志量等于重做一遍。</li></ol>
+</section>
+<section class="sec" id="s12"><h2><span class="sec-num">12</span>11. 验收</h2>
+<p>读到这里，应该能回答四个问题：</p>
+<ol><li>一个会话在第 37 步崩了，两种设计各自能恢复到哪一步？</li><li>为什么快照派的写放大比事件派小，代价是什么？</li><li>事件流能不能替代日志？缺了哪几类信息？</li><li>什么指标能判断"我这一半缺了"？</li></ol>
+</section>
+<section class="sec" id="s13"><h2><span class="sec-num">13</span>12. 复盘卡</h2>
+<figure class="code code--ascii"><button class="copy" type="button">复制</button><pre><code>我原来以为…实际…差在：</code></pre></figure>
+<p>我原来以为"存事件"和"存状态"只是两种存法，性能不同而已。实际差在<strong>你能回答哪类问题</strong>：事件派能回答"当时发生了什么"，快照派能回答"现在是什么状态"。选型选的是问题清单，不是存储引擎。</p>
+<p>一句话：真源放哪，决定了你未来能问什么问题。</p>
+</section>
+<section class="sec" id="s14"><h2><span class="sec-num">14</span>13. 延伸</h2>
+<ul><li><strong>S2 无状态引擎与并发</strong>：per-session 门、状态缓存、跨副本恢复的具体失效模式。</li><li><strong>S3 事件流与消息</strong>：32 类事件怎么聚合回消息，SSE 断线后怎么续。</li><li><strong>S4 权限与 HITL</strong>：四档 Permission Mode、内置检查、无人值守。</li><li><strong>19 章 日志：唯一真源</strong>：另一个方向的完整推导。</li></ul>
+</section></article>
+    <nav class="pager"><a class="nav-prev" href="00-atlas.html"><span>上一章</span><b>00 · 全书图集：十二张图看懂这套系统</b></a><a class="nav-next" href="T0-capability-map.html"><span>下一章</span><b>00 · 能力层手册 · 开篇：那 90 个插件包在做什么</b></a></nav>
+    <footer class="foot">Agent Platform at Scale · 亿级 Agent 平台工程 · 教学构造</footer>
+  </main>
+</div>
+<script>
+/* 每段独立成 IIFE：某一段依赖的元素不存在时，不能影响其他段 */
+(function(){
+  var t = document.getElementById('theme');
+  if(!t) return;
+  function load(){ try{ return localStorage.getItem('theme'); }catch(e){ return null; } }
+  function store(v){ try{ localStorage.setItem('theme', v); }catch(e){} }
+  function apply(v){
+    document.documentElement.dataset.theme = v;
+    t.textContent = v === 'dark' ? '\u2600' : '\u263e';
+    t.setAttribute('aria-label', v === 'dark' ? '\u5207\u6362\u5230\u6d45\u8272' : '\u5207\u6362\u5230\u6df1\u8272');
+  }
+  var sysDark = false;
+  try{ sysDark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }catch(e){}
+  var cur = load() || (sysDark ? 'dark' : 'light');
+  apply(cur);
+  t.addEventListener('click', function(){
+    cur = cur === 'dark' ? 'light' : 'dark';
+    apply(cur); store(cur);
+  });
+})();
+
+(function(){
+  var bar = document.getElementById('bar');
+  if(!bar) return;
+  function onScroll(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max * 100) : 0) + '%';
+  }
+  addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
+(function(){
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var code = b.parentElement.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        b.textContent = '\u5df2\u590d\u5236';
+        setTimeout(function(){ b.textContent = '\u590d\u5236'; }, 1200);
+      });
+    });
+  });
+})();
+
+(function(){
+  var links = [].slice.call(document.querySelectorAll('.toc a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if(!secs.length) return;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){ l.classList.remove('active'); });
+        var i = secs.indexOf(e.target);
+        if(i >= 0) links[i].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-15% 0px -70% 0px'});
+  secs.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "neutral",
+    fontFamily: '"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif',
+    flowchart: { curve: "basis", useMaxWidth: true, nodeSpacing: 36, rankSpacing: 50 },
+    sequence: { useMaxWidth: true, wrap: true } });
+  const nodes = [...document.querySelectorAll("pre.mermaid")];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const src = node.textContent;
+    try {
+      const { svg } = await mermaid.render("mmd-" + i, src);
+      node.innerHTML = svg;
+    } catch (e) {
+      node.innerHTML = '<pre style="color:#b23">图 ' + (i + 1) + ' 渲染失败：' + String(e.message || e) + '</pre>';
+    }
+  }
+</script>
+</body>
+</html>
